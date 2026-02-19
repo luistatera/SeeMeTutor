@@ -223,17 +223,21 @@ SeeMe Tutor runs a real-time bidirectional pipeline between the browser and Gemi
 
 ---
 
-## Tutor Persona
+## Tutor Persona — LearnLM-Informed Pedagogy
 
-SeeMe is a patient, encouraging tutor with a calm and warm voice. It adapts to the student in front of it — not just the subject matter.
+SeeMe is a patient, encouraging tutor with a calm and warm voice. Its pedagogical design is grounded in Google's [LearnLM](https://ai.google.dev/gemini-api/docs/learnlm) learning science principles — research-backed guidelines for effective AI-assisted education. Built on Gemini 2.5 Flash, which has LearnLM capabilities natively infused, SeeMe aligns with all five core learning principles:
 
-**Core teaching principles:**
+- **Active Learning** — Never gives the answer directly. SeeMe always responds with a guiding question: "What do you think happens when you multiply both sides by the same number?"
+- **Cognitive Load Management** — Keeps responses concise (2–3 sentences) and references what it can see in the student's work to stay grounded in context, not abstractions.
+- **Learner Adaptation** — Reads the emotional room. If a student sounds frustrated, SeeMe slows down and breaks the problem into smaller steps. If they sound confident, it increases the challenge.
+- **Curiosity Stimulation** — Connects solved problems to real-world contexts and asks "what if" questions to extend thinking beyond the immediate exercise.
+- **Metacognitive Development** — Prompts students to reflect on their own thinking: "You got that one — what strategy did you use?" Builds independent learning skills, not just subject knowledge.
 
-- **Never gives the answer directly.** SeeMe always responds with a guiding question: "What do you think happens when you multiply both sides by the same number?"
-- **References what it can see.** If it can read your handwriting: "I can see you've written 3x on the left side — what would you need to do to isolate x?"
-- **Matches your language.** Start speaking Portuguese, it responds in Portuguese. Switch to English mid-sentence, it follows. German works too.
-- **Reads the emotional room.** If a student sounds frustrated, SeeMe slows down, offers encouragement, and breaks the problem into smaller steps. If they sound confident, it moves faster and challenges them more.
-- **Handles interruptions naturally.** Because Gemini Live API is full-duplex, students can interrupt mid-response and SeeMe will stop, acknowledge, and re-approach — just like a real tutor would.
+**Additional capabilities:**
+
+- **Visual grounding** — References what it sees via the camera: "I can see you've written 3x on the left side — what would you need to do to isolate x?"
+- **Multilingual** — Start speaking Portuguese, it responds in Portuguese. Switch to English mid-sentence, it follows. German works too.
+- **Natural interruptions** — Because Gemini Live API is full-duplex, students can interrupt mid-response and SeeMe will stop, acknowledge, and re-approach — just like a real tutor would.
 
 ---
 
@@ -293,12 +297,13 @@ SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 
 **Technology stack:** 100% Google and GCP.
 - AI: Gemini 2.5 Flash Live API (`gemini-2.5-flash-native-audio-preview-12-2025`) via the `google-genai` Python SDK
+- Pedagogy: [LearnLM](https://cloud.google.com/solutions/learnlm)-informed system instructions aligned with Google's learning science research
 - Backend: FastAPI on Cloud Run
 - Frontend: Firebase Hosting
 - Database: Firestore
 - Secrets: Secret Manager
 
-No third-party AI APIs are used. The entire intelligence layer runs through Google's Gemini platform.
+No third-party AI APIs are used. The entire intelligence layer runs through Google's Gemini platform, with pedagogical design grounded in [LearnLM's learning science principles](https://ai.google.dev/gemini-api/docs/learnlm).
 
 ---
 

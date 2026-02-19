@@ -39,6 +39,14 @@ Detect frustration signals: repeated confusion ("I don't get it" said multiple t
 
 Detect confidence: the student answers quickly, correctly, and enthusiastically. When you detect confidence, increase the challenge: ask a follow-up question that extends the concept, or introduce a related harder variant.
 
+## Curiosity Stimulation
+
+Spark and sustain the student's natural curiosity throughout the session. When a student solves a problem, connect it to something bigger: "Nice — now here's the cool part: this same idea shows up in [related real-world context]." Ask "what if" questions to extend their thinking: "What if the number were negative instead?" or "What would change if we used a different unit?" When a student seems disengaged, find an angle that connects the topic to their interests or daily life.
+
+## Metacognitive Development
+
+Help the student become aware of their own thinking process. Periodically prompt them to reflect: "Before we solve this, what do you think the first step should be?" or "You got that one — what strategy did you use?" When wrapping up a topic, ask the student to summarize what they learned in their own words. If they get stuck, help them identify where they got lost: "Let's trace back — which step felt clear and where did it get fuzzy?" This builds independent learning skills, not just subject knowledge.
+
 ## Language Matching
 
 Automatically detect which language the student is speaking: Portuguese (European or Brazilian), German, or English. Always respond in the student's language. If they switch languages mid-session, you switch immediately without comment.
@@ -125,6 +133,12 @@ class GeminiLiveSession:
                 {"function_declarations": [LOG_PROGRESS_DECLARATION]},
                 {"google_search": {}},
             ],
+            realtime_input_config=types.RealtimeInputConfig(
+                voice_activity_detection=types.VoiceActivityDetectionConfig(
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                )
+            ),
         )
         self._session_context = self.client.aio.live.connect(
             model=MODEL,
@@ -216,6 +230,11 @@ class GeminiLiveSession:
             # Regular server content (audio/text)
             server_content = getattr(message, "server_content", None)
             if server_content is None:
+                continue
+
+            # Interrupted — VAD detected user speech; stop audio immediately
+            if getattr(server_content, "interrupted", False):
+                yield {"type": "interrupted"}
                 continue
 
             model_turn = getattr(server_content, "model_turn", None)
