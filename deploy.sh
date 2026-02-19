@@ -109,9 +109,9 @@ info "Source: backend/"
 info "GEMINI_API_KEY will be mounted from Secret Manager at runtime"
 
 # Build from project root so Dockerfile can COPY frontend/ alongside backend/
+cp backend/Dockerfile .
 gcloud run deploy "${SERVICE_NAME}" \
     --source . \
-    --dockerfile backend/Dockerfile \
     --region="${REGION}" \
     --allow-unauthenticated \
     --service-account="${SERVICE_ACCOUNT}" \
@@ -124,6 +124,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --max-instances="${MAX_INSTANCES}" \
     --project="${PROJECT_ID}" \
     --quiet
+rm Dockerfile
 
 success "Cloud Run deploy complete"
 

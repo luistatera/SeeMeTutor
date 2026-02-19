@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8" /><meta name="backend-host" content="seeme-tutor-mycrnnbwha-ew.a.run.app" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0D1B2A" />
   <meta name="description" content="SeeMe Tutor — Real-time AI tutor that sees your homework and guides you with Socratic questions." />
@@ -303,7 +303,7 @@
       flex-shrink: 0;
       margin: 10px 16px 0;
       min-height: 52px;
-      max-height: 80px;
+      max-height: 130px;
       overflow-y: auto;
       padding: 10px 14px;
       background: var(--bg-card);
@@ -531,7 +531,7 @@
       opacity: 0;
       transition: opacity 0.25s, transform 0.25s;
       z-index: 100;
-      white-space: nowrap;
+      white-space: normal;
       max-width: calc(100vw - 48px);
       text-align: center;
     }
@@ -708,6 +708,41 @@
     .mic-btn-wrapper.listening #mic-btn .mic-wave { display: flex; }
 
     /* =====================================================================
+       END SESSION CONFIRMATION MODAL
+    ===================================================================== */
+    .end-modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .end-modal-actions button {
+      flex: 1;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .end-modal-cancel {
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border) !important;
+    }
+
+    .end-modal-cancel:hover { background: var(--bg-card-hover); }
+
+    .end-modal-confirm {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .end-modal-confirm:hover { background: #c62828; }
+
+    /* =====================================================================
        CONNECTIVITY BANNER
     ===================================================================== */
     .reconnect-banner {
@@ -753,6 +788,23 @@
     <h2 id="modal-title">Microphone Access Required</h2>
     <p id="modal-body">SeeMe Tutor needs your microphone to hear your questions. Please allow microphone access when prompted by your browser.</p>
     <button class="modal-btn" id="modal-btn">Got it</button>
+  </div>
+</div>
+
+<!-- ======================================================================
+     END SESSION CONFIRMATION MODAL
+===================================================================== -->
+<div class="modal-backdrop" id="end-session-modal">
+  <div class="modal">
+    <div class="modal-icon">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </div>
+    <h2>End session?</h2>
+    <p>Your progress will be saved. You can start a new session any time.</p>
+    <div class="end-modal-actions">
+      <button class="end-modal-cancel" id="end-modal-cancel">Keep going</button>
+      <button class="end-modal-confirm" id="end-modal-confirm">End session</button>
+    </div>
   </div>
 </div>
 
@@ -927,12 +979,13 @@ const WS_MAX_ATTEMPTS    = 5;
 // STATE
 // =========================================================================
 const state = {
-  wsStatus:      'disconnected', // disconnected | connecting | connected | error
-  micActive:     false,
-  cameraActive:  false,
-  isSpeaking:    false,          // AI is currently outputting audio
-  wsAttempts:    0,
-  permGranted:   false,
+  wsStatus:        'disconnected', // disconnected | connecting | connected | error
+  micActive:       false,
+  cameraActive:    false,
+  isSpeaking:      false,          // AI is currently outputting audio
+  discardingAudio: false,          // true after interrupted, cleared on turn_complete
+  wsAttempts:      0,
+  permGranted:     false,
 };
 
 // =========================================================================
@@ -962,6 +1015,9 @@ const modalTitle       = $('modal-title');
 const modalBody        = $('modal-body');
 const modalBtn         = $('modal-btn');
 const reconnectBanner  = $('reconnect-banner');
+const endSessionModal  = $('end-session-modal');
+const endModalCancel   = $('end-modal-cancel');
+const endModalConfirm  = $('end-modal-confirm');
 
 // =========================================================================
 // WEBSOCKET
@@ -1037,6 +1093,8 @@ function wsSend(obj) {
 function handleServerMessage(msg) {
   switch (msg.type) {
     case 'audio':
+      // Discard audio chunks that arrived in-flight after an interruption
+      if (state.discardingAudio) break;
       if (msg.data) playAudioChunk(msg.data);
       if (!state.isSpeaking) setSpeakingState(true);
       break;
@@ -1046,14 +1104,21 @@ function handleServerMessage(msg) {
       break;
 
     case 'turn_complete':
+      state.discardingAudio = false;
       setSpeakingState(false);
       finishTranscriptTurn();
       break;
 
     case 'interrupted':
-      // AI was interrupted — stop scheduling more audio
+      // VAD detected student speech — stop audio and discard in-flight chunks
+      state.discardingAudio = true;
       setSpeakingState(false);
       nextAudioTime = 0;
+      // Fade the partial transcript to signal it was cut off
+      if (currentTranscriptSpan) {
+        currentTranscriptSpan.style.opacity = '0.5';
+        currentTranscriptSpan = null;
+      }
       break;
 
     case 'session_limit':
@@ -1287,10 +1352,15 @@ async function startCamera() {
     if (denied) {
       cameraBtn.classList.add('disabled');
       showToast('Camera access denied — voice-only mode active', 3500, true);
-    } else {
-      showToast('Camera unavailable — voice-only mode active', 3000, false);
+      return;
     }
-    return;
+    // Environment camera unavailable (common on laptops) — retry with any camera
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch (_) {
+      showToast('Camera unavailable — voice-only mode active', 3000, false);
+      return;
+    }
   }
 
   cameraVideo.srcObject = cameraStream;
@@ -1394,15 +1464,15 @@ function endSession() {
 
   wsSend({ type: 'end_session' });
 
-  if (ws) {
-    ws.close();
-    ws = null;
-  }
+  // Give the end_session message time to reach the server before closing
+  setTimeout(() => {
+    if (ws) { ws.close(); ws = null; }
+  }, 300);
 
   clearTimeout(wsReconnectTimer);
   state.wsAttempts = WS_MAX_ATTEMPTS; // prevent auto-reconnect
 
-  setStatus('error', 'Session ended');
+  setStatus('connected', 'Session ended');
   disableMicBtn();
   cameraBtn.classList.add('disabled');
   showToast('Session ended. Reload to start again.', 0);
@@ -1496,9 +1566,16 @@ micBtn.addEventListener('click', () => {
 cameraBtn.addEventListener('click', toggleCamera);
 
 endBtn.addEventListener('click', () => {
-  if (confirm('End this tutoring session?')) {
-    endSession();
-  }
+  endSessionModal.classList.add('visible');
+});
+
+endModalCancel.addEventListener('click', () => {
+  endSessionModal.classList.remove('visible');
+});
+
+endModalConfirm.addEventListener('click', () => {
+  endSessionModal.classList.remove('visible');
+  endSession();
 });
 
 // Prevent zooming on double-tap (mobile UX)

@@ -6,6 +6,7 @@ including session lifecycle, media forwarding, and response parsing.
 """
 
 import logging
+from types import TracebackType
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 from google import genai
@@ -148,7 +149,12 @@ class GeminiLiveSession:
         logger.info("Gemini Live session opened (tools: log_progress, google_search)")
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         if self._session_context is not None:
             try:
                 await self._session_context.__aexit__(exc_type, exc_val, exc_tb)
@@ -164,9 +170,13 @@ class GeminiLiveSession:
         """
         if self.session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        await self.session.send_realtime_input(
-            audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
-        )
+        try:
+            await self.session.send_realtime_input(
+                audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
+            )
+        except Exception:
+            logger.exception("Failed to send audio chunk to Gemini (len=%d bytes)", len(audio_bytes))
+            raise
 
     async def send_video_frame(self, jpeg_bytes: bytes) -> None:
         """
@@ -174,12 +184,18 @@ class GeminiLiveSession:
         """
         if self.session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        await self.session.send_realtime_input(
-            video=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
-        )
+        try:
+            await self.session.send_realtime_input(
+                video=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+            )
+        except Exception:
+            logger.exception("Failed to send video frame to Gemini (len=%d bytes)", len(jpeg_bytes))
+            raise
 
     async def _handle_tool_call(self, tool_call) -> None:
         """Execute function calls from the model and send results back."""
+        if self.session is None:
+            raise RuntimeError("Session is not open. Use as async context manager.")
         responses = []
         for fc in tool_call.function_calls:
             logger.info("Tool call: %s(id=%s, args=%s)", fc.name, fc.id, fc.args)
@@ -199,8 +215,15 @@ class GeminiLiveSession:
                 response=result,
             ))
 
-        await self.session.send_tool_response(function_responses=responses)
-        logger.info("Sent %d tool response(s)", len(responses))
+        try:
+            await self.session.send_tool_response(function_responses=responses)
+            logger.info("Sent %d tool response(s)", len(responses))
+        except Exception:
+            logger.exception(
+                "Failed to send tool response for functions %s — session may be degraded",
+                [r.name for r in responses],
+            )
+            raise
 
     async def receive(self) -> AsyncGenerator[dict, None]:
         """
@@ -210,46 +233,65 @@ class GeminiLiveSession:
             {"type": "audio", "data": bytes}        — raw PCM audio at 24 kHz
             {"type": "text", "data": str}           — text transcript segment
             {"type": "turn_complete"}               — model finished its turn
+            {"type": "interrupted"}                 — user speech detected; discard buffered audio
         """
         if self.session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
 
-        async for message in self.session.receive():
-            # Tool call cancellation (user interrupted during function execution)
-            tool_call_cancellation = getattr(message, "tool_call_cancellation", None)
-            if tool_call_cancellation:
-                logger.info("Tool calls cancelled: %s", tool_call_cancellation.ids)
-                continue
-
-            # Tool call from model — execute and respond before continuing
-            tool_call = getattr(message, "tool_call", None)
-            if tool_call:
-                await self._handle_tool_call(tool_call)
-                continue
-
-            # Regular server content (audio/text)
-            server_content = getattr(message, "server_content", None)
-            if server_content is None:
-                continue
-
-            # Interrupted — VAD detected user speech; stop audio immediately
-            if getattr(server_content, "interrupted", False):
-                yield {"type": "interrupted"}
-                continue
-
-            model_turn = getattr(server_content, "model_turn", None)
-            if model_turn is not None:
-                parts = getattr(model_turn, "parts", None) or []
-                for part in parts:
-                    inline_data = getattr(part, "inline_data", None)
-                    if inline_data is not None and inline_data.data:
-                        yield {"type": "audio", "data": inline_data.data}
+        # Outer loop: the SDK's session.receive() exits after each turn_complete.
+        # We must re-enter it after every turn so the session stays alive across
+        # multiple exchanges — without this the app goes silent after the first reply.
+        while True:
+            async for message in self.session.receive():
+                try:
+                    # Tool call cancellation (user interrupted during function execution)
+                    tool_call_cancellation = getattr(message, "tool_call_cancellation", None)
+                    if tool_call_cancellation:
+                        logger.info("Tool calls cancelled: %s", tool_call_cancellation.ids)
                         continue
 
-                    text = getattr(part, "text", None)
-                    if text:
-                        yield {"type": "text", "data": text}
+                    # Tool call from model — execute and respond before continuing
+                    tool_call = getattr(message, "tool_call", None)
+                    if tool_call:
+                        await self._handle_tool_call(tool_call)
+                        continue
 
-            turn_complete = getattr(server_content, "turn_complete", False)
-            if turn_complete:
-                yield {"type": "turn_complete"}
+                    # Regular server content (audio/text)
+                    server_content = getattr(message, "server_content", None)
+                    if server_content is None:
+                        continue
+
+                    # Interrupted — VAD detected user speech; discard remaining audio
+                    if getattr(server_content, "interrupted", False):
+                        yield {"type": "interrupted"}
+                        continue
+
+                    model_turn = getattr(server_content, "model_turn", None)
+                    if model_turn is not None:
+                        parts = getattr(model_turn, "parts", None) or []
+                        for part in parts:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data is not None and inline_data.data:
+                                yield {"type": "audio", "data": inline_data.data}
+                                continue
+
+                            text = getattr(part, "text", None)
+                            if text:
+                                yield {"type": "text", "data": text}
+
+                    # generation_complete fires before turn_complete on a normal turn
+                    if getattr(server_content, "generation_complete", False):
+                        logger.debug("Generation complete (not interrupted)")
+
+                    turn_complete = getattr(server_content, "turn_complete", False)
+                    if turn_complete:
+                        yield {"type": "turn_complete"}
+                        # SDK's session.receive() exits here; outer while True restarts it
+
+                except (AttributeError, TypeError, KeyError) as parse_exc:
+                    logger.exception(
+                        "Failed to parse Gemini message — skipping (message=%r): %s",
+                        message,
+                        parse_exc,
+                    )
+                    continue

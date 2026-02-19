@@ -8,15 +8,21 @@ and text transcripts flow back to the browser.
 
 import asyncio
 import base64
+import binascii
 import json
 import logging
 import os
 import time
 import uuid
 from pathlib import Path
+import sys
+
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -47,10 +53,15 @@ try:
     from google.cloud import firestore as firestore_module
     firestore_client = firestore_module.AsyncClient(project=GCP_PROJECT_ID)
     logger.info("Firestore client initialized (project=%s)", GCP_PROJECT_ID)
+except ImportError:
+    logger.info("google-cloud-firestore not installed — session logging disabled (OK for local dev)")
 except Exception:
-    logger.info("Firestore not available — session logging disabled (OK for local dev)")
-
-BASE_DIR = Path(__file__).resolve().parent
+    logger.error(
+        "Firestore client failed to initialize for project=%s — session logging disabled. "
+        "Check service account credentials and IAM permissions.",
+        GCP_PROJECT_ID,
+        exc_info=True,
+    )
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 
 app = FastAPI(
@@ -79,7 +90,6 @@ async def serve_index() -> FileResponse:
     """Serve the frontend single-page application."""
     index_path = FRONTEND_DIR / "index.html"
     if not index_path.is_file():
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="index.html not found")
     return FileResponse(str(index_path))
 
@@ -88,6 +98,10 @@ async def serve_index() -> FileResponse:
 async def health_check() -> dict:
     """Liveness probe for Cloud Run."""
     return {"status": "ok", "service": "seeme-tutor"}
+
+
+class _StudentEndedSession(Exception):
+    """Raised by _forward_to_gemini when the student explicitly ends the session."""
 
 
 @app.websocket("/ws")
@@ -103,6 +117,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "audio", "data": "<base64-encoded PCM 16-bit 24 kHz>"}
         {"type": "text", "data": "<transcript segment>"}
         {"type": "turn_complete"}
+        {"type": "interrupted"}
         {"type": "session_limit"}
         {"type": "error", "data": "<description>"}
     """
@@ -127,7 +142,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "duration_seconds": None,
             })
         except Exception:
-            logger.warning("Session %s: failed to log start to Firestore", session_id)
+            logger.warning("Session %s: failed to log start to Firestore", session_id, exc_info=True)
 
     # Tool handler — executes function calls from Gemini, writes to Firestore
     async def tool_handler(name: str, args: dict) -> dict:
@@ -145,50 +160,65 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     })
                 except Exception:
                     logger.exception("Session %s: failed to write progress", session_id)
+                    return {"result": "error", "detail": "Progress could not be saved — please continue the session normally."}
             return {"result": "saved", "topic": topic, "status": status}
         logger.warning("Session %s: unknown tool '%s'", session_id, name)
         return {"error": f"Unknown function: {name}"}
 
     ended_reason = "disconnect"
     try:
-        async with GeminiLiveSession(
-            api_key=GEMINI_API_KEY,
-            tool_handler=tool_handler,
-        ) as gemini_session:
-            forward_task = asyncio.create_task(
-                _forward_to_gemini(websocket, gemini_session),
-                name="forward_to_gemini",
-            )
-            receive_task = asyncio.create_task(
-                _forward_to_client(websocket, gemini_session),
-                name="forward_to_client",
-            )
-            timer_task = asyncio.create_task(
-                _session_timer(websocket, SESSION_TIMEOUT_SECONDS),
-                name="session_timer",
-            )
+        try:
+            async with GeminiLiveSession(
+                api_key=GEMINI_API_KEY,
+                tool_handler=tool_handler,
+            ) as gemini_session:
+                forward_task = asyncio.create_task(
+                    _forward_to_gemini(websocket, gemini_session),
+                    name="forward_to_gemini",
+                )
+                receive_task = asyncio.create_task(
+                    _forward_to_client(websocket, gemini_session),
+                    name="forward_to_client",
+                )
+                timer_task = asyncio.create_task(
+                    _session_timer(websocket, SESSION_TIMEOUT_SECONDS),
+                    name="session_timer",
+                )
 
-            done, pending = await asyncio.wait(
-                {forward_task, receive_task, timer_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+                done, pending = await asyncio.wait(
+                    {forward_task, receive_task, timer_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    logger.exception("Error while cancelling task %s", task.get_name())
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception:
+                        logger.exception("Error while cancelling task %s", task.get_name())
 
-            for task in done:
-                if task is timer_task and task.exception() is None:
-                    ended_reason = "session_limit"
-                else:
-                    exc = task.exception()
-                    if exc is not None:
-                        logger.error("Task %s raised: %s", task.get_name(), exc)
+                for task in done:
+                    try:
+                        exc = task.exception()
+                    except asyncio.CancelledError:
+                        logger.debug("Task %s was cancelled", task.get_name())
+                        continue
+                    if task is timer_task and exc is None:
+                        ended_reason = "limit"
+                    elif isinstance(exc, _StudentEndedSession):
+                        ended_reason = "student_ended"
+                    elif exc is not None:
+                        logger.error("Task %s raised: %s", task.get_name(), exc, exc_info=exc)
+
+        except Exception as exc:
+            logger.exception("Session %s: Gemini session error: %s", session_id, exc)
+            await _send_json(websocket, {
+                "type": "error",
+                "data": "Could not connect to the tutoring service. Please try again in a moment.",
+            })
+            ended_reason = "gemini_error"
 
     finally:
         duration = int(time.time() - session_start)
@@ -199,15 +229,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     "duration_seconds": duration,
                 })
             except Exception:
-                logger.warning("Session %s: failed to log end to Firestore", session_id)
+                logger.warning("Session %s: failed to log end to Firestore", session_id, exc_info=True)
         logger.info("Session %s ended after %ds (reason: %s)", session_id, duration, ended_reason)
 
 
 async def _session_timer(websocket: WebSocket, timeout: float) -> None:
     """Send session_limit after the timeout expires, ending the session gracefully."""
     await asyncio.sleep(timeout)
-    await _send_json(websocket, {"type": "session_limit"})
-    logger.info("Session timeout reached (%ds)", int(timeout))
+    logger.info("Session timeout reached (%ds) — notifying client", int(timeout))
+    try:
+        await websocket.send_text(json.dumps({"type": "session_limit"}))
+    except Exception:
+        logger.warning(
+            "Could not deliver session_limit to client (WebSocket already closed)",
+            exc_info=True,
+        )
 
 
 async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -> None:
@@ -232,7 +268,10 @@ async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -
                 continue
 
             # Control messages (no data payload)
-            if msg_type in ("mic_stop", "camera_off", "end_session"):
+            if msg_type == "end_session":
+                logger.info("Student requested end_session")
+                raise _StudentEndedSession()
+            if msg_type in ("mic_stop", "camera_off"):
                 logger.info("Control message from browser: '%s'", msg_type)
                 continue
 
@@ -243,8 +282,12 @@ async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -
 
             try:
                 raw_bytes = base64.b64decode(encoded_data)
-            except Exception:
-                logger.warning("Failed to base64-decode browser message of type '%s'", msg_type)
+            except binascii.Error:
+                logger.warning(
+                    "Invalid base64 data in browser message of type '%s' (len=%d) — ignoring frame",
+                    msg_type,
+                    len(encoded_data) if isinstance(encoded_data, str) else -1,
+                )
                 continue
 
             if msg_type == "audio":
@@ -256,9 +299,14 @@ async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_gemini)")
+    except _StudentEndedSession:
+        raise
     except Exception as exc:
         logger.exception("Unexpected error in forward_to_gemini: %s", exc)
-        await _send_json(websocket, {"type": "error", "data": str(exc)})
+        await _send_json(websocket, {
+            "type": "error",
+            "data": "The connection to the tutor was interrupted. Please refresh to start a new session.",
+        })
 
 
 async def _forward_to_client(websocket: WebSocket, session: GeminiLiveSession) -> None:
@@ -284,6 +332,10 @@ async def _forward_to_client(websocket: WebSocket, session: GeminiLiveSession) -
                 await _send_json(websocket, {"type": "turn_complete"})
                 logger.debug("Turn complete signal sent to browser")
 
+            elif event_type == "interrupted":
+                await _send_json(websocket, {"type": "interrupted"})
+                logger.debug("Interrupted signal sent to browser")
+
             else:
                 logger.warning("Unknown event type from Gemini session: '%s'", event_type)
 
@@ -291,12 +343,24 @@ async def _forward_to_client(websocket: WebSocket, session: GeminiLiveSession) -
         logger.info("Browser disconnected (forward_to_client)")
     except Exception as exc:
         logger.exception("Unexpected error in forward_to_client: %s", exc)
-        await _send_json(websocket, {"type": "error", "data": str(exc)})
+        await _send_json(websocket, {
+            "type": "error",
+            "data": "The tutor connection was interrupted. Please refresh to start a new session.",
+        })
 
 
 async def _send_json(websocket: WebSocket, payload: dict) -> None:
     """Send a JSON payload to the browser, ignoring errors on a closed socket."""
     try:
         await websocket.send_text(json.dumps(payload))
+    except (RuntimeError, WebSocketDisconnect):
+        logger.debug(
+            "Could not send '%s' to browser (socket closed)",
+            payload.get("type"),
+        )
     except Exception:
-        logger.debug("Could not send message to browser (socket likely closed): %s", payload.get("type"))
+        logger.warning(
+            "Unexpected error sending '%s' to browser",
+            payload.get("type"),
+            exc_info=True,
+        )
