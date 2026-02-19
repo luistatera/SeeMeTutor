@@ -4,13 +4,13 @@
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Firebase%20Hosting-orange?style=flat-square)](https://seeme-tutor.web.app)
 [![Cloud Run](https://img.shields.io/badge/Backend-Cloud%20Run-blue?style=flat-square)](https://console.cloud.google.com/run)
-[![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash%20Live-green?style=flat-square)](https://ai.google.dev/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash%20Live-green?style=flat-square)](https://ai.google.dev/)
 
 ---
 
 ## What Is SeeMe Tutor?
 
-SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gemini 2.0 Flash Live API**. It sees your homework through the camera, hears your questions through the microphone, and guides you — in your own language — using the Socratic method. It never just gives you the answer.
+SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gemini 2.5 Flash Live API**. It sees your homework through the camera, hears your questions through the microphone, and guides you — in your own language — using the Socratic method. It never just gives you the answer.
 
 **Key differentiators:**
 
@@ -38,7 +38,7 @@ flowchart TD
     end
 
     subgraph Google["Google AI"]
-        GEMINI["Gemini 2.0 Flash Live API\ngemini-2.0-flash-live-preview-04-09"]
+        GEMINI["Gemini 2.5 Flash Live API\ngemini-2.5-flash-native-audio-preview-12-2025"]
     end
 
     subgraph GCP["GCP Supporting Services"]
@@ -262,7 +262,7 @@ After deployment:
 
 | GCP Service | How It Is Used |
 |-------------|---------------|
-| **Gemini 2.0 Flash Live API** | Core AI engine — real-time bidirectional audio and video streaming, multilingual response generation, Socratic tutoring logic |
+| **Gemini 2.5 Flash Live API** | Core AI engine — real-time bidirectional audio and video streaming, multilingual response generation, Socratic tutoring logic |
 | **Cloud Run** | Serverless hosting for the FastAPI WebSocket backend; auto-scales to zero when idle, scales up on demand |
 | **Firebase Hosting** | Hosts the PWA frontend on a global CDN; serves over HTTPS (required for camera/mic browser APIs) |
 | **Firestore** | Stores session metadata (start time, duration, language detected, end reason) for analytics |
@@ -292,7 +292,7 @@ In production (Cloud Run), `GEMINI_API_KEY` is mounted from Secret Manager via `
 SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 
 **Technology stack:** 100% Google and GCP.
-- AI: Gemini 2.0 Flash Live API (`gemini-2.0-flash-live-preview-04-09`) via the `google-genai` Python SDK
+- AI: Gemini 2.5 Flash Live API (`gemini-2.5-flash-native-audio-preview-12-2025`) via the `google-genai` Python SDK
 - Backend: FastAPI on Cloud Run
 - Frontend: Firebase Hosting
 - Database: Firestore

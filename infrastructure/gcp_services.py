@@ -10,7 +10,7 @@ services within the SeeMe Tutor architecture:
   Secret Manager       | Stores the Gemini API key securely for Cloud Run
   Cloud Run            | Hosts the FastAPI + WebSocket backend
   Firebase Hosting     | Serves the PWA frontend (index.html)
-  Gemini 2.0 Flash     | Real-time multimodal AI tutor (Live API, audio+video)
+  Gemini 2.5 Flash     | Real-time multimodal AI tutor (Live API, audio+video)
   Live API             |
 
 Run this file directly to verify all GCP services are reachable:
@@ -38,7 +38,7 @@ from google.genai import types
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
 FIRESTORE_COLLECTION = os.environ.get("FIRESTORE_COLLECTION", "sessions")
 SECRET_NAME = "gemini-api-key"
-GEMINI_MODEL = "gemini-2.0-flash-live-preview-04-09"
+GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 DIVIDER = "-" * 60
 
@@ -146,7 +146,7 @@ def prove_secret_manager() -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Gemini 2.0 Flash Live API — real-time multimodal AI
+# 3. Gemini 2.5 Flash Live API — real-time multimodal AI
 # ---------------------------------------------------------------------------
 
 def prove_gemini(api_key: str | None) -> bool:
@@ -158,7 +158,7 @@ def prove_gemini(api_key: str | None) -> bool:
     In production, SeeMe Tutor uses the Live API for bidirectional audio/video
     streaming at low latency, which is the core feature of the application.
     """
-    _header("Gemini 2.0 Flash — Real-Time Multimodal AI")
+    _header("Gemini 2.5 Flash — Real-Time Multimodal AI")
 
     if not api_key:
         _fail("No Gemini API key available — skipping Gemini proof")
@@ -174,7 +174,7 @@ def prove_gemini(api_key: str | None) -> bool:
             "and that you are ready to help students with their homework."
         )
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=probe_prompt,
         )
         reply_text = response.text.strip() if response.text else "(no text)"

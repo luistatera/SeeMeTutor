@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SeeMe Tutor is a real-time multimodal AI tutoring application built for the Gemini Live Agent Challenge. It leverages the **Gemini 2.0 Flash Live API** to see a student's homework through the camera, hear their questions, and guide them using the **Socratic method** in their preferred language (English, Portuguese, German).
+SeeMe Tutor is a real-time multimodal AI tutoring application built for the Gemini Live Agent Challenge. It leverages the **Gemini 2.5 Flash Live API** to see a student's homework through the camera, hear their questions, and guide them using the **Socratic method** in their preferred language (English, Portuguese, German).
 
 ### Key Features
 *   **Live Vision:** Processes continuous camera feed to understand handwritten work, diagrams, and text.
@@ -14,7 +14,7 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built for the Gemi
 ### Architecture
 *   **Frontend:** Progressive Web App (PWA) using plain HTML/CSS/JS. Handles WebRTC (camera), AudioContext (microphone/playback), and WebSocket communication. Hosted on **Firebase Hosting**.
 *   **Backend:** **FastAPI** (Python) service on **Google Cloud Run**. Manages WebSocket connections and bridges data to the Gemini Live API.
-*   **AI:** **Gemini 2.0 Flash Live API** via `google-genai` SDK.
+*   **AI:** **Gemini 2.5 Flash Live API** via `google-genai` SDK.
 *   **State:** **Firestore** for session persistence.
 *   **Secrets:** **Secret Manager** for API keys in production.
 

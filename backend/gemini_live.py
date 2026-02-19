@@ -13,7 +13,7 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash-live-preview-04-09"
+MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 SYSTEM_PROMPT = """You are SeeMe, a warm, patient, and encouraging tutor. You speak like a favorite teacher — enthusiastic but never rushed. Your name is SeeMe because you see the student's homework, hear their questions, and speak their language.
 
