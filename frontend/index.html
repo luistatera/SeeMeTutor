@@ -1054,12 +1054,24 @@ function wsConnect() {
   if (ws && ws.readyState <= WebSocket.OPEN) return;
   clearTimeout(wsReconnectTimer);
 
+  // Demo Access Code Check
+  let demoCode = localStorage.getItem('demoAccessCode');
+  if (!demoCode) {
+    demoCode = prompt("Please enter the Demo Access Code to connect:");
+    if (!demoCode) {
+      setStatus('error', 'Access code required');
+      showToast('Reload page to try again.', 0, true);
+      return;
+    }
+    localStorage.setItem('demoAccessCode', demoCode);
+  }
+
   setStatus('connecting');
   reconnectBanner.classList.remove('visible');
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
-  ws = new WebSocket(`${protocol}//${backendHost}/ws`);
+  ws = new WebSocket(`${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}`);
 
   ws.onopen = () => {
     state.wsStatus = 'connected';
@@ -1083,7 +1095,7 @@ function wsConnect() {
     // onclose will always follow; handle there
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     state.wsStatus = 'disconnected';
     disableMicBtn();
 
@@ -1092,6 +1104,14 @@ function wsConnect() {
     }
     if (state.isSpeaking) {
       setSpeakingState(false);
+    }
+
+    if (event.code === 1008) {
+      localStorage.removeItem('demoAccessCode');
+      state.wsAttempts = WS_MAX_ATTEMPTS; // prevent reconnect
+      setStatus('error');
+      showToast('Invalid Access Code. Please reload to try again.', 0, true);
+      return;
     }
 
     if (state.wsAttempts < WS_MAX_ATTEMPTS) {

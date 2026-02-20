@@ -50,7 +50,8 @@ PROJECT_ID="seeme-tutor"
 REGION="europe-west1"
 SERVICE_NAME="seeme-tutor"
 SERVICE_ACCOUNT="seeme-tutor-sa@seeme-tutor.iam.gserviceaccount.com"
-SECRET_NAME="gemini-api-key"
+SECRET_GEMINI="gemini-api-key"
+SECRET_DEMO_CODE="demo-access-code"
 MEMORY="512Mi"
 TIMEOUT="300"
 MIN_INSTANCES="0"
@@ -90,15 +91,16 @@ success "Active project: ${PROJECT_ID}"
 # ---------------------------------------------------------------------------
 # Step 2 — Verify Gemini API key exists in Secret Manager
 # ---------------------------------------------------------------------------
-step "Verifying Gemini API key in Secret Manager"
+step "Verifying secrets in Secret Manager"
 
-gcloud secrets versions access latest \
-    --secret="${SECRET_NAME}" \
-    --project="${PROJECT_ID}" &>/dev/null || \
-    error "Failed to read secret '${SECRET_NAME}' from Secret Manager. \
-Ensure it exists: gcloud secrets create ${SECRET_NAME} --project=${PROJECT_ID}"
-
-success "Secret '${SECRET_NAME}' verified in Secret Manager"
+for SECRET in "${SECRET_GEMINI}" "${SECRET_DEMO_CODE}"; do
+    gcloud secrets versions access latest \
+        --secret="${SECRET}" \
+        --project="${PROJECT_ID}" &>/dev/null || \
+        error "Failed to read secret '${SECRET}' from Secret Manager. \
+Ensure it exists: gcloud secrets create ${SECRET} --project=${PROJECT_ID}"
+    success "Secret '${SECRET}' verified in Secret Manager"
+done
 
 # ---------------------------------------------------------------------------
 # Step 3 — Build and deploy backend to Cloud Run
@@ -106,7 +108,7 @@ success "Secret '${SECRET_NAME}' verified in Secret Manager"
 step "Deploying backend to Cloud Run (region: ${REGION})"
 info "This builds the container via Cloud Build and deploys to Cloud Run..."
 info "Source: backend/"
-info "GEMINI_API_KEY will be mounted from Secret Manager at runtime"
+info "Secrets will be mounted from Secret Manager at runtime"
 
 # Build from project root so Dockerfile can COPY frontend/ alongside backend/
 cp backend/Dockerfile .
@@ -115,7 +117,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region="${REGION}" \
     --allow-unauthenticated \
     --service-account="${SERVICE_ACCOUNT}" \
-    --set-secrets="GEMINI_API_KEY=${SECRET_NAME}:latest" \
+    --set-secrets="GEMINI_API_KEY=${SECRET_GEMINI}:latest,DEMO_ACCESS_CODE=${SECRET_DEMO_CODE}:latest" \
     --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}" \
     --port="${PORT}" \
     --memory="${MEMORY}" \

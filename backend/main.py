@@ -51,6 +51,8 @@ else:
         "Set the variable in .env or as an environment variable."
     )
 
+DEMO_ACCESS_CODE = os.environ.get("DEMO_ACCESS_CODE", "")
+
 SESSION_TIMEOUT_SECONDS = 20 * 60  # 20-minute focused session limit
 
 
@@ -141,6 +143,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "error", "data": "<description>"}
     """
     await websocket.accept()
+
+    if DEMO_ACCESS_CODE:
+        client_code = websocket.query_params.get("code", "")
+        if client_code != DEMO_ACCESS_CODE:
+            logger.warning("Rejected connection: invalid demo access code")
+            await _send_json(websocket, {"type": "error", "data": "Invalid demo access code. Please reload and try again."})
+            await websocket.close(code=1008)
+            return
+
     raw_ip = websocket.headers.get("x-forwarded-for", websocket.client.host if websocket.client else "unknown")
     client_host = raw_ip.split(",")[0].strip()
     session_id = str(uuid.uuid4())
