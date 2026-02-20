@@ -59,7 +59,7 @@ flowchart TD
 
     subgraph Backend["FastAPI Backend (Cloud Run — europe-west1)"]
         WS["WebSocket Handler\nmain.py"]
-        GL["Gemini Live Session Manager\ngemini_live.py"]
+        GL["Gemini Live Session Manager\n(Built with google-adk)"]
     end
 
     subgraph Google["Google AI"]
@@ -238,7 +238,7 @@ SeeMe Tutor runs a real-time bidirectional pipeline between the browser and Gemi
 
 3. **WebSocket bridge** — The FastAPI backend receives the combined audio and video stream. It maintains one persistent WebSocket connection per user session and forwards data into an active Gemini Live API session.
 
-4. **Gemini Live session** — `gemini_live.py` manages the bidirectional Gemini streaming session. Audio chunks are forwarded as `types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")` and video frames as `types.Blob(data=frame_bytes, mime_type="image/jpeg")` using `session.send_realtime_input()`.
+4. **Gemini Live session** — The backend uses the **Google Agent Development Kit (ADK)** to manage the bidirectional Gemini streaming session. The ADK handles tool routing (e.g., dictionary lookups) and maintains the multi-turn conversation state. Audio chunks are forwarded to the model and video frames as images.
 
 5. **Response audio** — Gemini returns audio responses as PCM at 24kHz. The backend streams these back to the browser over the WebSocket.
 
@@ -295,6 +295,7 @@ After deployment:
 | GCP Service | How It Is Used |
 |-------------|---------------|
 | **Gemini 2.5 Flash Live API** | Core AI engine — real-time bidirectional audio and video streaming, multilingual response generation, Socratic tutoring logic |
+| **Google ADK** | Agent Development Kit orchestrates the streaming session, routes tool calls, and manages state |
 | **Cloud Run** | Serverless hosting for the FastAPI WebSocket backend; auto-scales to zero when idle, scales up on demand |
 | **Firebase Hosting** | Hosts the PWA frontend on a global CDN; serves over HTTPS (required for camera/mic browser APIs) |
 | **Firestore** | Stores session metadata (start time, duration, language detected, end reason) for analytics |
@@ -326,6 +327,7 @@ SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 **Technology stack:** 100% Google and GCP.
 
 - AI: Gemini 2.5 Flash Live API (`gemini-2.5-flash-native-audio-preview-12-2025`) via the `google-genai` Python SDK
+- Agent Framework: Google Agent Development Kit (ADK) via `google-adk`
 - Pedagogy: [LearnLM](https://cloud.google.com/solutions/learnlm)-informed system instructions aligned with Google's learning science research
 - Backend: FastAPI on Cloud Run
 - Frontend: Firebase Hosting

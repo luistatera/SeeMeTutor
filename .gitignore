@@ -39,6 +39,7 @@ extra_miles.md
 .claude/
 .cursor/
 .aider/
+.scripts/
 
 # ---------------------------------------------------------------------------
 # Python
@@ -105,3 +106,6 @@ Thumbs.db
 *.log
 logs/
 Strategy and Technical Framework.csv
+docs/context.md
+docs/architecture-flow.md
+docs/story_workshop.md

@@ -27,7 +27,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from gemini_live import GeminiLiveSession
+from google.adk import Runner
+from google.adk.sessions import InMemorySessionService
+
+from gemini_live import ADKLiveSession, APP_NAME
+from tutor_agent.agent import root_agent
 
 load_dotenv()
 
@@ -38,7 +42,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
+if GEMINI_API_KEY:
+    os.environ.setdefault("GOOGLE_API_KEY", GEMINI_API_KEY)
+else:
     logger.warning(
         "GEMINI_API_KEY is not set. WebSocket connections will fail. "
         "Set the variable in .env or as an environment variable."
@@ -68,6 +74,13 @@ app = FastAPI(
     title="SeeMe Tutor",
     description="Real-time multimodal AI tutoring via Gemini Live API.",
     version="1.0.0",
+)
+
+_session_service = InMemorySessionService()
+_runner = Runner(
+    app_name=APP_NAME,
+    agent=root_agent,
+    session_service=_session_service,
 )
 
 app.add_middleware(
@@ -144,33 +157,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         except Exception:
             logger.warning("Session %s: failed to log start to Firestore", session_id, exc_info=True)
 
-    # Tool handler — executes function calls from Gemini, writes to Firestore
-    async def tool_handler(name: str, args: dict) -> dict:
-        if name == "log_progress":
-            topic = args.get("topic", "unknown")
-            status = args.get("status", "unknown")
-            logger.info("Session %s: progress — %s → %s", session_id, topic, status)
-            if firestore_client:
-                try:
-                    progress_ref = firestore_client.collection("sessions").document(session_id)
-                    await progress_ref.collection("progress").add({
-                        "topic": topic,
-                        "status": status,
-                        "timestamp": time.time(),
-                    })
-                except Exception:
-                    logger.exception("Session %s: failed to write progress", session_id)
-                    return {"result": "error", "detail": "Progress could not be saved — please continue the session normally."}
-            return {"result": "saved", "topic": topic, "status": status}
-        logger.warning("Session %s: unknown tool '%s'", session_id, name)
-        return {"error": f"Unknown function: {name}"}
+    # Create ADK session with state accessible to tools (e.g. log_progress)
+    await _session_service.create_session(
+        app_name=APP_NAME,
+        user_id="browser",
+        session_id=session_id,
+        state={"session_id": session_id, "gcp_project_id": GCP_PROJECT_ID},
+    )
 
     ended_reason = "disconnect"
     try:
         try:
-            async with GeminiLiveSession(
-                api_key=GEMINI_API_KEY,
-                tool_handler=tool_handler,
+            async with ADKLiveSession(
+                runner=_runner,
+                user_id="browser",
+                session_id=session_id,
             ) as gemini_session:
                 forward_task = asyncio.create_task(
                     _forward_to_gemini(websocket, gemini_session),
@@ -246,7 +247,7 @@ async def _session_timer(websocket: WebSocket, timeout: float) -> None:
         )
 
 
-async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -> None:
+async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession) -> None:
     """
     Receive JSON messages from the browser and forward media to Gemini.
 
@@ -291,9 +292,9 @@ async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -
                 continue
 
             if msg_type == "audio":
-                await session.send_audio(raw_bytes)
+                session.send_audio(raw_bytes)
             elif msg_type == "video":
-                await session.send_video_frame(raw_bytes)
+                session.send_video_frame(raw_bytes)
             else:
                 logger.warning("Unknown message type from browser: '%s'", msg_type)
 
@@ -309,7 +310,7 @@ async def _forward_to_gemini(websocket: WebSocket, session: GeminiLiveSession) -
         })
 
 
-async def _forward_to_client(websocket: WebSocket, session: GeminiLiveSession) -> None:
+async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> None:
     """
     Receive responses from Gemini and forward them to the browser.
 
