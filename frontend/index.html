@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" /><meta name="backend-host" content="seeme-tutor-mycrnnbwha-ew.a.run.app" />
+  <meta charset="UTF-8" />
+  <meta name="backend-host" content="seeme-tutor-mycrnnbwha-ew.a.run.app" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0D1B2A" />
-  <meta name="description" content="SeeMe Tutor — Real-time AI tutor that sees your homework and guides you with Socratic questions." />
+  <meta name="description"
+    content="SeeMe Tutor — Real-time AI tutor that sees your homework and guides you with Socratic questions." />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -16,40 +19,43 @@
     /* =====================================================================
        RESET & BASE
     ===================================================================== */
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
 
     :root {
-      --bg-primary:    #0D1B2A;
-      --bg-secondary:  #112236;
-      --bg-card:       #16293D;
+      --bg-primary: #0D1B2A;
+      --bg-secondary: #112236;
+      --bg-card: #16293D;
       --bg-card-hover: #1a3149;
-      --border:        rgba(66, 133, 244, 0.18);
-      --blue:          #4285F4;
-      --blue-light:    #5a97f5;
-      --blue-glow:     rgba(66, 133, 244, 0.35);
-      --green:         #34A853;
-      --green-glow:    rgba(52, 168, 83, 0.35);
-      --red:           #EA4335;
-      --red-glow:      rgba(234, 67, 53, 0.4);
-      --yellow:        #FBBC04;
-      --text-primary:  #E8EFF8;
-      --text-secondary:#8DA8C4;
-      --text-muted:    #4A6A88;
-      --radius-sm:     8px;
-      --radius-md:     14px;
-      --radius-lg:     22px;
-      --radius-xl:     32px;
-      --shadow-card:   0 4px 24px rgba(0,0,0,0.4);
-      --shadow-btn:    0 4px 16px rgba(66,133,244,0.3);
-      --font:          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      --safe-bottom:   env(safe-area-inset-bottom, 0px);
+      --border: rgba(66, 133, 244, 0.18);
+      --blue: #4285F4;
+      --blue-light: #5a97f5;
+      --blue-glow: rgba(66, 133, 244, 0.35);
+      --green: #34A853;
+      --green-glow: rgba(52, 168, 83, 0.35);
+      --red: #EA4335;
+      --red-glow: rgba(234, 67, 53, 0.4);
+      --yellow: #FBBC04;
+      --text-primary: #E8EFF8;
+      --text-secondary: #8DA8C4;
+      --text-muted: #4A6A88;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 22px;
+      --radius-xl: 32px;
+      --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+      --shadow-btn: 0 4px 16px rgba(66, 133, 244, 0.3);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
 
-    html, body {
+    html,
+    body {
       height: 100%;
       overflow: hidden;
       background: var(--bg-primary);
@@ -64,7 +70,8 @@
     #app {
       display: flex;
       flex-direction: column;
-      height: 100dvh; /* dynamic viewport height for mobile */
+      height: 100dvh;
+      /* dynamic viewport height for mobile */
       max-width: 480px;
       margin: 0 auto;
       position: relative;
@@ -98,8 +105,13 @@
       line-height: 1;
     }
 
-    .logo-title .seeme { color: var(--blue); }
-    .logo-title .tutor { color: var(--text-primary); }
+    .logo-title .seeme {
+      color: var(--blue);
+    }
+
+    .logo-title .tutor {
+      color: var(--text-primary);
+    }
 
     .logo-tagline {
       font-size: 11px;
@@ -138,28 +150,77 @@
     }
 
     /* Status states */
-    .status-badge.connecting .status-dot  { background: var(--yellow); animation: pulse-dot 1.2s ease-in-out infinite; }
-    .status-badge.connecting .status-text { color: var(--yellow); }
+    .status-badge.connecting .status-dot {
+      background: var(--yellow);
+      animation: pulse-dot 1.2s ease-in-out infinite;
+    }
 
-    .status-badge.connected .status-dot   { background: var(--green); }
-    .status-badge.connected .status-text  { color: var(--green); }
-    .status-badge.connected               { border-color: var(--green-glow); }
+    .status-badge.connecting .status-text {
+      color: var(--yellow);
+    }
 
-    .status-badge.listening .status-dot   { background: var(--red); animation: pulse-dot 0.8s ease-in-out infinite; }
-    .status-badge.listening .status-text  { color: var(--red); }
-    .status-badge.listening               { border-color: var(--red-glow); }
+    .status-badge.connected .status-dot {
+      background: var(--green);
+    }
 
-    .status-badge.speaking .status-dot    { background: var(--blue); animation: pulse-dot 1s ease-in-out infinite; }
-    .status-badge.speaking .status-text   { color: var(--blue-light); }
-    .status-badge.speaking                { border-color: var(--blue-glow); }
+    .status-badge.connected .status-text {
+      color: var(--green);
+    }
 
-    .status-badge.error .status-dot       { background: var(--red); }
-    .status-badge.error .status-text      { color: var(--red); }
-    .status-badge.error                   { border-color: var(--red-glow); }
+    .status-badge.connected {
+      border-color: var(--green-glow);
+    }
+
+    .status-badge.listening .status-dot {
+      background: var(--red);
+      animation: pulse-dot 0.8s ease-in-out infinite;
+    }
+
+    .status-badge.listening .status-text {
+      color: var(--red);
+    }
+
+    .status-badge.listening {
+      border-color: var(--red-glow);
+    }
+
+    .status-badge.speaking .status-dot {
+      background: var(--blue);
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+
+    .status-badge.speaking .status-text {
+      color: var(--blue-light);
+    }
+
+    .status-badge.speaking {
+      border-color: var(--blue-glow);
+    }
+
+    .status-badge.error .status-dot {
+      background: var(--red);
+    }
+
+    .status-badge.error .status-text {
+      color: var(--red);
+    }
+
+    .status-badge.error {
+      border-color: var(--red-glow);
+    }
 
     @keyframes pulse-dot {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: 0.4; transform: scale(0.7); }
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.7);
+      }
     }
 
     /* =====================================================================
@@ -186,11 +247,13 @@
       height: 100%;
       object-fit: cover;
       display: none;
-      transform: scaleX(-1); /* mirror for user-facing cam */
+      transform: scaleX(-1);
+      /* mirror for user-facing cam */
     }
 
     #camera-canvas {
-      display: none; /* offscreen canvas for captures */
+      display: none;
+      /* offscreen canvas for captures */
     }
 
     .camera-placeholder {
@@ -257,7 +320,9 @@
       pointer-events: none;
     }
 
-    .wave-overlay.active { opacity: 1; }
+    .wave-overlay.active {
+      opacity: 1;
+    }
 
     .wave-bar {
       width: 3px;
@@ -266,17 +331,51 @@
       animation: wave-bar-anim 0.9s ease-in-out infinite;
     }
 
-    .wave-bar:nth-child(1) { height: 8px;  animation-delay: 0s; }
-    .wave-bar:nth-child(2) { height: 16px; animation-delay: 0.1s; }
-    .wave-bar:nth-child(3) { height: 24px; animation-delay: 0.2s; }
-    .wave-bar:nth-child(4) { height: 16px; animation-delay: 0.3s; }
-    .wave-bar:nth-child(5) { height: 8px;  animation-delay: 0.4s; }
-    .wave-bar:nth-child(6) { height: 20px; animation-delay: 0.15s; }
-    .wave-bar:nth-child(7) { height: 12px; animation-delay: 0.25s; }
+    .wave-bar:nth-child(1) {
+      height: 8px;
+      animation-delay: 0s;
+    }
+
+    .wave-bar:nth-child(2) {
+      height: 16px;
+      animation-delay: 0.1s;
+    }
+
+    .wave-bar:nth-child(3) {
+      height: 24px;
+      animation-delay: 0.2s;
+    }
+
+    .wave-bar:nth-child(4) {
+      height: 16px;
+      animation-delay: 0.3s;
+    }
+
+    .wave-bar:nth-child(5) {
+      height: 8px;
+      animation-delay: 0.4s;
+    }
+
+    .wave-bar:nth-child(6) {
+      height: 20px;
+      animation-delay: 0.15s;
+    }
+
+    .wave-bar:nth-child(7) {
+      height: 12px;
+      animation-delay: 0.25s;
+    }
 
     @keyframes wave-bar-anim {
-      0%, 100% { transform: scaleY(1); }
-      50%       { transform: scaleY(0.3); }
+
+      0%,
+      100% {
+        transform: scaleY(1);
+      }
+
+      50% {
+        transform: scaleY(0.3);
+      }
     }
 
     /* camera active corner badge */
@@ -294,7 +393,9 @@
       display: none;
     }
 
-    .camera-panel.camera-active .cam-live-badge { display: block; }
+    .camera-panel.camera-active .cam-live-badge {
+      display: block;
+    }
 
     /* =====================================================================
        TRANSCRIPT PANEL
@@ -313,9 +414,18 @@
       scrollbar-color: var(--border) transparent;
     }
 
-    .transcript-panel::-webkit-scrollbar { width: 4px; }
-    .transcript-panel::-webkit-scrollbar-track { background: transparent; }
-    .transcript-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .transcript-panel::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .transcript-panel::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .transcript-panel::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
 
     .transcript-empty {
       color: var(--text-muted);
@@ -332,7 +442,9 @@
       display: none;
     }
 
-    #transcript-text.visible { display: block; }
+    #transcript-text.visible {
+      display: block;
+    }
 
     .transcript-label {
       font-size: 10px;
@@ -372,7 +484,9 @@
       position: relative;
     }
 
-    .ctrl-btn:active { transform: scale(0.92); }
+    .ctrl-btn:active {
+      transform: scale(0.92);
+    }
 
     .ctrl-btn svg {
       width: 22px;
@@ -426,12 +540,18 @@
       opacity: 0;
     }
 
-    .mic-ring-1 { border-color: var(--red-glow); }
-    .mic-ring-2 { border-color: rgba(234, 67, 53, 0.2); }
+    .mic-ring-1 {
+      border-color: var(--red-glow);
+    }
+
+    .mic-ring-2 {
+      border-color: rgba(234, 67, 53, 0.2);
+    }
 
     .mic-btn-wrapper.listening .mic-ring-1 {
       animation: ring-pulse 1.4s ease-out infinite;
     }
+
     .mic-btn-wrapper.listening .mic-ring-2 {
       animation: ring-pulse 1.4s ease-out 0.4s infinite;
     }
@@ -440,14 +560,22 @@
       border-color: var(--blue-glow);
       animation: ring-pulse 1.8s ease-out infinite;
     }
+
     .mic-btn-wrapper.speaking .mic-ring-2 {
       border-color: rgba(66, 133, 244, 0.2);
       animation: ring-pulse 1.8s ease-out 0.5s infinite;
     }
 
     @keyframes ring-pulse {
-      0%   { transform: scale(1);    opacity: 1; }
-      100% { transform: scale(2.2);  opacity: 0; }
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(2.2);
+        opacity: 0;
+      }
     }
 
     #mic-btn {
@@ -478,7 +606,9 @@
       stroke-linejoin: round;
     }
 
-    #mic-btn:active:not(:disabled) { transform: scale(0.93); }
+    #mic-btn:active:not(:disabled) {
+      transform: scale(0.93);
+    }
 
     #mic-btn:disabled {
       background: var(--bg-card);
@@ -510,8 +640,13 @@
       transition: color 0.3s;
     }
 
-    .mic-btn-wrapper.listening .mic-label { color: var(--red); }
-    .mic-btn-wrapper.speaking  .mic-label { color: var(--blue); }
+    .mic-btn-wrapper.listening .mic-label {
+      color: var(--red);
+    }
+
+    .mic-btn-wrapper.speaking .mic-label {
+      color: var(--blue);
+    }
 
     /* =====================================================================
        TOAST NOTIFICATION
@@ -572,8 +707,13 @@
       font-weight: 700;
     }
 
-    .loader-logo .seeme { color: var(--blue); }
-    .loader-logo .tutor { color: var(--text-primary); }
+    .loader-logo .seeme {
+      color: var(--blue);
+    }
+
+    .loader-logo .tutor {
+      color: var(--text-primary);
+    }
 
     .loader-spinner {
       width: 36px;
@@ -585,7 +725,9 @@
     }
 
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .loader-text {
@@ -599,7 +741,7 @@
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.65);
+      background: rgba(0, 0, 0, 0.65);
       backdrop-filter: blur(4px);
       display: flex;
       align-items: center;
@@ -676,7 +818,9 @@
       transition: background 0.2s;
     }
 
-    .modal-btn:hover { background: var(--blue-light); }
+    .modal-btn:hover {
+      background: var(--blue-light);
+    }
 
     /* =====================================================================
        SOUND WAVEFORM (mic button inner animation while listening)
@@ -693,19 +837,50 @@
       border-radius: 3px;
     }
 
-    .mic-wave-bar:nth-child(1) { height: 10px; animation: mic-w 0.6s ease-in-out infinite 0.0s; }
-    .mic-wave-bar:nth-child(2) { height: 18px; animation: mic-w 0.6s ease-in-out infinite 0.1s; }
-    .mic-wave-bar:nth-child(3) { height: 24px; animation: mic-w 0.6s ease-in-out infinite 0.2s; }
-    .mic-wave-bar:nth-child(4) { height: 18px; animation: mic-w 0.6s ease-in-out infinite 0.3s; }
-    .mic-wave-bar:nth-child(5) { height: 10px; animation: mic-w 0.6s ease-in-out infinite 0.4s; }
-
-    @keyframes mic-w {
-      0%, 100% { transform: scaleY(1); }
-      50%       { transform: scaleY(0.35); }
+    .mic-wave-bar:nth-child(1) {
+      height: 10px;
+      animation: mic-w 0.6s ease-in-out infinite 0.0s;
     }
 
-    .mic-btn-wrapper.listening #mic-btn .mic-icon { display: none; }
-    .mic-btn-wrapper.listening #mic-btn .mic-wave { display: flex; }
+    .mic-wave-bar:nth-child(2) {
+      height: 18px;
+      animation: mic-w 0.6s ease-in-out infinite 0.1s;
+    }
+
+    .mic-wave-bar:nth-child(3) {
+      height: 24px;
+      animation: mic-w 0.6s ease-in-out infinite 0.2s;
+    }
+
+    .mic-wave-bar:nth-child(4) {
+      height: 18px;
+      animation: mic-w 0.6s ease-in-out infinite 0.3s;
+    }
+
+    .mic-wave-bar:nth-child(5) {
+      height: 10px;
+      animation: mic-w 0.6s ease-in-out infinite 0.4s;
+    }
+
+    @keyframes mic-w {
+
+      0%,
+      100% {
+        transform: scaleY(1);
+      }
+
+      50% {
+        transform: scaleY(0.35);
+      }
+    }
+
+    .mic-btn-wrapper.listening #mic-btn .mic-icon {
+      display: none;
+    }
+
+    .mic-btn-wrapper.listening #mic-btn .mic-wave {
+      display: flex;
+    }
 
     /* =====================================================================
        END SESSION CONFIRMATION MODAL
@@ -733,21 +908,27 @@
       border: 1px solid var(--border) !important;
     }
 
-    .end-modal-cancel:hover { background: var(--bg-card-hover); }
+    .end-modal-cancel:hover {
+      background: var(--bg-card-hover);
+    }
 
     .end-modal-confirm {
       background: var(--red);
       color: #fff;
     }
 
-    .end-modal-confirm:hover { background: #c62828; }
+    .end-modal-confirm:hover {
+      background: #c62828;
+    }
 
     /* =====================================================================
        CONNECTIVITY BANNER
     ===================================================================== */
     .reconnect-banner {
       position: absolute;
-      top: 0; left: 0; right: 0;
+      top: 0;
+      left: 0;
+      right: 0;
       background: rgba(251, 188, 4, 0.15);
       border-bottom: 1px solid rgba(251, 188, 4, 0.4);
       color: var(--yellow);
@@ -760,889 +941,909 @@
       z-index: 50;
     }
 
-    .reconnect-banner.visible { display: block; }
+    .reconnect-banner.visible {
+      display: block;
+    }
   </style>
 </head>
 
 <body>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      LOADING OVERLAY
 ===================================================================== -->
-<div id="loading-overlay">
-  <div class="loader-logo">
-    <span class="seeme">SeeMe</span><span class="tutor"> Tutor</span>
+  <div id="loading-overlay">
+    <div class="loader-logo">
+      <span class="seeme">SeeMe</span><span class="tutor"> Tutor</span>
+    </div>
+    <div class="loader-spinner"></div>
+    <p class="loader-text">Starting session…</p>
   </div>
-  <div class="loader-spinner"></div>
-  <p class="loader-text">Starting session…</p>
-</div>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      PERMISSION MODAL
 ===================================================================== -->
-<div class="modal-backdrop" id="permission-modal">
-  <div class="modal">
-    <div class="modal-icon">
-      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+  <div class="modal-backdrop" id="permission-modal">
+    <div class="modal">
+      <div class="modal-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+      </div>
+      <h2 id="modal-title">Microphone Access Required</h2>
+      <p id="modal-body">SeeMe Tutor needs your microphone to hear your questions. Please allow microphone access when
+        prompted by your browser.</p>
+      <button class="modal-btn" id="modal-btn">Got it</button>
     </div>
-    <h2 id="modal-title">Microphone Access Required</h2>
-    <p id="modal-body">SeeMe Tutor needs your microphone to hear your questions. Please allow microphone access when prompted by your browser.</p>
-    <button class="modal-btn" id="modal-btn">Got it</button>
   </div>
-</div>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      END SESSION CONFIRMATION MODAL
 ===================================================================== -->
-<div class="modal-backdrop" id="end-session-modal">
-  <div class="modal">
-    <div class="modal-icon">
-      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </div>
-    <h2>End session?</h2>
-    <p>Your progress will be saved. You can start a new session any time.</p>
-    <div class="end-modal-actions">
-      <button class="end-modal-cancel" id="end-modal-cancel">Keep going</button>
-      <button class="end-modal-confirm" id="end-modal-confirm">End session</button>
+  <div class="modal-backdrop" id="end-session-modal">
+    <div class="modal">
+      <div class="modal-icon">
+        <svg viewBox="0 0 24 24">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </div>
+      <h2>End session?</h2>
+      <p>Your progress will be saved. You can start a new session any time.</p>
+      <div class="end-modal-actions">
+        <button class="end-modal-cancel" id="end-modal-cancel">Keep going</button>
+        <button class="end-modal-confirm" id="end-modal-confirm">End session</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      PRIVACY CONSENT MODAL
 ===================================================================== -->
-<div class="modal-backdrop" id="consent-modal">
-  <div class="modal">
-    <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
-      <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-      </svg>
+  <div class="modal-backdrop" id="consent-modal">
+    <div class="modal">
+      <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+      </div>
+      <h2>Before we start</h2>
+      <p>SeeMe Tutor streams your microphone audio and camera video to our server to provide real-time tutoring. No
+        audio or video is stored — only anonymized session metadata (duration, language) is saved to improve the
+        experience.</p>
+      <p id="consent-details"
+        style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
+        This is a supervised learning tool designed for use by children with parental oversight. Session data is stored
+        in Google Firestore with anonymized identifiers — no IP addresses or personal information are retained. Camera
+        and microphone access can be revoked at any time via your browser settings.
+      </p>
+      <a href="#" id="consent-learn-more"
+        style="display:inline-block; font-size:12px; color:var(--blue); margin-bottom:16px; text-decoration:none;">Learn
+        more</a>
+      <button class="modal-btn" id="consent-btn">I understand, let's start</button>
     </div>
-    <h2>Before we start</h2>
-    <p>SeeMe Tutor streams your microphone audio and camera video to our server to provide real-time tutoring. No audio or video is stored — only anonymized session metadata (duration, language) is saved to improve the experience.</p>
-    <p id="consent-details" style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
-      This is a supervised learning tool designed for use by children with parental oversight. Session data is stored in Google Firestore with anonymized identifiers — no IP addresses or personal information are retained. Camera and microphone access can be revoked at any time via your browser settings.
-    </p>
-    <a href="#" id="consent-learn-more" style="display:inline-block; font-size:12px; color:var(--blue); margin-bottom:16px; text-decoration:none;">Learn more</a>
-    <button class="modal-btn" id="consent-btn">I understand, let's start</button>
   </div>
-</div>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      MAIN APP
 ===================================================================== -->
-<div id="app">
+  <div id="app">
 
-  <!-- Reconnect banner -->
-  <div class="reconnect-banner" id="reconnect-banner">
-    Connection lost — reconnecting…
-  </div>
-
-  <!-- HEADER -->
-  <header>
-    <div class="logo">
-      <div class="logo-title">
-        <span class="seeme">SeeMe</span> <span class="tutor">Tutor</span>
-      </div>
-      <div class="logo-tagline">Your AI homework guide · <a href="#" id="privacy-link" style="color:var(--text-muted); text-decoration:none;">Privacy</a></div>
-    </div>
-    <div class="status-badge connecting" id="status-badge">
-      <div class="status-dot"></div>
-      <span class="status-text" id="status-text">Connecting…</span>
-    </div>
-  </header>
-
-  <!-- CAMERA PANEL -->
-  <div class="camera-panel" id="camera-panel">
-    <!-- Live video -->
-    <video id="camera-video" autoplay playsinline muted></video>
-    <!-- Offscreen canvas for frame capture -->
-    <canvas id="camera-canvas" width="640" height="480"></canvas>
-
-    <!-- Placeholder (shown when camera off) -->
-    <div class="camera-placeholder" id="camera-placeholder">
-      <div class="camera-icon-wrapper">
-        <!-- camera icon -->
-        <svg viewBox="0 0 24 24">
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-      </div>
-      <div class="camera-placeholder-text">
-        <p>Camera is off</p>
-        <span>Tap the camera button below<br/>to show your homework</span>
-      </div>
+    <!-- Reconnect banner -->
+    <div class="reconnect-banner" id="reconnect-banner">
+      Connection lost — reconnecting…
     </div>
 
-    <!-- Speaking wave overlay -->
-    <div class="wave-overlay" id="wave-overlay">
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-      <div class="wave-bar"></div>
-    </div>
-
-    <!-- Live badge -->
-    <div class="cam-live-badge">LIVE</div>
-  </div>
-
-  <!-- TRANSCRIPT PANEL -->
-  <div class="transcript-panel" id="transcript-panel">
-    <p class="transcript-empty" id="transcript-empty">Tutor's guidance will appear here…</p>
-    <div id="transcript-text">
-      <div class="transcript-label">SeeMe Tutor</div>
-      <span id="transcript-content"></span>
-    </div>
-  </div>
-
-  <!-- CONTROL BAR -->
-  <div class="control-bar">
-
-    <!-- Camera toggle -->
-    <button class="ctrl-btn" id="camera-btn" title="Toggle camera" aria-label="Toggle camera">
-      <svg viewBox="0 0 24 24">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-        <circle cx="12" cy="13" r="4"/>
-      </svg>
-    </button>
-
-    <!-- Mic button (main CTA) -->
-    <div class="mic-btn-wrapper" id="mic-btn-wrapper">
-      <div class="mic-ring mic-ring-1"></div>
-      <div class="mic-ring mic-ring-2"></div>
-      <button id="mic-btn" disabled title="Start speaking" aria-label="Start speaking">
-        <!-- Mic icon -->
-        <svg class="mic-icon" viewBox="0 0 24 24">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" y1="19" x2="12" y2="23"/>
-          <line x1="8" y1="23" x2="16" y2="23"/>
-        </svg>
-        <!-- Wave bars (listening state) -->
-        <div class="mic-wave">
-          <div class="mic-wave-bar"></div>
-          <div class="mic-wave-bar"></div>
-          <div class="mic-wave-bar"></div>
-          <div class="mic-wave-bar"></div>
-          <div class="mic-wave-bar"></div>
+    <!-- HEADER -->
+    <header>
+      <div class="logo">
+        <div class="logo-title">
+          <span class="seeme">SeeMe</span> <span class="tutor">Tutor</span>
         </div>
-      </button>
-      <span class="mic-label" id="mic-label">Tap to start</span>
+        <div class="logo-tagline">Your AI homework guide · <a href="#" id="privacy-link"
+            style="color:var(--text-muted); text-decoration:none;">Privacy</a></div>
+      </div>
+      <div class="status-badge connecting" id="status-badge">
+        <div class="status-dot"></div>
+        <span class="status-text" id="status-text">Connecting…</span>
+      </div>
+    </header>
+
+    <!-- CAMERA PANEL -->
+    <div class="camera-panel" id="camera-panel">
+      <!-- Live video -->
+      <video id="camera-video" autoplay playsinline muted></video>
+      <!-- Offscreen canvas for frame capture -->
+      <canvas id="camera-canvas" width="640" height="480"></canvas>
+
+      <!-- Placeholder (shown when camera off) -->
+      <div class="camera-placeholder" id="camera-placeholder">
+        <div class="camera-icon-wrapper">
+          <!-- camera icon -->
+          <svg viewBox="0 0 24 24">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+        </div>
+        <div class="camera-placeholder-text">
+          <p>Camera is off</p>
+          <span>Tap the camera button below<br />to show your homework</span>
+        </div>
+      </div>
+
+      <!-- Speaking wave overlay -->
+      <div class="wave-overlay" id="wave-overlay">
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+        <div class="wave-bar"></div>
+      </div>
+
+      <!-- Live badge -->
+      <div class="cam-live-badge">LIVE</div>
     </div>
 
-    <!-- End session -->
-    <button class="ctrl-btn end-btn" id="end-btn" title="End session" aria-label="End session">
-      <svg viewBox="0 0 24 24">
-        <line x1="18" y1="6" x2="6" y2="18"/>
-        <line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </button>
+    <!-- TRANSCRIPT PANEL -->
+    <div class="transcript-panel" id="transcript-panel">
+      <p class="transcript-empty" id="transcript-empty">Tutor's guidance will appear here…</p>
+      <div id="transcript-text">
+        <div class="transcript-label">SeeMe Tutor</div>
+        <span id="transcript-content"></span>
+      </div>
+    </div>
 
-  </div><!-- /.control-bar -->
+    <!-- CONTROL BAR -->
+    <div class="control-bar">
 
-</div><!-- /#app -->
+      <!-- Camera toggle -->
+      <button class="ctrl-btn" id="camera-btn" title="Toggle camera" aria-label="Toggle camera">
+        <svg viewBox="0 0 24 24">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+      </button>
 
-<!-- Toast -->
-<div id="toast"></div>
+      <!-- Mic button (main CTA) -->
+      <div class="mic-btn-wrapper" id="mic-btn-wrapper">
+        <div class="mic-ring mic-ring-1"></div>
+        <div class="mic-ring mic-ring-2"></div>
+        <button id="mic-btn" disabled title="Start speaking" aria-label="Start speaking">
+          <!-- Mic icon -->
+          <svg class="mic-icon" viewBox="0 0 24 24">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+          <!-- Wave bars (listening state) -->
+          <div class="mic-wave">
+            <div class="mic-wave-bar"></div>
+            <div class="mic-wave-bar"></div>
+            <div class="mic-wave-bar"></div>
+            <div class="mic-wave-bar"></div>
+            <div class="mic-wave-bar"></div>
+          </div>
+        </button>
+        <span class="mic-label" id="mic-label">Tap to start</span>
+      </div>
 
-<!-- ======================================================================
+      <!-- End session -->
+      <button class="ctrl-btn end-btn" id="end-btn" title="End session" aria-label="End session">
+        <svg viewBox="0 0 24 24">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+
+    </div><!-- /.control-bar -->
+
+  </div><!-- /#app -->
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- ======================================================================
      INLINE PWA MANIFEST
 ===================================================================== -->
-<script>
-(function() {
-  const manifest = {
-    name: "SeeMe Tutor",
-    short_name: "SeeMe",
-    description: "Real-time AI tutor that sees your homework and guides you with Socratic questions.",
-    start_url: "/",
-    display: "standalone",
-    orientation: "portrait",
-    background_color: "#0D1B2A",
-    theme_color: "#0D1B2A",
-    icons: [
-      {
-        src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230D1B2A'/%3E%3Ctext x='96' y='130' font-family='system-ui' font-weight='700' font-size='80' text-anchor='middle' fill='%234285F4'%3EST%3C/text%3E%3C/svg%3E",
-        sizes: "192x192",
-        type: "image/svg+xml",
-        purpose: "any maskable"
-      }
-    ]
-  };
-  const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-  document.getElementById('manifest-link').href = URL.createObjectURL(blob);
-})();
-</script>
+  <script>
+    (function () {
+      const manifest = {
+        name: "SeeMe Tutor",
+        short_name: "SeeMe",
+        description: "Real-time AI tutor that sees your homework and guides you with Socratic questions.",
+        start_url: "/",
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#0D1B2A",
+        theme_color: "#0D1B2A",
+        icons: [
+          {
+            src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230D1B2A'/%3E%3Ctext x='96' y='130' font-family='system-ui' font-weight='700' font-size='80' text-anchor='middle' fill='%234285F4'%3EST%3C/text%3E%3C/svg%3E",
+            sizes: "192x192",
+            type: "image/svg+xml",
+            purpose: "any maskable"
+          }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+      document.getElementById('manifest-link').href = URL.createObjectURL(blob);
+    })();
+  </script>
 
-<!-- ======================================================================
+  <!-- ======================================================================
      MAIN APPLICATION LOGIC
 ===================================================================== -->
-<script>
-'use strict';
+  <script>
+    'use strict';
 
-// =========================================================================
-// CONSTANTS
-// =========================================================================
-const MIC_SAMPLE_RATE    = 16000;
-const PLAYBACK_RATE      = 24000;
-const SCRIPT_BUFFER_SIZE = 1024;  // ~64ms at 16kHz — keeps chunks under 100ms for low latency
-const VIDEO_INTERVAL_MS  = 333;   // ~3 FPS — makes visual grounding feel live
-const VIDEO_QUALITY      = 0.7;
-const VIDEO_WIDTH        = 640;
-const VIDEO_HEIGHT       = 480;
-const WS_RECONNECT_DELAY = 3000;
-const WS_MAX_ATTEMPTS    = 5;
+    // =========================================================================
+    // CONSTANTS
+    // =========================================================================
+    const MIC_SAMPLE_RATE = 16000;
+    const PLAYBACK_RATE = 24000;
+    const SCRIPT_BUFFER_SIZE = 1024;  // ~64ms at 16kHz — keeps chunks under 100ms for low latency
+    const VIDEO_INTERVAL_MS = 1000;   // 1 FPS — lowers image token cost significantly
+    const VIDEO_QUALITY = 0.7;
+    const VIDEO_WIDTH = 640;
+    const VIDEO_HEIGHT = 480;
+    const WS_RECONNECT_DELAY = 3000;
+    const WS_MAX_ATTEMPTS = 5;
 
-// =========================================================================
-// STATE
-// =========================================================================
-const state = {
-  wsStatus:        'disconnected', // disconnected | connecting | connected | error
-  micActive:       false,
-  cameraActive:    false,
-  isSpeaking:      false,          // AI is currently outputting audio
-  discardingAudio: false,          // true after interrupted, cleared on turn_complete
-  wsAttempts:      0,
-  permGranted:     false,
-};
+    // =========================================================================
+    // STATE
+    // =========================================================================
+    const state = {
+      wsStatus: 'disconnected', // disconnected | connecting | connected | error
+      micActive: false,
+      cameraActive: false,
+      isSpeaking: false,          // AI is currently outputting audio
+      discardingAudio: false,          // true after interrupted, cleared on turn_complete
+      wsAttempts: 0,
+      permGranted: false,
+    };
 
-// =========================================================================
-// DOM REFS
-// =========================================================================
-const $ = id => document.getElementById(id);
+    // =========================================================================
+    // DOM REFS
+    // =========================================================================
+    const $ = id => document.getElementById(id);
 
-const loadingOverlay   = $('loading-overlay');
-const statusBadge      = $('status-badge');
-const statusText       = $('status-text');
-const cameraPanel      = $('camera-panel');
-const cameraVideo      = $('camera-video');
-const cameraCanvas     = $('camera-canvas');
-const cameraPlaceholder= $('camera-placeholder');
-const waveOverlay      = $('wave-overlay');
-const transcriptEmpty  = $('transcript-empty');
-const transcriptText   = $('transcript-text');
-const transcriptContent= $('transcript-content');
-const cameraBtn        = $('camera-btn');
-const micBtn           = $('mic-btn');
-const micBtnWrapper    = $('mic-btn-wrapper');
-const micLabel         = $('mic-label');
-const endBtn           = $('end-btn');
-const toast            = $('toast');
-const permModal        = $('permission-modal');
-const modalTitle       = $('modal-title');
-const modalBody        = $('modal-body');
-const modalBtn         = $('modal-btn');
-const reconnectBanner  = $('reconnect-banner');
-const endSessionModal  = $('end-session-modal');
-const endModalCancel   = $('end-modal-cancel');
-const endModalConfirm  = $('end-modal-confirm');
-const consentModal     = $('consent-modal');
-const consentBtn       = $('consent-btn');
-const consentLearnMore = $('consent-learn-more');
-const consentDetails   = $('consent-details');
-const privacyLink      = $('privacy-link');
+    const loadingOverlay = $('loading-overlay');
+    const statusBadge = $('status-badge');
+    const statusText = $('status-text');
+    const cameraPanel = $('camera-panel');
+    const cameraVideo = $('camera-video');
+    const cameraCanvas = $('camera-canvas');
+    const cameraPlaceholder = $('camera-placeholder');
+    const waveOverlay = $('wave-overlay');
+    const transcriptEmpty = $('transcript-empty');
+    const transcriptText = $('transcript-text');
+    const transcriptContent = $('transcript-content');
+    const cameraBtn = $('camera-btn');
+    const micBtn = $('mic-btn');
+    const micBtnWrapper = $('mic-btn-wrapper');
+    const micLabel = $('mic-label');
+    const endBtn = $('end-btn');
+    const toast = $('toast');
+    const permModal = $('permission-modal');
+    const modalTitle = $('modal-title');
+    const modalBody = $('modal-body');
+    const modalBtn = $('modal-btn');
+    const reconnectBanner = $('reconnect-banner');
+    const endSessionModal = $('end-session-modal');
+    const endModalCancel = $('end-modal-cancel');
+    const endModalConfirm = $('end-modal-confirm');
+    const consentModal = $('consent-modal');
+    const consentBtn = $('consent-btn');
+    const consentLearnMore = $('consent-learn-more');
+    const consentDetails = $('consent-details');
+    const privacyLink = $('privacy-link');
 
-// =========================================================================
-// WEBSOCKET
-// =========================================================================
-let ws = null;
-let wsReconnectTimer = null;
+    // =========================================================================
+    // WEBSOCKET
+    // =========================================================================
+    let ws = null;
+    let wsReconnectTimer = null;
 
-function wsConnect() {
-  if (ws && ws.readyState <= WebSocket.OPEN) return;
-  clearTimeout(wsReconnectTimer);
+    function wsConnect() {
+      if (ws && ws.readyState <= WebSocket.OPEN) return;
+      clearTimeout(wsReconnectTimer);
 
-  // Demo Access Code Check
-  let demoCode = localStorage.getItem('demoAccessCode');
-  if (!demoCode) {
-    demoCode = prompt("Please enter the Demo Access Code to connect:");
-    if (!demoCode) {
-      setStatus('error', 'Access code required');
-      showToast('Reload page to try again.', 0, true);
-      return;
-    }
-    localStorage.setItem('demoAccessCode', demoCode);
-  }
-
-  setStatus('connecting');
-  reconnectBanner.classList.remove('visible');
-
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
-  ws = new WebSocket(`${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}`);
-
-  ws.onopen = () => {
-    state.wsStatus = 'connected';
-    state.wsAttempts = 0;
-    setStatus('connected');
-    enableMicBtn();
-    showToast('Connected — tap the mic to begin', 3000);
-    wsSend({ type: 'consent_ack' });
-  };
-
-  ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      handleServerMessage(msg);
-    } catch (e) {
-      console.warn('[WS] Could not parse message:', e);
-    }
-  };
-
-  ws.onerror = () => {
-    // onclose will always follow; handle there
-  };
-
-  ws.onclose = (event) => {
-    state.wsStatus = 'disconnected';
-    disableMicBtn();
-
-    if (state.micActive) {
-      stopMic();
-    }
-    if (state.isSpeaking) {
-      setSpeakingState(false);
-    }
-
-    if (event.code === 1008) {
-      localStorage.removeItem('demoAccessCode');
-      state.wsAttempts = WS_MAX_ATTEMPTS; // prevent reconnect
-      setStatus('error');
-      showToast('Invalid Access Code. Please reload to try again.', 0, true);
-      return;
-    }
-
-    if (state.wsAttempts < WS_MAX_ATTEMPTS) {
-      state.wsAttempts++;
-      setStatus('connecting');
-      reconnectBanner.classList.add('visible');
-      wsReconnectTimer = setTimeout(wsConnect, WS_RECONNECT_DELAY);
-    } else {
-      setStatus('error');
-      reconnectBanner.classList.remove('visible');
-      showToast('Connection lost. Please reload the page.', 0, true);
-    }
-  };
-}
-
-function wsSend(obj) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(obj));
-  }
-}
-
-// =========================================================================
-// SERVER MESSAGE HANDLING
-// =========================================================================
-function handleServerMessage(msg) {
-  switch (msg.type) {
-    case 'audio':
-      // Discard audio chunks that arrived in-flight after an interruption
-      if (state.discardingAudio) break;
-      if (msg.data) playAudioChunk(msg.data);
-      if (!state.isSpeaking) setSpeakingState(true);
-      break;
-
-    case 'text':
-      if (msg.data) updateTranscript(msg.data);
-      break;
-
-    case 'turn_complete':
-      state.discardingAudio = false;
-      setSpeakingState(false);
-      finishTranscriptTurn();
-      break;
-
-    case 'interrupted':
-      // VAD detected student speech — stop audio and discard in-flight chunks
-      state.discardingAudio = true;
-      setSpeakingState(false);
-      nextAudioTime = 0;
-      // Fade the partial transcript to signal it was cut off
-      if (currentTranscriptSpan) {
-        currentTranscriptSpan.style.opacity = '0.5';
-        currentTranscriptSpan = null;
+      // Demo Access Code Check
+      let demoCode = localStorage.getItem('demoAccessCode');
+      if (!demoCode) {
+        demoCode = prompt("Please enter the Demo Access Code to connect:");
+        if (!demoCode) {
+          setStatus('error', 'Access code required');
+          showToast('Reload page to try again.', 0, true);
+          return;
+        }
+        localStorage.setItem('demoAccessCode', demoCode);
       }
-      break;
 
-    case 'session_limit':
-      // 20-minute session ended gracefully
+      setStatus('connecting');
+      reconnectBanner.classList.remove('visible');
+
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
+      ws = new WebSocket(`${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}`);
+
+      ws.onopen = () => {
+        state.wsStatus = 'connected';
+        state.wsAttempts = 0;
+        setStatus('connected');
+        enableMicBtn();
+        showToast('Connected — tap the mic to begin', 3000);
+        wsSend({ type: 'consent_ack' });
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          handleServerMessage(msg);
+        } catch (e) {
+          console.warn('[WS] Could not parse message:', e);
+        }
+      };
+
+      ws.onerror = () => {
+        // onclose will always follow; handle there
+      };
+
+      ws.onclose = (event) => {
+        state.wsStatus = 'disconnected';
+        disableMicBtn();
+
+        if (state.micActive) {
+          stopMic();
+        }
+        if (state.isSpeaking) {
+          setSpeakingState(false);
+        }
+
+        if (event.code === 1008) {
+          localStorage.removeItem('demoAccessCode');
+          state.wsAttempts = WS_MAX_ATTEMPTS; // prevent reconnect
+          setStatus('error');
+          showToast('Invalid Access Code. Please reload to try again.', 0, true);
+          return;
+        }
+
+        if (state.wsAttempts < WS_MAX_ATTEMPTS) {
+          state.wsAttempts++;
+          setStatus('connecting');
+          reconnectBanner.classList.add('visible');
+          wsReconnectTimer = setTimeout(wsConnect, WS_RECONNECT_DELAY);
+        } else {
+          setStatus('error');
+          reconnectBanner.classList.remove('visible');
+          showToast('Connection lost. Please reload the page.', 0, true);
+        }
+      };
+    }
+
+    function wsSend(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+      }
+    }
+
+    // =========================================================================
+    // SERVER MESSAGE HANDLING
+    // =========================================================================
+    function handleServerMessage(msg) {
+      switch (msg.type) {
+        case 'audio':
+          // Discard audio chunks that arrived in-flight after an interruption
+          if (state.discardingAudio) break;
+          if (msg.data) playAudioChunk(msg.data);
+          if (!state.isSpeaking) setSpeakingState(true);
+          break;
+
+        case 'text':
+          if (msg.data) updateTranscript(msg.data);
+          break;
+
+        case 'turn_complete':
+          state.discardingAudio = false;
+          setSpeakingState(false);
+          finishTranscriptTurn();
+          break;
+
+        case 'interrupted':
+          // VAD detected student speech — stop audio and discard in-flight chunks
+          state.discardingAudio = true;
+          setSpeakingState(false);
+          nextAudioTime = 0;
+          // Fade the partial transcript to signal it was cut off
+          if (currentTranscriptSpan) {
+            currentTranscriptSpan.style.opacity = '0.5';
+            currentTranscriptSpan = null;
+          }
+          break;
+
+        case 'session_limit':
+          // 20-minute session ended gracefully
+          stopMic();
+          stopCamera();
+          if (ws) { ws.close(); ws = null; }
+          clearTimeout(wsReconnectTimer);
+          state.wsAttempts = WS_MAX_ATTEMPTS; // prevent auto-reconnect
+          setStatus('connected', 'Session complete');
+          disableMicBtn();
+          cameraBtn.classList.add('disabled');
+          showToast('Great session! Reload to start a new one.', 0);
+          break;
+
+        case 'error':
+          showToast(msg.data || 'An error occurred', 4000, true);
+          break;
+
+        default:
+          // unknown message type — ignore
+          break;
+      }
+    }
+
+    // =========================================================================
+    // STATUS UI
+    // =========================================================================
+    function setStatus(statusKey, labelOverride) {
+      const labels = {
+        connecting: 'Connecting…',
+        connected: 'Ready',
+        listening: 'Listening…',
+        speaking: 'Responding…',
+        error: 'Connection error',
+      };
+
+      statusBadge.className = `status-badge ${statusKey}`;
+      statusText.textContent = labelOverride || labels[statusKey] || statusKey;
+    }
+
+    // =========================================================================
+    // MIC BUTTON STATE
+    // =========================================================================
+    function enableMicBtn() {
+      micBtn.disabled = false;
+      micLabel.textContent = 'Tap to start';
+    }
+
+    function disableMicBtn() {
+      if (state.micActive) stopMic();
+      micBtn.disabled = true;
+      micLabel.textContent = 'Connecting…';
+      micBtnWrapper.className = 'mic-btn-wrapper';
+    }
+
+    // =========================================================================
+    // AUDIO CAPTURE (mic → PCM Int16 16kHz → WebSocket)
+    // =========================================================================
+    let audioCtxCapture = null;
+    let micStream = null;
+    let scriptProcessor = null;
+    let micSourceNode = null;
+
+    async function startMic() {
+      if (state.micActive) return;
+
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: MIC_SAMPLE_RATE,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+      } catch (err) {
+        const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+        showPermModal(
+          denied ? 'Microphone Access Denied' : 'Microphone Unavailable',
+          denied
+            ? 'Please allow microphone access in your browser settings, then reload the page.'
+            : `Could not access microphone: ${err.message}`
+        );
+        return;
+      }
+
+      state.micActive = true;
+      state.permGranted = true;
+
+      // Build audio pipeline
+      audioCtxCapture = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: MIC_SAMPLE_RATE });
+      micSourceNode = audioCtxCapture.createMediaStreamSource(micStream);
+      scriptProcessor = audioCtxCapture.createScriptProcessor(SCRIPT_BUFFER_SIZE, 1, 1);
+
+      scriptProcessor.onaudioprocess = (e) => {
+        if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+        const float32 = e.inputBuffer.getChannelData(0);
+        const int16 = float32ToInt16(float32);
+        const b64 = arrayBufferToBase64(int16.buffer);
+
+        wsSend({ type: 'audio', data: b64 });
+      };
+
+      micSourceNode.connect(scriptProcessor);
+      scriptProcessor.connect(audioCtxCapture.destination);
+
+      // UI
+      micBtnWrapper.className = 'mic-btn-wrapper listening';
+      micLabel.textContent = 'Tap to stop';
+      setStatus('listening');
+    }
+
+    function stopMic() {
+      if (!state.micActive) return;
+      state.micActive = false;
+
+      if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
+      if (micSourceNode) { micSourceNode.disconnect(); micSourceNode = null; }
+      if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      if (audioCtxCapture) { audioCtxCapture.close().catch(() => { }); audioCtxCapture = null; }
+
+      // Signal to backend
+      wsSend({ type: 'mic_stop' });
+
+      // UI
+      if (!state.isSpeaking) {
+        micBtnWrapper.className = 'mic-btn-wrapper';
+        setStatus('connected');
+      }
+      micLabel.textContent = 'Tap to start';
+    }
+
+    function toggleMic() {
+      if (micBtn.disabled) return;
+      if (state.micActive) {
+        stopMic();
+      } else {
+        startMic();
+      }
+    }
+
+    // =========================================================================
+    // AUDIO PLAYBACK (WebSocket base64 PCM 24kHz → speaker)
+    // =========================================================================
+    let audioCtxPlay = null;
+    let nextAudioTime = 0;
+    const activeSources = new Set(); // track scheduled nodes for hard-stop on barge-in
+
+    function getPlaybackCtx() {
+      if (!audioCtxPlay || audioCtxPlay.state === 'closed') {
+        audioCtxPlay = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PLAYBACK_RATE });
+        nextAudioTime = 0;
+      }
+      // Resume if suspended (browser autoplay policy)
+      if (audioCtxPlay.state === 'suspended') {
+        audioCtxPlay.resume().catch(() => { });
+      }
+      return audioCtxPlay;
+    }
+
+    function playAudioChunk(base64) {
+      try {
+        const ctx = getPlaybackCtx();
+        const bytes = base64ToArrayBuffer(base64);
+        const int16 = new Int16Array(bytes);
+        const float32 = int16ToFloat32(int16);
+
+        const buffer = ctx.createBuffer(1, float32.length, PLAYBACK_RATE);
+        buffer.getChannelData(0).set(float32);
+
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+
+        activeSources.add(source);
+        source.onended = () => activeSources.delete(source);
+
+        const now = ctx.currentTime;
+        const startTime = Math.max(nextAudioTime, now + 0.02);
+        source.start(startTime);
+        nextAudioTime = startTime + buffer.duration;
+      } catch (e) {
+        console.warn('[Audio] Playback error:', e);
+      }
+    }
+
+    function setSpeakingState(active) {
+      state.isSpeaking = active;
+      if (active) {
+        waveOverlay.classList.add('active');
+        if (!state.micActive) {
+          micBtnWrapper.className = 'mic-btn-wrapper speaking';
+          setStatus('speaking', 'Responding…');
+        }
+      } else {
+        waveOverlay.classList.remove('active');
+        // Hard-stop all in-flight audio buffers (true barge-in behaviour)
+        activeSources.forEach(s => { try { s.stop(); } catch (_) { } });
+        activeSources.clear();
+        nextAudioTime = 0;
+        if (!state.micActive) {
+          micBtnWrapper.className = 'mic-btn-wrapper';
+          setStatus('connected');
+        }
+      }
+    }
+
+    // =========================================================================
+    // CAMERA (video capture → JPEG frame → WebSocket every 1s)
+    // =========================================================================
+    let cameraStream = null;
+    let videoInterval = null;
+    const canvasCtx = cameraCanvas.getContext('2d');
+
+    async function startCamera() {
+      if (state.cameraActive) return;
+
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: VIDEO_WIDTH },
+            height: { ideal: VIDEO_HEIGHT },
+          }
+        });
+      } catch (err) {
+        const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+        if (denied) {
+          cameraBtn.classList.add('disabled');
+          showToast('Camera access denied — voice-only mode active', 3500, true);
+          return;
+        }
+        // Environment camera unavailable (common on laptops) — retry with any camera
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (_) {
+          showToast('Camera unavailable — voice-only mode active', 3000, false);
+          return;
+        }
+      }
+
+      cameraVideo.srcObject = cameraStream;
+      cameraVideo.style.display = 'block';
+      // Flip back for rear camera (environment)
+      cameraVideo.style.transform = 'none';
+      cameraPlaceholder.style.display = 'none';
+      cameraPanel.classList.add('camera-active');
+      cameraBtn.classList.add('active');
+      state.cameraActive = true;
+
+      // Start sending frames
+      videoInterval = setInterval(captureAndSendFrame, VIDEO_INTERVAL_MS);
+    }
+
+    function stopCamera() {
+      if (!state.cameraActive) return;
+      state.cameraActive = false;
+
+      clearInterval(videoInterval);
+      videoInterval = null;
+
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+
+      cameraVideo.srcObject = null;
+      cameraVideo.style.display = 'none';
+      cameraPlaceholder.style.display = '';
+      cameraPanel.classList.remove('camera-active');
+      cameraBtn.classList.remove('active');
+
+      wsSend({ type: 'camera_off' });
+    }
+
+    function captureAndSendFrame() {
+      if (!state.cameraActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!cameraVideo.videoWidth) return; // video not ready yet
+
+      const w = cameraVideo.videoWidth || VIDEO_WIDTH;
+      const h = cameraVideo.videoHeight || VIDEO_HEIGHT;
+
+      cameraCanvas.width = w;
+      cameraCanvas.height = h;
+
+      // Draw current frame
+      canvasCtx.drawImage(cameraVideo, 0, 0, w, h);
+
+      // Get JPEG base64
+      const dataUrl = cameraCanvas.toDataURL('image/jpeg', VIDEO_QUALITY);
+      const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
+
+      wsSend({ type: 'video', data: base64 });
+    }
+
+    function toggleCamera() {
+      if (cameraBtn.classList.contains('disabled')) return;
+      if (state.cameraActive) {
+        stopCamera();
+      } else {
+        startCamera();
+      }
+    }
+
+    // =========================================================================
+    // TRANSCRIPT
+    // =========================================================================
+    let currentTranscriptSpan = null;
+
+    function updateTranscript(text) {
+      transcriptEmpty.style.display = 'none';
+      transcriptText.classList.add('visible');
+
+      // Append to current turn span (create one if needed)
+      if (!currentTranscriptSpan) {
+        currentTranscriptSpan = document.createElement('span');
+        transcriptContent.appendChild(currentTranscriptSpan);
+      }
+      currentTranscriptSpan.textContent += text;
+
+      // Scroll to bottom
+      const panel = document.getElementById('transcript-panel');
+      panel.scrollTop = panel.scrollHeight;
+    }
+
+    function finishTranscriptTurn() {
+      if (currentTranscriptSpan && currentTranscriptSpan.textContent.trim()) {
+        const br = document.createElement('br');
+        transcriptContent.appendChild(br);
+      }
+      currentTranscriptSpan = null;
+    }
+
+    // =========================================================================
+    // SESSION END
+    // =========================================================================
+    function endSession() {
       stopMic();
       stopCamera();
-      if (ws) { ws.close(); ws = null; }
+
+      wsSend({ type: 'end_session' });
+
+      // Give the end_session message time to reach the server before closing
+      setTimeout(() => {
+        if (ws) { ws.close(); ws = null; }
+      }, 300);
+
       clearTimeout(wsReconnectTimer);
       state.wsAttempts = WS_MAX_ATTEMPTS; // prevent auto-reconnect
-      setStatus('connected', 'Session complete');
+
+      setStatus('connected', 'Session ended');
       disableMicBtn();
       cameraBtn.classList.add('disabled');
-      showToast('Great session! Reload to start a new one.', 0);
-      break;
+      showToast('Session ended. Reload to start again.', 0);
+    }
 
-    case 'error':
-      showToast(msg.data || 'An error occurred', 4000, true);
-      break;
+    // =========================================================================
+    // TOAST NOTIFICATIONS
+    // =========================================================================
+    let toastTimer = null;
 
-    default:
-      // unknown message type — ignore
-      break;
-  }
-}
+    function showToast(message, duration = 3000, isError = false) {
+      clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.className = 'visible' + (isError ? ' error' : '');
 
-// =========================================================================
-// STATUS UI
-// =========================================================================
-function setStatus(statusKey, labelOverride) {
-  const labels = {
-    connecting: 'Connecting…',
-    connected:  'Ready',
-    listening:  'Listening…',
-    speaking:   'Responding…',
-    error:      'Connection error',
-  };
+      if (duration > 0) {
+        toastTimer = setTimeout(() => {
+          toast.className = '';
+        }, duration);
+      }
+    }
 
-  statusBadge.className = `status-badge ${statusKey}`;
-  statusText.textContent = labelOverride || labels[statusKey] || statusKey;
-}
+    // =========================================================================
+    // PERMISSION MODAL
+    // =========================================================================
+    function showPermModal(title, body) {
+      modalTitle.textContent = title;
+      modalBody.textContent = body;
+      permModal.classList.add('visible');
+    }
 
-// =========================================================================
-// MIC BUTTON STATE
-// =========================================================================
-function enableMicBtn() {
-  micBtn.disabled = false;
-  micLabel.textContent = 'Tap to start';
-}
+    modalBtn.addEventListener('click', () => {
+      permModal.classList.remove('visible');
+    });
 
-function disableMicBtn() {
-  if (state.micActive) stopMic();
-  micBtn.disabled = true;
-  micLabel.textContent = 'Connecting…';
-  micBtnWrapper.className = 'mic-btn-wrapper';
-}
+    // =========================================================================
+    // UTILITY FUNCTIONS
+    // =========================================================================
 
-// =========================================================================
-// AUDIO CAPTURE (mic → PCM Int16 16kHz → WebSocket)
-// =========================================================================
-let audioCtxCapture = null;
-let micStream       = null;
-let scriptProcessor = null;
-let micSourceNode   = null;
+    /** Float32Array → Int16Array (PCM conversion) */
+    function float32ToInt16(float32) {
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
 
-async function startMic() {
-  if (state.micActive) return;
+    /** Int16Array → Float32Array (playback conversion) */
+    function int16ToFloat32(int16) {
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7FFF);
+      }
+      return float32;
+    }
 
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount:      1,
-        sampleRate:        MIC_SAMPLE_RATE,
-        echoCancellation:  true,
-        noiseSuppression:  true,
-        autoGainControl:   true,
+    /** ArrayBuffer → base64 string */
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunk = 8192;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    }
+
+    /** base64 string → ArrayBuffer */
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    // =========================================================================
+    // EVENT LISTENERS
+    // =========================================================================
+    micBtn.addEventListener('click', () => {
+      // Resume audio context on first user gesture (required by some browsers)
+      if (audioCtxPlay && audioCtxPlay.state === 'suspended') {
+        audioCtxPlay.resume().catch(() => { });
+      }
+      toggleMic();
+    });
+
+    cameraBtn.addEventListener('click', toggleCamera);
+
+    endBtn.addEventListener('click', () => {
+      endSessionModal.classList.add('visible');
+    });
+
+    endModalCancel.addEventListener('click', () => {
+      endSessionModal.classList.remove('visible');
+    });
+
+    endModalConfirm.addEventListener('click', () => {
+      endSessionModal.classList.remove('visible');
+      endSession();
+    });
+
+    // Prevent zooming on double-tap (mobile UX)
+    document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+    // Handle page visibility — pause audio when hidden, resume when visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (audioCtxPlay) audioCtxPlay.suspend().catch(() => { });
+      } else {
+        if (audioCtxPlay && audioCtxPlay.state === 'suspended') {
+          audioCtxPlay.resume().catch(() => { });
+        }
       }
     });
-  } catch (err) {
-    const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
-    showPermModal(
-      denied ? 'Microphone Access Denied' : 'Microphone Unavailable',
-      denied
-        ? 'Please allow microphone access in your browser settings, then reload the page.'
-        : `Could not access microphone: ${err.message}`
-    );
-    return;
-  }
 
-  state.micActive = true;
-  state.permGranted = true;
-
-  // Build audio pipeline
-  audioCtxCapture = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: MIC_SAMPLE_RATE });
-  micSourceNode   = audioCtxCapture.createMediaStreamSource(micStream);
-  scriptProcessor = audioCtxCapture.createScriptProcessor(SCRIPT_BUFFER_SIZE, 1, 1);
-
-  scriptProcessor.onaudioprocess = (e) => {
-    if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
-
-    const float32 = e.inputBuffer.getChannelData(0);
-    const int16   = float32ToInt16(float32);
-    const b64     = arrayBufferToBase64(int16.buffer);
-
-    wsSend({ type: 'audio', data: b64 });
-  };
-
-  micSourceNode.connect(scriptProcessor);
-  scriptProcessor.connect(audioCtxCapture.destination);
-
-  // UI
-  micBtnWrapper.className = 'mic-btn-wrapper listening';
-  micLabel.textContent    = 'Tap to stop';
-  setStatus('listening');
-}
-
-function stopMic() {
-  if (!state.micActive) return;
-  state.micActive = false;
-
-  if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
-  if (micSourceNode)   { micSourceNode.disconnect();   micSourceNode   = null; }
-  if (micStream)       { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
-  if (audioCtxCapture) { audioCtxCapture.close().catch(() => {}); audioCtxCapture = null; }
-
-  // Signal to backend
-  wsSend({ type: 'mic_stop' });
-
-  // UI
-  if (!state.isSpeaking) {
-    micBtnWrapper.className = 'mic-btn-wrapper';
-    setStatus('connected');
-  }
-  micLabel.textContent = 'Tap to start';
-}
-
-function toggleMic() {
-  if (micBtn.disabled) return;
-  if (state.micActive) {
-    stopMic();
-  } else {
-    startMic();
-  }
-}
-
-// =========================================================================
-// AUDIO PLAYBACK (WebSocket base64 PCM 24kHz → speaker)
-// =========================================================================
-let audioCtxPlay    = null;
-let nextAudioTime   = 0;
-const activeSources = new Set(); // track scheduled nodes for hard-stop on barge-in
-
-function getPlaybackCtx() {
-  if (!audioCtxPlay || audioCtxPlay.state === 'closed') {
-    audioCtxPlay  = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: PLAYBACK_RATE });
-    nextAudioTime = 0;
-  }
-  // Resume if suspended (browser autoplay policy)
-  if (audioCtxPlay.state === 'suspended') {
-    audioCtxPlay.resume().catch(() => {});
-  }
-  return audioCtxPlay;
-}
-
-function playAudioChunk(base64) {
-  try {
-    const ctx     = getPlaybackCtx();
-    const bytes   = base64ToArrayBuffer(base64);
-    const int16   = new Int16Array(bytes);
-    const float32 = int16ToFloat32(int16);
-
-    const buffer  = ctx.createBuffer(1, float32.length, PLAYBACK_RATE);
-    buffer.getChannelData(0).set(float32);
-
-    const source  = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-
-    activeSources.add(source);
-    source.onended = () => activeSources.delete(source);
-
-    const now       = ctx.currentTime;
-    const startTime = Math.max(nextAudioTime, now + 0.02);
-    source.start(startTime);
-    nextAudioTime = startTime + buffer.duration;
-  } catch (e) {
-    console.warn('[Audio] Playback error:', e);
-  }
-}
-
-function setSpeakingState(active) {
-  state.isSpeaking = active;
-  if (active) {
-    waveOverlay.classList.add('active');
-    if (!state.micActive) {
-      micBtnWrapper.className = 'mic-btn-wrapper speaking';
-      setStatus('speaking', 'Responding…');
-    }
-  } else {
-    waveOverlay.classList.remove('active');
-    // Hard-stop all in-flight audio buffers (true barge-in behaviour)
-    activeSources.forEach(s => { try { s.stop(); } catch (_) {} });
-    activeSources.clear();
-    nextAudioTime = 0;
-    if (!state.micActive) {
-      micBtnWrapper.className = 'mic-btn-wrapper';
-      setStatus('connected');
-    }
-  }
-}
-
-// =========================================================================
-// CAMERA (video capture → JPEG frame → WebSocket every 1s)
-// =========================================================================
-let cameraStream    = null;
-let videoInterval   = null;
-const canvasCtx     = cameraCanvas.getContext('2d');
-
-async function startCamera() {
-  if (state.cameraActive) return;
-
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'environment',
-        width:  { ideal: VIDEO_WIDTH },
-        height: { ideal: VIDEO_HEIGHT },
-      }
-    });
-  } catch (err) {
-    const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
-    if (denied) {
-      cameraBtn.classList.add('disabled');
-      showToast('Camera access denied — voice-only mode active', 3500, true);
-      return;
-    }
-    // Environment camera unavailable (common on laptops) — retry with any camera
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
-    } catch (_) {
-      showToast('Camera unavailable — voice-only mode active', 3000, false);
-      return;
-    }
-  }
-
-  cameraVideo.srcObject = cameraStream;
-  cameraVideo.style.display = 'block';
-  // Flip back for rear camera (environment)
-  cameraVideo.style.transform = 'none';
-  cameraPlaceholder.style.display = 'none';
-  cameraPanel.classList.add('camera-active');
-  cameraBtn.classList.add('active');
-  state.cameraActive = true;
-
-  // Start sending frames
-  videoInterval = setInterval(captureAndSendFrame, VIDEO_INTERVAL_MS);
-}
-
-function stopCamera() {
-  if (!state.cameraActive) return;
-  state.cameraActive = false;
-
-  clearInterval(videoInterval);
-  videoInterval = null;
-
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(t => t.stop());
-    cameraStream = null;
-  }
-
-  cameraVideo.srcObject = null;
-  cameraVideo.style.display = 'none';
-  cameraPlaceholder.style.display = '';
-  cameraPanel.classList.remove('camera-active');
-  cameraBtn.classList.remove('active');
-
-  wsSend({ type: 'camera_off' });
-}
-
-function captureAndSendFrame() {
-  if (!state.cameraActive || !ws || ws.readyState !== WebSocket.OPEN) return;
-  if (!cameraVideo.videoWidth) return; // video not ready yet
-
-  const w = cameraVideo.videoWidth  || VIDEO_WIDTH;
-  const h = cameraVideo.videoHeight || VIDEO_HEIGHT;
-
-  cameraCanvas.width  = w;
-  cameraCanvas.height = h;
-
-  // Draw current frame
-  canvasCtx.drawImage(cameraVideo, 0, 0, w, h);
-
-  // Get JPEG base64
-  const dataUrl = cameraCanvas.toDataURL('image/jpeg', VIDEO_QUALITY);
-  const base64  = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
-
-  wsSend({ type: 'video', data: base64 });
-}
-
-function toggleCamera() {
-  if (cameraBtn.classList.contains('disabled')) return;
-  if (state.cameraActive) {
-    stopCamera();
-  } else {
-    startCamera();
-  }
-}
-
-// =========================================================================
-// TRANSCRIPT
-// =========================================================================
-let currentTranscriptSpan = null;
-
-function updateTranscript(text) {
-  transcriptEmpty.style.display = 'none';
-  transcriptText.classList.add('visible');
-
-  // Append to current turn span (create one if needed)
-  if (!currentTranscriptSpan) {
-    currentTranscriptSpan = document.createElement('span');
-    transcriptContent.appendChild(currentTranscriptSpan);
-  }
-  currentTranscriptSpan.textContent += text;
-
-  // Scroll to bottom
-  const panel = document.getElementById('transcript-panel');
-  panel.scrollTop = panel.scrollHeight;
-}
-
-function finishTranscriptTurn() {
-  if (currentTranscriptSpan && currentTranscriptSpan.textContent.trim()) {
-    const br = document.createElement('br');
-    transcriptContent.appendChild(br);
-  }
-  currentTranscriptSpan = null;
-}
-
-// =========================================================================
-// SESSION END
-// =========================================================================
-function endSession() {
-  stopMic();
-  stopCamera();
-
-  wsSend({ type: 'end_session' });
-
-  // Give the end_session message time to reach the server before closing
-  setTimeout(() => {
-    if (ws) { ws.close(); ws = null; }
-  }, 300);
-
-  clearTimeout(wsReconnectTimer);
-  state.wsAttempts = WS_MAX_ATTEMPTS; // prevent auto-reconnect
-
-  setStatus('connected', 'Session ended');
-  disableMicBtn();
-  cameraBtn.classList.add('disabled');
-  showToast('Session ended. Reload to start again.', 0);
-}
-
-// =========================================================================
-// TOAST NOTIFICATIONS
-// =========================================================================
-let toastTimer = null;
-
-function showToast(message, duration = 3000, isError = false) {
-  clearTimeout(toastTimer);
-  toast.textContent = message;
-  toast.className   = 'visible' + (isError ? ' error' : '');
-
-  if (duration > 0) {
-    toastTimer = setTimeout(() => {
-      toast.className = '';
-    }, duration);
-  }
-}
-
-// =========================================================================
-// PERMISSION MODAL
-// =========================================================================
-function showPermModal(title, body) {
-  modalTitle.textContent = title;
-  modalBody.textContent  = body;
-  permModal.classList.add('visible');
-}
-
-modalBtn.addEventListener('click', () => {
-  permModal.classList.remove('visible');
-});
-
-// =========================================================================
-// UTILITY FUNCTIONS
-// =========================================================================
-
-/** Float32Array → Int16Array (PCM conversion) */
-function float32ToInt16(float32) {
-  const int16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  return int16;
-}
-
-/** Int16Array → Float32Array (playback conversion) */
-function int16ToFloat32(int16) {
-  const float32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) {
-    float32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7FFF);
-  }
-  return float32;
-}
-
-/** ArrayBuffer → base64 string */
-function arrayBufferToBase64(buffer) {
-  const bytes  = new Uint8Array(buffer);
-  let binary   = '';
-  const chunk  = 8192;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-/** base64 string → ArrayBuffer */
-function base64ToArrayBuffer(base64) {
-  const binary = atob(base64);
-  const bytes  = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-// =========================================================================
-// EVENT LISTENERS
-// =========================================================================
-micBtn.addEventListener('click', () => {
-  // Resume audio context on first user gesture (required by some browsers)
-  if (audioCtxPlay && audioCtxPlay.state === 'suspended') {
-    audioCtxPlay.resume().catch(() => {});
-  }
-  toggleMic();
-});
-
-cameraBtn.addEventListener('click', toggleCamera);
-
-endBtn.addEventListener('click', () => {
-  endSessionModal.classList.add('visible');
-});
-
-endModalCancel.addEventListener('click', () => {
-  endSessionModal.classList.remove('visible');
-});
-
-endModalConfirm.addEventListener('click', () => {
-  endSessionModal.classList.remove('visible');
-  endSession();
-});
-
-// Prevent zooming on double-tap (mobile UX)
-document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
-
-// Handle page visibility — pause audio when hidden, resume when visible
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    if (audioCtxPlay) audioCtxPlay.suspend().catch(() => {});
-  } else {
-    if (audioCtxPlay && audioCtxPlay.state === 'suspended') {
-      audioCtxPlay.resume().catch(() => {});
-    }
-  }
-});
-
-// Service Worker for PWA offline support
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Minimal inline SW registered via blob URL
-    const swCode = `
+    // Service Worker for PWA offline support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        // Minimal inline SW registered via blob URL
+        const swCode = `
       const CACHE = 'seeme-tutor-v1';
       self.addEventListener('install', e => self.skipWaiting());
       self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
@@ -1654,78 +1855,79 @@ if ('serviceWorker' in navigator) {
         );
       });
     `;
-    const blob = new Blob([swCode], { type: 'application/javascript' });
-    const url  = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(url).catch(() => {
-      // SW registration is optional — not critical
+        const blob = new Blob([swCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        navigator.serviceWorker.register(url).catch(() => {
+          // SW registration is optional — not critical
+        });
+      });
+    }
+
+    // =========================================================================
+    // PRIVACY LINK
+    // =========================================================================
+    privacyLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      showToast('Audio/video is streamed, never stored. Only anonymized session metadata is saved.', 4000);
     });
-  });
-}
 
-// =========================================================================
-// PRIVACY LINK
-// =========================================================================
-privacyLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  showToast('Audio/video is streamed, never stored. Only anonymized session metadata is saved.', 4000);
-});
+    // =========================================================================
+    // CONSENT MODAL
+    // =========================================================================
+    consentLearnMore.addEventListener('click', (e) => {
+      e.preventDefault();
+      consentDetails.style.display = 'block';
+      consentLearnMore.style.display = 'none';
+    });
 
-// =========================================================================
-// CONSENT MODAL
-// =========================================================================
-consentLearnMore.addEventListener('click', (e) => {
-  e.preventDefault();
-  consentDetails.style.display = 'block';
-  consentLearnMore.style.display = 'none';
-});
+    consentBtn.addEventListener('click', () => {
+      localStorage.setItem('seeme_consent', '1');
+      consentModal.classList.remove('visible');
+      startSession();
+    });
 
-consentBtn.addEventListener('click', () => {
-  localStorage.setItem('seeme_consent', '1');
-  consentModal.classList.remove('visible');
-  startSession();
-});
+    // =========================================================================
+    // INITIALISE
+    // =========================================================================
+    function init() {
+      // Check browser support
+      const missing = [];
+      if (!window.WebSocket) missing.push('WebSocket');
+      if (!navigator.mediaDevices) missing.push('MediaDevices');
+      if (!window.AudioContext && !window.webkitAudioContext) missing.push('Web Audio');
 
-// =========================================================================
-// INITIALISE
-// =========================================================================
-function init() {
-  // Check browser support
-  const missing = [];
-  if (!window.WebSocket)                missing.push('WebSocket');
-  if (!navigator.mediaDevices)          missing.push('MediaDevices');
-  if (!window.AudioContext && !window.webkitAudioContext) missing.push('Web Audio');
+      if (missing.length) {
+        loadingOverlay.querySelector('.loader-text').textContent =
+          `Your browser is missing: ${missing.join(', ')}. Please use Chrome or Safari.`;
+        return;
+      }
 
-  if (missing.length) {
-    loadingOverlay.querySelector('.loader-text').textContent =
-      `Your browser is missing: ${missing.join(', ')}. Please use Chrome or Safari.`;
-    return;
-  }
+      // Check if consent was already given
+      if (localStorage.getItem('seeme_consent')) {
+        startSession();
+      } else {
+        // Hide loader, show consent modal
+        loadingOverlay.classList.add('fade-out');
+        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
+        consentModal.classList.add('visible');
+      }
+    }
 
-  // Check if consent was already given
-  if (localStorage.getItem('seeme_consent')) {
-    startSession();
-  } else {
-    // Hide loader, show consent modal
-    loadingOverlay.classList.add('fade-out');
-    setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
-    consentModal.classList.add('visible');
-  }
-}
+    function startSession() {
+      // Hide loader after brief delay (gives time for WS to init)
+      setTimeout(() => {
+        loadingOverlay.classList.add('fade-out');
+        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
+      }, 800);
 
-function startSession() {
-  // Hide loader after brief delay (gives time for WS to init)
-  setTimeout(() => {
-    loadingOverlay.classList.add('fade-out');
-    setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
-  }, 800);
+      // Connect WebSocket
+      wsConnect();
+    }
 
-  // Connect WebSocket
-  wsConnect();
-}
-
-// Kick off
-init();
-</script>
+    // Kick off
+    init();
+  </script>
 
 </body>
+
 </html>
