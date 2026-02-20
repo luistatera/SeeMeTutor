@@ -14,11 +14,36 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gem
 
 **Key differentiators:**
 
+- **Proactive Visual Co-pilot** — Doesn't wait to be asked. Actively watches through the camera and comments on mistakes, completed steps, and progress in real time
 - **Live Vision** — Continuous camera feed lets the tutor see what you're working on in real time, not just a snapshot
-- **Natural Voice** — Full-duplex audio with no push-to-talk; interrupt naturally and the tutor adapts immediately
+- **Natural Voice** — Full-duplex audio with sub-500ms response latency; interrupt naturally and the tutor adapts immediately
 - **Socratic Method** — Guides students to discover answers themselves; never gives the solution directly
 - **Multilingual** — Auto-detects Portuguese, German, and English; switches mid-session without configuration
 - **Emotional Adaptation** — Detects frustration or confidence in the student's voice and adjusts pace and tone accordingly
+- **Silence Handling** — Checks in after pauses ("Still working on it? Take your time") without being pushy
+- **Privacy by Design** — Features clear visual recording indicators and an audio-only Privacy Mode to build trust
+- **Proactive Tool Calling** — Uses live tool execution to fetch definitions and formulas without breaking the student's flow
+
+---
+
+## Judge Quick Validation (What Must Be Obvious in 4 Minutes)
+
+These are the three non-negotiable proof moments for the hackathon demo:
+
+1. **Proactive observation:** Tutor catches a visible mistake without being asked.
+2. **Interruption handling:** Student says "wait" mid-response and tutor stops immediately.
+3. **Multilingual pedagogy:** Tutor explains in one language and practices in another.
+
+If any of these are missing, scoring potential drops significantly even if the stack is technically strong.
+
+---
+
+## Current Documentation
+
+- Product requirements: `SeeMeTutor_PRD.md`
+- Execution backlog: `epics_todo.md`
+- Delivery timeline: `TIMELINE.md`
+- Low-priority backlog: `extra_miles.md`
 
 ---
 
@@ -28,7 +53,7 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gem
 flowchart TD
     subgraph Browser["Browser — PWA (Firebase Hosting)"]
         MIC["Microphone\nPCM 16kHz via ScriptProcessorNode"]
-        CAM["Camera\nJPEG frames via Canvas (1fps)"]
+        CAM["Camera\nJPEG frames via Canvas (0.5-3fps adaptive)"]
         PLAY["Audio Playback\nPCM 24kHz via AudioContext"]
     end
 
@@ -209,7 +234,7 @@ SeeMe Tutor runs a real-time bidirectional pipeline between the browser and Gemi
 
 1. **Mic capture** — The browser uses a `ScriptProcessorNode` to capture raw PCM audio at 16kHz from the system microphone. Audio chunks are base64-encoded and sent to the backend over WebSocket as JSON.
 
-2. **Camera capture** — Three times per second, the browser draws the current camera frame to an HTML5 canvas, exports it as a JPEG, base64-encodes it, and sends it to the backend alongside the audio stream.
+2. **Camera capture** — The browser intelligently draws the current camera frame to an HTML5 canvas (dynamically adapting from 0.5 to 3 FPS based on bandwidth constraints), exports it as a JPEG, base64-encodes it, and sends it to the backend alongside the audio stream.
 
 3. **WebSocket bridge** — The FastAPI backend receives the combined audio and video stream. It maintains one persistent WebSocket connection per user session and forwards data into an active Gemini Live API session.
 
@@ -228,14 +253,16 @@ SeeMe Tutor runs a real-time bidirectional pipeline between the browser and Gemi
 SeeMe is a patient, encouraging tutor with a calm and warm voice. Its pedagogical design is grounded in Google's [LearnLM](https://ai.google.dev/gemini-api/docs/learnlm) learning science principles — research-backed guidelines for effective AI-assisted education. Built on Gemini 2.5 Flash, which has LearnLM capabilities natively infused, SeeMe aligns with all five core learning principles:
 
 - **Active Learning** — Never gives the answer directly. SeeMe always responds with a guiding question: "What do you think happens when you multiply both sides by the same number?"
-- **Cognitive Load Management** — Keeps responses concise (2–3 sentences) and references what it can see in the student's work to stay grounded in context, not abstractions.
+- **Cognitive Load Management** — Employs **progressive disclosure** (highlighting only the most critical error first rather than overwhelming the student) and keeps responses concise (2–3 sentences) while referencing what it can see in the student's work to stay grounded in context.
 - **Learner Adaptation** — Reads the emotional room. If a student sounds frustrated, SeeMe slows down and breaks the problem into smaller steps. If they sound confident, it increases the challenge.
 - **Curiosity Stimulation** — Connects solved problems to real-world contexts and asks "what if" questions to extend thinking beyond the immediate exercise.
 - **Metacognitive Development** — Prompts students to reflect on their own thinking: "You got that one — what strategy did you use?" Builds independent learning skills, not just subject knowledge.
 
 **Additional capabilities:**
 
+- **Proactive observation** — Actively monitors the camera feed and comments without being asked. Catches mistakes in real time ("I see something in that second line — want to take another look?"), congratulates completed steps, and guides next actions — like having a tutor looking over your shoulder.
 - **Visual grounding** — References what it sees via the camera: "I can see you've written 3x on the left side — what would you need to do to isolate x?"
+- **Silence handling** — When a student goes quiet, checks in after a natural pause: "Still working on it? Take your time." Stays present without being pushy.
 - **Multilingual** — Start speaking Portuguese, it responds in Portuguese. Switch to English mid-sentence, it follows. German works too.
 - **Natural interruptions** — Because Gemini Live API is full-duplex, students can interrupt mid-response and SeeMe will stop, acknowledge, and re-approach — just like a real tutor would.
 
@@ -257,6 +284,7 @@ The deploy script performs the following steps automatically:
 - Prints the live URLs for both the backend and frontend
 
 After deployment:
+
 - **Frontend:** `https://seeme-tutor.web.app`
 - **Backend WebSocket:** `wss://seeme-tutor-[hash]-ew.a.run.app/ws`
 
@@ -296,6 +324,7 @@ In production (Cloud Run), `GEMINI_API_KEY` is mounted from Secret Manager via `
 SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 
 **Technology stack:** 100% Google and GCP.
+
 - AI: Gemini 2.5 Flash Live API (`gemini-2.5-flash-native-audio-preview-12-2025`) via the `google-genai` Python SDK
 - Pedagogy: [LearnLM](https://cloud.google.com/solutions/learnlm)-informed system instructions aligned with Google's learning science research
 - Backend: FastAPI on Cloud Run

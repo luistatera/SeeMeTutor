@@ -1,71 +1,60 @@
 # SeeMe Tutor Context
 
-## Project Overview
+## Project Snapshot
 
-SeeMe Tutor is a real-time multimodal AI tutoring application built for the Gemini Live Agent Challenge. It leverages the **Gemini 2.5 Flash Live API** to see a student's homework through the camera, hear their questions, and guide them using the **Socratic method** in their preferred language (English, Portuguese, German).
+SeeMe Tutor is a real-time multimodal tutoring app for the Gemini Live Agent Challenge.
 
-### Key Features
-*   **Live Vision:** Processes continuous camera feed to understand handwritten work, diagrams, and text.
-*   **Natural Voice:** Full-duplex audio allows for natural interruptions and conversation.
-*   **Socratic Teaching:** Guides students to answers rather than providing them directly.
-*   **Multilingual:** seamlessly switches between languages based on user speech.
-*   **Emotional Adaptation:** Detects frustration or confidence and adjusts tone/pace.
+Core promise: the tutor sees homework, hears questions, and guides with Socratic pedagogy in PT/EN/DE.
 
-### Architecture
-*   **Frontend:** Progressive Web App (PWA) using plain HTML/CSS/JS. Handles WebRTC (camera), AudioContext (microphone/playback), and WebSocket communication. Hosted on **Firebase Hosting**.
-*   **Backend:** **FastAPI** (Python) service on **Google Cloud Run**. Manages WebSocket connections and bridges data to the Gemini Live API.
-*   **AI:** **Gemini 2.5 Flash Live API** via `google-genai` SDK.
-*   **State:** **Firestore** for session persistence.
-*   **Secrets:** **Secret Manager** for API keys in production.
+### Demo-Critical Moments
 
-## Building and Running
+1. Proactive visual observation (without user prompt).
+2. Immediate interruption handling (true barge-in).
+3. Multilingual pedagogy (explain in one language, practice in another).
 
-### Prerequisites
-*   Python 3.12+
-*   Gemini API Key (from Google AI Studio)
-*   `gcloud` CLI (for deployment)
+If these are not stable, all other work is secondary.
 
-### Local Development
-1.  **Configure Environment:**
-    *   Copy `.env.example` to `.env` in the root or `backend/` directory.
-    *   Set `GEMINI_API_KEY=your_key_here`.
+---
 
-2.  **Run Backend:**
-    ```bash
-    cd backend
-    python3 -m venv .venv
-    source .venv/bin/activate  # Windows: .venv\Scripts\activate
-    pip install -r requirements.txt
-    uvicorn main:app --reload --port 8000
-    ```
+## Current Stack
 
-3.  **Access Frontend:**
-    *   Open `http://localhost:8000` in a modern browser (Chrome/Edge).
-    *   Allow microphone and camera permissions.
+- Frontend: single-file PWA (`frontend/index.html`) on Firebase Hosting.
+- Backend: FastAPI websocket bridge (`backend/main.py`) on Cloud Run.
+- AI: Gemini Live API via `google-genai` (`backend/gemini_live.py`).
+- Data: Firestore session metadata/progress.
+- Secrets: Secret Manager (`GEMINI_API_KEY`).
 
-### Deployment
-The project includes a unified deployment script for Google Cloud Platform:
+---
+
+## Canonical Planning Docs
+
+- Product requirements: `SeeMeTutor_PRD.md`
+- Prioritized backlog: `epics_todo.md`
+- Schedule and gates: `TIMELINE.md`
+- Optional backlog: `extra_miles.md`
+- Public-facing project overview: `README.md`
+
+Keep these files consistent when changing scope, priorities, or delivery dates.
+
+---
+
+## Delivery Rules
+
+- Prioritize judge-visible reliability over feature breadth.
+- Do not expand scope before P0 demo moments are stable.
+- Favor low-latency and clear UX over extra infrastructure complexity.
+- Preserve educational safety and privacy-by-design language in docs and prompts.
+
+---
+
+## Local Run Reminder
+
 ```bash
-./deploy.sh
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+GEMINI_API_KEY=your_key_here uvicorn main:app --reload --port 8000
 ```
-This script:
-1.  Builds the backend Docker image via Cloud Build.
-2.  Deploys the container to Cloud Run.
-3.  Deploys the frontend to Firebase Hosting.
 
-## Development Conventions
-
-*   **Code Style:**
-    *   **Python:** Follows PEP 8. formatted with `black` or similar is recommended.
-    *   **Frontend:** Standard HTML5/CSS3/ES6+. No build step (e.g., Webpack/Vite) is currently used; files are served statically.
-*   **State Management:** Frontend uses vanilla JS state. Backend is stateless except for the active WebSocket/Gemini session.
-*   **Logging:** Python standard `logging` module is used.
-*   **Dependencies:** Managed via `backend/requirements.txt`.
-
-## Key Files
-
-*   `backend/main.py`: Main FastAPI application, WebSocket endpoint (`/ws`), and static file serving.
-*   `backend/gemini_live.py`: Manages the session with Gemini Live API, handling audio/video stream bridging.
-*   `frontend/index.html`: The complete frontend application (UI, logic, WebRTC, AudioContext).
-*   `infrastructure/gcp_services.py`: demonstrative script showing GCP service integrations.
-*   `SeeMeTutor_PRD.md`: Detailed Product Requirements Document explaining the "why" and "how" of the project.
+Open `http://localhost:8000` and allow mic/camera.
