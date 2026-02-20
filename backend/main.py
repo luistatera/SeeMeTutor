@@ -9,6 +9,7 @@ and text transcripts flow back to the browser.
 import asyncio
 import base64
 import binascii
+import hashlib
 import json
 import logging
 import os
@@ -51,6 +52,11 @@ else:
     )
 
 SESSION_TIMEOUT_SECONDS = 20 * 60  # 20-minute focused session limit
+
+
+def _anonymize_ip(ip: str) -> str:
+    """Hash an IP address for Firestore storage (never persist raw IPs)."""
+    return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 # Firestore client for session logging (optional — works without it for local dev)
 firestore_client = None
@@ -135,7 +141,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "error", "data": "<description>"}
     """
     await websocket.accept()
-    client_host = websocket.client.host if websocket.client else "unknown"
+    raw_ip = websocket.headers.get("x-forwarded-for", websocket.client.host if websocket.client else "unknown")
+    client_host = raw_ip.split(",")[0].strip()
     session_id = str(uuid.uuid4())
     session_start = time.time()
     logger.info("Session %s accepted from %s", session_id, client_host)
@@ -150,9 +157,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         try:
             await firestore_client.collection("sessions").document(session_id).set({
                 "started_at": session_start,
-                "client_host": client_host,
+                "client_host": _anonymize_ip(client_host),
                 "ended_reason": None,
                 "duration_seconds": None,
+                "consent_given": False,
             })
         except Exception:
             logger.warning("Session %s: failed to log start to Firestore", session_id, exc_info=True)
@@ -174,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 session_id=session_id,
             ) as gemini_session:
                 forward_task = asyncio.create_task(
-                    _forward_to_gemini(websocket, gemini_session),
+                    _forward_to_gemini(websocket, gemini_session, session_id),
                     name="forward_to_gemini",
                 )
                 receive_task = asyncio.create_task(
@@ -211,7 +219,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     elif isinstance(exc, _StudentEndedSession):
                         ended_reason = "student_ended"
                     elif exc is not None:
-                        logger.error("Task %s raised: %s", task.get_name(), exc, exc_info=exc)
+                        exc_name = type(exc).__name__
+                        if "Disconnect" not in exc_name and "Closed" not in exc_name:
+                            logger.error("Task %s crashed: %s", task.get_name(), exc, exc_info=exc)
+                            if ended_reason == "disconnect":
+                                ended_reason = "error"
+                        else:
+                            logger.info("Task %s ended normally (client disconnect)", task.get_name())
 
         except Exception as exc:
             logger.exception("Session %s: Gemini session error: %s", session_id, exc)
@@ -247,7 +261,7 @@ async def _session_timer(websocket: WebSocket, timeout: float) -> None:
         )
 
 
-async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession) -> None:
+async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession, session_id: str) -> None:
     """
     Receive JSON messages from the browser and forward media to Gemini.
 
@@ -272,6 +286,17 @@ async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession) -> N
             if msg_type == "end_session":
                 logger.info("Student requested end_session")
                 raise _StudentEndedSession()
+            if msg_type == "consent_ack":
+                logger.info("Session %s: consent acknowledged", session_id)
+                if firestore_client:
+                    try:
+                        await firestore_client.collection("sessions").document(session_id).update({
+                            "consent_given": True,
+                            "consent_at": time.time(),
+                        })
+                    except Exception:
+                        logger.warning("Session %s: failed to record consent", session_id, exc_info=True)
+                continue
             if msg_type in ("mic_stop", "camera_off"):
                 logger.info("Control message from browser: '%s'", msg_type)
                 continue

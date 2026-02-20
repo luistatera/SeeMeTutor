@@ -21,7 +21,7 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gem
 - **Multilingual** — Auto-detects Portuguese, German, and English; switches mid-session without configuration
 - **Emotional Adaptation** — Detects frustration or confidence in the student's voice and adjusts pace and tone accordingly
 - **Silence Handling** — Checks in after pauses ("Still working on it? Take your time") without being pushy
-- **Privacy by Design** — Features clear visual recording indicators and an audio-only Privacy Mode to build trust
+- **Privacy by Design** — Consent screen before session start, anonymized session data, clear camera-active indicators, and transparent data handling
 - **Proactive Tool Calling** — Uses live tool execution to fetch definitions and formulas without breaking the student's flow
 
 ---

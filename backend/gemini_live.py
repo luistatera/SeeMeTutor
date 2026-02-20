@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 APP_NAME = "seeme_tutor"
 
-
 class ADKLiveSession:
     """
     Async context manager for a single ADK-backed Gemini Live session.

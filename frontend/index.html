@@ -809,6 +809,26 @@
 </div>
 
 <!-- ======================================================================
+     PRIVACY CONSENT MODAL
+===================================================================== -->
+<div class="modal-backdrop" id="consent-modal">
+  <div class="modal">
+    <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
+      <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </div>
+    <h2>Before we start</h2>
+    <p>SeeMe Tutor streams your microphone audio and camera video to our server to provide real-time tutoring. No audio or video is stored — only anonymized session metadata (duration, language) is saved to improve the experience.</p>
+    <p id="consent-details" style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
+      This is a supervised learning tool designed for use by children with parental oversight. Session data is stored in Google Firestore with anonymized identifiers — no IP addresses or personal information are retained. Camera and microphone access can be revoked at any time via your browser settings.
+    </p>
+    <a href="#" id="consent-learn-more" style="display:inline-block; font-size:12px; color:var(--blue); margin-bottom:16px; text-decoration:none;">Learn more</a>
+    <button class="modal-btn" id="consent-btn">I understand, let's start</button>
+  </div>
+</div>
+
+<!-- ======================================================================
      MAIN APP
 ===================================================================== -->
 <div id="app">
@@ -824,7 +844,7 @@
       <div class="logo-title">
         <span class="seeme">SeeMe</span> <span class="tutor">Tutor</span>
       </div>
-      <div class="logo-tagline">Your AI homework guide</div>
+      <div class="logo-tagline">Your AI homework guide · <a href="#" id="privacy-link" style="color:var(--text-muted); text-decoration:none;">Privacy</a></div>
     </div>
     <div class="status-badge connecting" id="status-badge">
       <div class="status-dot"></div>
@@ -1018,6 +1038,11 @@ const reconnectBanner  = $('reconnect-banner');
 const endSessionModal  = $('end-session-modal');
 const endModalCancel   = $('end-modal-cancel');
 const endModalConfirm  = $('end-modal-confirm');
+const consentModal     = $('consent-modal');
+const consentBtn       = $('consent-btn');
+const consentLearnMore = $('consent-learn-more');
+const consentDetails   = $('consent-details');
+const privacyLink      = $('privacy-link');
 
 // =========================================================================
 // WEBSOCKET
@@ -1042,6 +1067,7 @@ function wsConnect() {
     setStatus('connected');
     enableMicBtn();
     showToast('Connected — tap the mic to begin', 3000);
+    wsSend({ type: 'consent_ack' });
   };
 
   ws.onmessage = (event) => {
@@ -1617,6 +1643,29 @@ if ('serviceWorker' in navigator) {
 }
 
 // =========================================================================
+// PRIVACY LINK
+// =========================================================================
+privacyLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  showToast('Audio/video is streamed, never stored. Only anonymized session metadata is saved.', 4000);
+});
+
+// =========================================================================
+// CONSENT MODAL
+// =========================================================================
+consentLearnMore.addEventListener('click', (e) => {
+  e.preventDefault();
+  consentDetails.style.display = 'block';
+  consentLearnMore.style.display = 'none';
+});
+
+consentBtn.addEventListener('click', () => {
+  localStorage.setItem('seeme_consent', '1');
+  consentModal.classList.remove('visible');
+  startSession();
+});
+
+// =========================================================================
 // INITIALISE
 // =========================================================================
 function init() {
@@ -1632,6 +1681,18 @@ function init() {
     return;
   }
 
+  // Check if consent was already given
+  if (localStorage.getItem('seeme_consent')) {
+    startSession();
+  } else {
+    // Hide loader, show consent modal
+    loadingOverlay.classList.add('fade-out');
+    setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
+    consentModal.classList.add('visible');
+  }
+}
+
+function startSession() {
   // Hide loader after brief delay (gives time for WS to init)
   setTimeout(() => {
     loadingOverlay.classList.add('fade-out');
