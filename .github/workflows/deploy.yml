@@ -1,0 +1,33 @@
+name: Deploy PROD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Run Deploy Script
+        run: |
+          # The deploy.sh script handles Cloud Build, Cloud Run deploy, 
+          # extracting the backend URL, injecting it into the frontend, 
+          # and then deploying to Firebase.
+          chmod +x deploy.sh
+          ./deploy.sh
