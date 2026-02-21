@@ -55,6 +55,9 @@ DEMO_ACCESS_CODE = os.environ.get("DEMO_ACCESS_CODE", "")
 
 SESSION_TIMEOUT_SECONDS = 20 * 60  # 20-minute focused session limit
 
+# Per-session latency tracking: session_id -> {"last_audio_in": float, "awaiting_first_response": bool}
+_latency_state: dict[str, dict] = {}
+
 
 def _anonymize_ip(ip: str) -> str:
     """Hash an IP address for Firestore storage (never persist raw IPs)."""
@@ -184,6 +187,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         state={"session_id": session_id, "gcp_project_id": GCP_PROJECT_ID},
     )
 
+    _latency_state[session_id] = {"last_audio_in": 0.0, "awaiting_first_response": False}
     ended_reason = "disconnect"
     try:
         try:
@@ -197,7 +201,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     name="forward_to_gemini",
                 )
                 receive_task = asyncio.create_task(
-                    _forward_to_client(websocket, gemini_session),
+                    _forward_to_client(websocket, gemini_session, session_id),
                     name="forward_to_client",
                 )
                 timer_task = asyncio.create_task(
@@ -247,6 +251,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             ended_reason = "gemini_error"
 
     finally:
+        _latency_state.pop(session_id, None)
         duration = int(time.time() - session_start)
         if firestore_client:
             try:
@@ -328,6 +333,10 @@ async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession, sess
                 continue
 
             if msg_type == "audio":
+                lat = _latency_state.get(session_id)
+                if lat is not None:
+                    lat["last_audio_in"] = time.time()
+                    lat["awaiting_first_response"] = True
                 session.send_audio(raw_bytes)
             elif msg_type == "video":
                 session.send_video_frame(raw_bytes)
@@ -346,7 +355,7 @@ async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession, sess
         })
 
 
-async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> None:
+async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession, session_id: str = "") -> None:
     """
     Receive responses from Gemini and forward them to the browser.
 
@@ -358,6 +367,14 @@ async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> N
             event_type = event.get("type")
 
             if event_type == "audio":
+                lat = _latency_state.get(session_id)
+                if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
+                    delta_ms = (time.time() - lat["last_audio_in"]) * 1000
+                    logger.info(
+                        "LATENCY session=%s response_start_ms=%.0f",
+                        session_id, delta_ms,
+                    )
+                    lat["awaiting_first_response"] = False
                 audio_bytes: bytes = event["data"]
                 encoded = base64.b64encode(audio_bytes).decode("utf-8")
                 await _send_json(websocket, {"type": "audio", "data": encoded})
@@ -370,6 +387,14 @@ async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> N
                 logger.debug("Turn complete signal sent to browser")
 
             elif event_type == "interrupted":
+                lat = _latency_state.get(session_id)
+                if lat and lat["last_audio_in"] > 0:
+                    delta_ms = (time.time() - lat["last_audio_in"]) * 1000
+                    logger.info(
+                        "LATENCY session=%s interruption_stop_ms=%.0f",
+                        session_id, delta_ms,
+                    )
+                    lat["awaiting_first_response"] = False
                 await _send_json(websocket, {"type": "interrupted"})
                 logger.debug("Interrupted signal sent to browser")
 

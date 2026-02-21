@@ -21,7 +21,7 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gem
 - **Multilingual** — Auto-detects Portuguese, German, and English; switches mid-session without configuration
 - **Emotional Adaptation** — Detects frustration or confidence in the student's voice and adjusts pace and tone accordingly
 - **Silence Handling** — Checks in after pauses ("Still working on it? Take your time") without being pushy
-- **Privacy by Design** — Consent screen before session start, anonymized session data, clear camera-active indicators, and transparent data handling
+- **Privacy by Design** — Consent screen before session start, anonymized session data, voice-only option (camera toggle), and transparent data handling
 - **Proactive Tool Calling** — Uses live tool execution to fetch definitions and formulas without breaking the student's flow
 
 ---
@@ -53,7 +53,7 @@ If any of these are missing, scoring potential drops significantly even if the s
 flowchart TD
     subgraph Browser["Browser — PWA (Firebase Hosting)"]
         MIC["Microphone\nPCM 16kHz via ScriptProcessorNode"]
-        CAM["Camera\nJPEG frames via Canvas (0.5-3fps adaptive)"]
+        CAM["Camera\nJPEG frames via Canvas (1 FPS)"]
         PLAY["Audio Playback\nPCM 24kHz via AudioContext"]
     end
 
@@ -90,7 +90,7 @@ Get SeeMe Tutor running locally in three steps.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/seeme-tutor.git
+git clone https://github.com/luistatera/seeme-tutor.git
 cd seeme-tutor
 
 # 2. Configure your API key
@@ -136,7 +136,7 @@ Open [http://localhost:8000](http://localhost:8000) in your browser. Allow micro
 
 ```bash
 # Clone and enter the repo
-git clone https://github.com/YOUR_USERNAME/seeme-tutor.git
+git clone https://github.com/luistatera/seeme-tutor.git
 cd seeme-tutor
 
 # Create and activate a virtual environment
@@ -234,7 +234,7 @@ SeeMe Tutor runs a real-time bidirectional pipeline between the browser and Gemi
 
 1. **Mic capture** — The browser uses a `ScriptProcessorNode` to capture raw PCM audio at 16kHz from the system microphone. Audio chunks are base64-encoded and sent to the backend over WebSocket as JSON.
 
-2. **Camera capture** — The browser intelligently draws the current camera frame to an HTML5 canvas (dynamically adapting from 0.5 to 3 FPS based on bandwidth constraints), exports it as a JPEG, base64-encodes it, and sends it to the backend alongside the audio stream.
+2. **Camera capture** — The browser draws the current camera frame to an HTML5 canvas at 1 FPS, exports it as a JPEG, base64-encodes it, and sends it to the backend alongside the audio stream.
 
 3. **WebSocket bridge** — The FastAPI backend receives the combined audio and video stream. It maintains one persistent WebSocket connection per user session and forwards data into an active Gemini Live API session.
 
@@ -265,6 +265,31 @@ SeeMe is a patient, encouraging tutor with a calm and warm voice. Its pedagogica
 - **Silence handling** — When a student goes quiet, checks in after a natural pause: "Still working on it? Take your time." Stays present without being pushy.
 - **Multilingual** — Start speaking Portuguese, it responds in Portuguese. Switch to English mid-sentence, it follows. German works too.
 - **Natural interruptions** — Because Gemini Live API is full-duplex, students can interrupt mid-response and SeeMe will stop, acknowledge, and re-approach — just like a real tutor would.
+
+---
+
+## Child Safety and Data Trust
+
+SeeMe Tutor is designed for families and educational use. Data handling is minimal by design:
+
+**What is stored:**
+- Firestore session metadata only: session ID, start time, duration, detected language, end reason
+- Anonymized client identifier (hashed IP — raw IPs are never persisted)
+
+**What is NOT stored:**
+- No audio recordings
+- No video frames or screenshots
+- No conversation transcripts
+- No personal data (name, age, school, etc.)
+
+**Educational scope:**
+- The tutor's system instructions restrict it to educational topics — it will redirect non-educational requests back to learning
+- Socratic method ensures the tutor guides rather than provides answers, keeping the student in the driver's seat
+
+**Supervised use:**
+- SeeMe is designed to be used with a parent or guardian present
+- A consent screen is shown before each session begins
+- Sessions are capped at 20 minutes to encourage focused, supervised study time
 
 ---
 
@@ -320,6 +345,19 @@ In production (Cloud Run), `GEMINI_API_KEY` is mounted from Secret Manager via `
 
 ---
 
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| **Microphone not working** | Click the lock/site-settings icon in the address bar and set Microphone to "Allow". Reload the page. |
+| **Camera not working** | Same as above — ensure Camera is set to "Allow". On macOS, check System Preferences → Privacy → Camera. |
+| **No audio from tutor** | Check that your browser tab is not muted (right-click the tab → Unmute). Ensure system volume is up. |
+| **"Secure context required"** | Camera and mic APIs require HTTPS or `localhost`. Use `http://localhost:8000` for local dev, not a raw IP. |
+| **WebSocket connection fails** | Verify the backend is running (`curl http://localhost:8000/health`). Check that the Gemini API key is set. |
+| **Browser not supported** | Use Chrome or Edge (latest version). Safari and Firefox have limited WebRTC/AudioContext support. |
+
+---
+
 ## Hackathon Submission Notes
 
 SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
@@ -335,6 +373,48 @@ SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 - Secrets: Secret Manager
 
 No third-party AI APIs are used. The entire intelligence layer runs through Google's Gemini platform, with pedagogical design grounded in [LearnLM's learning science principles](https://ai.google.dev/gemini-api/docs/learnlm).
+
+### Judging Rubric — Evidence Map
+
+| Criterion (Weight) | Evidence | Where to Find |
+|---------------------|----------|---------------|
+| **Innovation & Multimodal UX (40%)** | Proactive camera observation, natural interruption handling, trilingual switching (PT/DE/EN), visual grounding, emotional adaptation | Demo video + live test |
+| **Technical Implementation (30%)** | Gemini 2.5 Flash Live API + ADK + Cloud Run + Firestore + Secret Manager + automated deploy | `backend/`, `deploy.sh`, `infrastructure/gcp_services.py` |
+| **Demo & Presentation (30%)** | Real family use case, 3 languages, real homework, clear architecture diagram | Demo video |
+| **Bonus: Published content (+0.6)** | Blog post | _TBD — link will be added_ |
+| **Bonus: Automated deploy (+0.2)** | One-command deploy script | [`deploy.sh`](deploy.sh) |
+| **Bonus: GDG profile (+0.2)** | Google Developer Group profile | _TBD — link will be added_ |
+
+### Architecture Diagram
+
+> **TODO:** Export the Mermaid diagram above to a PNG or SVG using [mermaid.live](https://mermaid.live), Excalidraw, or draw.io. Upload the exported image to the Devpost image carousel or include it in the repo as `architecture.png`.
+
+### Performance Benchmarks
+
+Measured over rehearsal sessions on the production Cloud Run deployment.
+
+#### Response Latency
+
+| Metric | Target | Measured |
+|--------|--------|----------|
+| First tutor audio after student stops speaking | < 500 ms | _TBD_ |
+| Median response start latency | < 400 ms | _TBD_ |
+| P95 response start latency | < 800 ms | _TBD_ |
+
+#### Reliability
+
+| Scenario | Target | Result |
+|----------|--------|--------|
+| Interruption stops tutor audio | 100% | _TBD_ |
+| Proactive observation triggers on visible mistake | > 80% | _TBD_ |
+| Language switch mid-session (PT ↔ EN ↔ DE) | 100% | _TBD_ |
+| 20-minute session completes without error | > 95% | _TBD_ |
+
+> **TODO:** Run 10+ rehearsal sessions on the deployed URL and fill in the measured values from the `LATENCY` log lines in Cloud Run logs.
+
+### Screenshots
+
+> **TODO:** Add a screenshot or GIF of a live session showing the tutor interface with camera feed, audio indicators, and tutor response. Capture from production after final UI polish.
 
 ---
 
