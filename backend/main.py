@@ -77,6 +77,8 @@ except Exception:
         exc_info=True,
     )
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
+if not FRONTEND_DIR.is_dir():
+    FRONTEND_DIR = BASE_DIR / "frontend"
 
 app = FastAPI(
     title="SeeMe Tutor",
