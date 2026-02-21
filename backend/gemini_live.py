@@ -94,15 +94,31 @@ class ADKLiveSession:
             response_modalities=["AUDIO"],
         )
 
+        event_count = 0
+
         async for event in self._runner.run_live(
             user_id=self._user_id,
             session_id=self._session_id,
             live_request_queue=self._queue,
             run_config=run_config,
         ):
+            event_count += 1
             # Translate ADK Event objects into the dict format main.py expects.
             try:
+                # Log raw event attributes for debugging speech detection issues
+                has_content = bool(event.content and event.content.parts)
+                content_role = getattr(event.content, "role", None) if event.content else None
+                logger.debug(
+                    "ADK event #%d: interrupted=%s turn_complete=%s has_content=%s role=%s",
+                    event_count,
+                    event.interrupted,
+                    event.turn_complete,
+                    has_content,
+                    content_role,
+                )
+
                 if event.interrupted:
+                    logger.info("ADK event #%d: INTERRUPTED", event_count)
                     yield {"type": "interrupted"}
                     continue
 
@@ -115,14 +131,28 @@ class ADKLiveSession:
 
                         text = getattr(part, "text", None)
                         if text:
-                            yield {"type": "text", "data": text}
+                            # Check if this is an input transcript (what the model heard)
+                            if content_role == "user":
+                                logger.info(
+                                    "ADK event #%d: INPUT TRANSCRIPT (student): %s",
+                                    event_count, text,
+                                )
+                                yield {"type": "input_transcript", "data": text}
+                            else:
+                                logger.info(
+                                    "ADK event #%d: OUTPUT TEXT (tutor): %s",
+                                    event_count, text,
+                                )
+                                yield {"type": "text", "data": text}
 
                 if event.turn_complete:
+                    logger.info("ADK event #%d: TURN COMPLETE", event_count)
                     yield {"type": "turn_complete"}
 
             except (AttributeError, TypeError, KeyError) as parse_exc:
                 logger.exception(
-                    "Failed to parse ADK event — skipping (event=%r): %s",
+                    "Failed to parse ADK event #%d — skipping (event=%r): %s",
+                    event_count,
                     event,
                     parse_exc,
                 )

@@ -51,7 +51,6 @@ else:
         "Set the variable in .env or as an environment variable."
     )
 
-DEMO_ACCESS_CODE = os.environ.get("DEMO_ACCESS_CODE", "")
 
 SESSION_TIMEOUT_SECONDS = 20 * 60  # 20-minute focused session limit
 
@@ -145,14 +144,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "error", "data": "<description>"}
     """
     await websocket.accept()
-
-    if DEMO_ACCESS_CODE:
-        client_code = websocket.query_params.get("code", "")
-        if client_code != DEMO_ACCESS_CODE:
-            logger.warning("Rejected connection: invalid demo access code")
-            await _send_json(websocket, {"type": "error", "data": "Invalid demo access code. Please reload and try again."})
-            await websocket.close(code=1008)
-            return
 
     raw_ip = websocket.headers.get("x-forwarded-for", websocket.client.host if websocket.client else "unknown")
     client_host = raw_ip.split(",")[0].strip()
@@ -280,6 +271,11 @@ async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession, sess
 
     Runs until the WebSocket is disconnected or an unrecoverable error occurs.
     """
+    audio_chunks_sent = 0
+    video_frames_sent = 0
+    last_stats_time = time.time()
+    STATS_INTERVAL = 10  # log stats every 10 seconds
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -331,10 +327,24 @@ async def _forward_to_gemini(websocket: WebSocket, session: ADKLiveSession, sess
 
             if msg_type == "audio":
                 session.send_audio(raw_bytes)
+                audio_chunks_sent += 1
             elif msg_type == "video":
                 session.send_video_frame(raw_bytes)
+                video_frames_sent += 1
             else:
                 logger.warning("Unknown message type from browser: '%s'", msg_type)
+
+            # Periodic stats logging
+            now = time.time()
+            if now - last_stats_time >= STATS_INTERVAL:
+                elapsed = now - last_stats_time
+                logger.info(
+                    "Session %s — input stats (last %.0fs): audio_chunks=%d (%.1f/s), video_frames=%d",
+                    session_id, elapsed, audio_chunks_sent, audio_chunks_sent / elapsed, video_frames_sent,
+                )
+                audio_chunks_sent = 0
+                video_frames_sent = 0
+                last_stats_time = now
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_gemini)")
@@ -355,6 +365,9 @@ async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> N
     Runs until the Gemini session closes, the WebSocket disconnects,
     or an unrecoverable error occurs.
     """
+    audio_response_chunks = 0
+    turn_count = 0
+
     try:
         async for event in session.receive():
             event_type = event.get("type")
@@ -363,20 +376,34 @@ async def _forward_to_client(websocket: WebSocket, session: ADKLiveSession) -> N
                 audio_bytes: bytes = event["data"]
                 encoded = base64.b64encode(audio_bytes).decode("utf-8")
                 await _send_json(websocket, {"type": "audio", "data": encoded})
+                audio_response_chunks += 1
 
             elif event_type == "text":
+                logger.info("TUTOR TRANSCRIPT: %s", event["data"])
                 await _send_json(websocket, {"type": "text", "data": event["data"]})
 
+            elif event_type == "input_transcript":
+                logger.info("STUDENT HEARD: %s", event["data"])
+
             elif event_type == "turn_complete":
+                turn_count += 1
                 await _send_json(websocket, {"type": "turn_complete"})
-                logger.debug("Turn complete signal sent to browser")
+                logger.info(
+                    "Turn #%d complete — sent %d audio chunks to browser",
+                    turn_count, audio_response_chunks,
+                )
+                audio_response_chunks = 0
 
             elif event_type == "interrupted":
                 await _send_json(websocket, {"type": "interrupted"})
-                logger.debug("Interrupted signal sent to browser")
+                logger.info(
+                    "INTERRUPTED by student (had sent %d audio chunks before interruption)",
+                    audio_response_chunks,
+                )
+                audio_response_chunks = 0
 
             else:
-                logger.warning("Unknown event type from Gemini session: '%s'", event_type)
+                logger.warning("Unknown event type from Gemini session: '%s' — full event: %r", event_type, event)
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_client)")
