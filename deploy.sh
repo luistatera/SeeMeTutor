@@ -9,7 +9,7 @@
 # Prerequisites:
 #   - gcloud CLI installed and authenticated (`gcloud auth login`)
 #   - firebase CLI installed (`npm install -g firebase-tools`)
-#   - Secret "gemini-api-key" exists in Secret Manager for project seeme-tutor
+#   - Service account has roles/aiplatform.user for Vertex AI access
 #
 # Usage:
 #   chmod +x deploy.sh
@@ -50,7 +50,6 @@ PROJECT_ID="seeme-tutor"
 REGION="europe-west1"
 SERVICE_NAME="seeme-tutor"
 SERVICE_ACCOUNT="seeme-tutor-sa@seeme-tutor.iam.gserviceaccount.com"
-SECRET_GEMINI="gemini-api-key"
 SECRET_DEMO_CODE="demo-access-code"
 MEMORY="512Mi"
 TIMEOUT="300"
@@ -93,7 +92,7 @@ success "Active project: ${PROJECT_ID}"
 # ---------------------------------------------------------------------------
 step "Verifying secrets in Secret Manager"
 
-for SECRET in "${SECRET_GEMINI}" "${SECRET_DEMO_CODE}"; do
+for SECRET in "${SECRET_DEMO_CODE}"; do
     gcloud secrets versions access latest \
         --secret="${SECRET}" \
         --project="${PROJECT_ID}" &>/dev/null || \
@@ -117,7 +116,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region="${REGION}" \
     --allow-unauthenticated \
     --service-account="${SERVICE_ACCOUNT}" \
-    --set-secrets="GEMINI_API_KEY=${SECRET_GEMINI}:latest,DEMO_ACCESS_CODE=${SECRET_DEMO_CODE}:latest" \
+    --set-secrets="DEMO_ACCESS_CODE=${SECRET_DEMO_CODE}:latest" \
     --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION}" \
     --port="${PORT}" \
     --memory="${MEMORY}" \

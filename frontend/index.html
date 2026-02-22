@@ -287,11 +287,30 @@
       border-radius: 2px;
     }
 
-    .tutor-wave-overlay .wave-bar:nth-child(1) { height: 6px; animation-delay: 0s; }
-    .tutor-wave-overlay .wave-bar:nth-child(2) { height: 12px; animation-delay: 0.1s; }
-    .tutor-wave-overlay .wave-bar:nth-child(3) { height: 16px; animation-delay: 0.2s; }
-    .tutor-wave-overlay .wave-bar:nth-child(4) { height: 12px; animation-delay: 0.3s; }
-    .tutor-wave-overlay .wave-bar:nth-child(5) { height: 6px; animation-delay: 0.4s; }
+    .tutor-wave-overlay .wave-bar:nth-child(1) {
+      height: 6px;
+      animation-delay: 0s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(2) {
+      height: 12px;
+      animation-delay: 0.1s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(3) {
+      height: 16px;
+      animation-delay: 0.2s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(4) {
+      height: 12px;
+      animation-delay: 0.3s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(5) {
+      height: 6px;
+      animation-delay: 0.4s;
+    }
 
     .tutor-tile-info {
       display: flex;
@@ -322,10 +341,12 @@
       min-width: 0;
     }
 
-    .tutor-tile-pills::-webkit-scrollbar { display: none; }
+    .tutor-tile-pills::-webkit-scrollbar {
+      display: none;
+    }
 
     /* =====================================================================
-       MAIN AREA — whiteboard + PiP + captions
+       MAIN AREA — whiteboard + PiP
     ===================================================================== */
     .main-area {
       flex: 1;
@@ -393,11 +414,105 @@
       white-space: pre-wrap;
     }
 
+    /* Note status borders */
+    .note-card[data-status="in_progress"] {
+      border-left: 3px solid var(--blue);
+    }
+
+    .note-card[data-status="done"] {
+      border-left: 3px solid var(--green);
+      opacity: 0.8;
+    }
+
+    .note-card[data-status="mastered"] {
+      border-left: 3px solid var(--green);
+      opacity: 0.65;
+    }
+
+    .note-card[data-status="struggling"] {
+      border-left: 3px solid var(--red);
+    }
+
+    /* Strikethrough for completed checklist items */
+    .note-card[data-type="checklist_item"][data-status="done"] .note-card-content,
+    .note-card[data-type="checklist_item"][data-status="mastered"] .note-card-content {
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .note-status-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .note-status-badge.status-pending {
+      background: rgba(74, 106, 136, 0.25);
+      color: var(--text-muted);
+    }
+
+    .note-status-badge.status-in_progress {
+      background: rgba(66, 133, 244, 0.2);
+      color: var(--blue-light);
+    }
+
+    .note-status-badge.status-done {
+      background: rgba(52, 168, 83, 0.2);
+      color: var(--green);
+    }
+
+    .note-status-badge.status-mastered {
+      background: rgba(52, 168, 83, 0.3);
+      color: var(--green);
+    }
+
+    .note-status-badge.status-struggling {
+      background: rgba(234, 67, 53, 0.2);
+      color: var(--red);
+    }
+
+    .note-type-icon {
+      font-size: 11px;
+      margin-right: 4px;
+      opacity: 0.7;
+      font-family: monospace;
+    }
+
+    .note-card-title-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+      gap: 2px;
+    }
+
+    .whiteboard-topic-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--blue-light);
+      margin: -16px -16px 4px -16px;
+    }
+
     @keyframes note-enter {
       from {
         opacity: 0;
         transform: translateY(12px);
       }
+
       to {
         opacity: 1;
         transform: translateY(0);
@@ -516,69 +631,51 @@
       animation: wave-bar-anim 0.9s ease-in-out infinite;
     }
 
-    .wave-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
-    .wave-bar:nth-child(2) { height: 16px; animation-delay: 0.1s; }
-    .wave-bar:nth-child(3) { height: 24px; animation-delay: 0.2s; }
-    .wave-bar:nth-child(4) { height: 16px; animation-delay: 0.3s; }
-    .wave-bar:nth-child(5) { height: 8px; animation-delay: 0.4s; }
-    .wave-bar:nth-child(6) { height: 20px; animation-delay: 0.15s; }
-    .wave-bar:nth-child(7) { height: 12px; animation-delay: 0.25s; }
+    .wave-bar:nth-child(1) {
+      height: 8px;
+      animation-delay: 0s;
+    }
+
+    .wave-bar:nth-child(2) {
+      height: 16px;
+      animation-delay: 0.1s;
+    }
+
+    .wave-bar:nth-child(3) {
+      height: 24px;
+      animation-delay: 0.2s;
+    }
+
+    .wave-bar:nth-child(4) {
+      height: 16px;
+      animation-delay: 0.3s;
+    }
+
+    .wave-bar:nth-child(5) {
+      height: 8px;
+      animation-delay: 0.4s;
+    }
+
+    .wave-bar:nth-child(6) {
+      height: 20px;
+      animation-delay: 0.15s;
+    }
+
+    .wave-bar:nth-child(7) {
+      height: 12px;
+      animation-delay: 0.25s;
+    }
 
     @keyframes wave-bar-anim {
-      0%, 100% { transform: scaleY(1); }
-      50% { transform: scaleY(0.3); }
-    }
 
-    /* =====================================================================
-       FLOATING CAPTIONS — overlay at bottom of main area
-    ===================================================================== */
-    .caption-overlay {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
-      right: calc(120px + 24px);
-      padding: 6px 10px;
-      background: rgba(13, 27, 42, 0.85);
-      backdrop-filter: blur(6px);
-      border-radius: var(--radius-sm);
-      z-index: 15;
-      opacity: 0;
-      transition: opacity 0.25s;
-      pointer-events: none;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
+      0%,
+      100% {
+        transform: scaleY(1);
+      }
 
-    .caption-overlay.active {
-      opacity: 1;
-    }
-
-    .caption-line {
-      font-size: 12px;
-      line-height: 1.4;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      transition: opacity 0.25s;
-    }
-
-    .caption-student {
-      color: var(--text-muted);
-      opacity: 0.7;
-    }
-
-    .caption-student.active {
-      opacity: 1;
-    }
-
-    .caption-tutor {
-      color: var(--blue-light);
-      opacity: 0.7;
-    }
-
-    .caption-tutor.active {
-      opacity: 1;
+      50% {
+        transform: scaleY(0.3);
+      }
     }
 
     .voice-command-hint {
@@ -1128,6 +1225,20 @@
       font-size: 11px;
       color: var(--text-secondary);
     }
+
+    .profile-status {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-card);
+    }
+
+    .profile-status.error {
+      border-color: rgba(234, 67, 53, 0.45);
+      color: #f8a7a1;
+    }
   </style>
 </head>
 
@@ -1283,7 +1394,7 @@
       </div>
     </div>
 
-    <!-- MAIN AREA — whiteboard + camera PiP + floating captions -->
+    <!-- MAIN AREA — whiteboard + camera PiP -->
     <div class="main-area" id="main-area">
 
       <!-- Whiteboard -->
@@ -1297,7 +1408,7 @@
             <line x1="16" y1="17" x2="8" y2="17" />
             <polyline points="10 9 9 9 8 9" />
           </svg>
-          <p>Notes will appear here as you work together</p>
+          <p>Notes will appear here as we work together</p>
         </div>
       </div>
 
@@ -1327,19 +1438,7 @@
         <div class="wave-bar"></div>
       </div>
 
-      <!-- Floating captions overlay -->
-      <div class="caption-overlay" id="caption-overlay">
-        <div class="caption-line caption-tutor" id="caption-tutor-overlay"></div>
-        <div class="caption-line caption-student" id="caption-student-overlay"></div>
-      </div>
-
     </div><!-- /.main-area -->
-
-    <!-- Hidden old caption bar (for JS compatibility, not displayed) -->
-    <div class="caption-bar" id="caption-bar" style="display:none;">
-      <div class="caption-line caption-student" id="caption-student"></div>
-      <div class="caption-line caption-tutor" id="caption-tutor"></div>
-    </div>
     <div class="voice-command-hint" id="voice-command-hint" aria-live="polite"></div>
 
     <!-- CONTROL BAR -->
@@ -1449,46 +1548,59 @@
     const WS_MAX_ATTEMPTS = 5;
     const SPEECH_ACTIVITY_THRESHOLD = 0.02;
     const SPEECH_ACTIVITY_DEBOUNCE_MS = 1200;
+    const NOISE_GATE_RMS = 0.01;
+    const BARGE_IN_RMS_THRESHOLD = 0.06;
+    const BARGE_IN_MIN_FRAMES = 4;
     const CHECKPOINT_HINT_DURATION_MS = 12000;
     const MAX_COMMAND_WORDS = 7;
     const VOICE_COMMAND_CATALOG = {
-      open_camera: ['open camera', 'camera on', 'turn on camera'],
-      close_camera: ['close camera', 'camera off', 'turn off camera'],
+      open_camera: ['open camera', 'open the camera', 'camera on', 'turn on camera', 'turn on the camera'],
+      close_camera: ['close camera', 'close the camera', 'camera off', 'turn off camera', 'turn off the camera'],
       front_camera: ['front camera', 'selfie camera'],
       back_camera: ['back camera', 'rear camera', 'environment camera'],
       away: ['give me a moment', 'one moment', 'wait a moment', 'hold on'],
       resume: ["i am back", "i'm back", 'im back', 'back now'],
+      slow_speech: [
+        'slow down',
+        'can you slow down',
+        'please slow down',
+        'speak slowly',
+        'speak slower',
+        'talk slower',
+        'go slower',
+        'mais devagar',
+        'fale devagar',
+        'mais lento',
+        'langsamer',
+        'sprich langsamer',
+        'rede langsamer',
+      ],
       end_session: ['end session', 'finish session', 'stop session'],
       checkpoint_later: ['save for later', 'save it for later'],
       checkpoint_now: ['solve now', 'continue now'],
     };
-    const PROFILE_STORAGE_KEY = 'seeme_profile_id';
-    const STUDENT_PROFILES = [
-      {
-        id: 'luis-german',
-        name: 'Luis',
-        track: 'German A2',
-        focus: 'Daily language confidence',
-      },
-      {
-        id: 'daughter-math7',
-        name: 'Daughter — Math',
-        track: 'Math Grade 7',
-        focus: 'Step-by-step problem solving',
-      },
-      {
-        id: 'daughter-chem-university',
-        name: 'Daughter — Chemistry',
-        track: 'University Chemistry',
-        focus: 'Concept clarity and formulas',
-      },
-      {
-        id: 'wife-technology',
-        name: 'Wife',
-        track: 'Technology Skills',
-        focus: 'Practical digital tasks',
-      },
+    const VOICE_COMMAND_ORDER = [
+      'open_camera',
+      'close_camera',
+      'front_camera',
+      'back_camera',
+      'away',
+      'resume',
+      'slow_speech',
+      'end_session',
+      'checkpoint_later',
+      'checkpoint_now',
     ];
+    const VOICE_COMMAND_INTENT_SIGNALS = {
+      cameraTargets: ['camera', 'cam', 'webcam', 'video', 'kamera', 'camara'],
+      openActions: ['open', 'turn on', 'switch on', 'start', 'enable', 'activate', 'ligar', 'liga', 'ativar', 'einschalten', 'anmachen'],
+      closeActions: ['close', 'turn off', 'switch off', 'stop', 'disable', 'deactivate', 'desligar', 'desliga', 'ausschalten', 'ausmachen'],
+      switchActions: ['switch', 'change', 'set', 'use', 'move', 'go', 'usar', 'mudar', 'trocar', 'wechsel', 'nutze'],
+      frontCues: ['front', 'selfie', 'user', 'frente', 'frontal', 'vorne'],
+      backCues: ['back', 'rear', 'environment', 'world', 'tras', 'traseira', 'hinten'],
+    };
+    const PROFILE_STORAGE_KEY = 'seeme_profile_id';
+    const PROFILE_API_PATH = '/api/profiles';
 
     // =========================================================================
     // STATE
@@ -1503,6 +1615,7 @@
       permGranted: false,
       selectedProfileId: null,
       selectedProfile: null,
+      profiles: [],
       lastServerError: '',
       awayMode: false,
       voiceCommandsSupported: false,
@@ -1524,16 +1637,11 @@
     const cameraCanvas = $('camera-canvas');
     const cameraPlaceholder = $('camera-placeholder');
     const waveOverlay = $('wave-overlay');
-    const captionStudent = $('caption-student');
-    const captionTutor = $('caption-tutor');
     const voiceCommandHint = $('voice-command-hint');
     const whiteboard = $('whiteboard');
     const whiteboardEmpty = $('whiteboard-empty');
     const tutorTileStatus = $('tutor-tile-status');
     const tutorWaveOverlay = $('tutor-wave-overlay');
-    const captionOverlay = $('caption-overlay');
-    const captionTutorOverlay = $('caption-tutor-overlay');
-    const captionStudentOverlay = $('caption-student-overlay');
     const cameraBtn = $('camera-btn');
     const micBtn = $('mic-btn');
     const micBtnWrapper = $('mic-btn-wrapper');
@@ -1569,6 +1677,8 @@
     let lastSpeechActivitySentAt = 0;
     let checkpointHintTimer = null;
     let commandRecognition = null;
+    let bargeInFrameCount = 0;
+    let bargeInSentForTurn = false;
 
     function wsConnect() {
       if (ws && ws.readyState <= WebSocket.OPEN) return;
@@ -1686,19 +1796,14 @@
 
         case 'turn_complete':
           state.discardingAudio = false;
+          bargeInFrameCount = 0;
+          bargeInSentForTurn = false;
           setSpeakingState(false);
           finishTutorCaption();
           break;
 
         case 'interrupted':
-          // VAD detected student speech — stop audio and discard in-flight chunks
-          state.discardingAudio = true;
-          setSpeakingState(false);
-          nextAudioTime = 0;
-          // Fade tutor caption to signal it was cut off
-          captionTutor.style.opacity = '0.5';
-          if (captionTutorOverlay) captionTutorOverlay.style.opacity = '0.5';
-          finishTutorCaption();
+          forceClientInterruption();
           break;
 
         case 'session_limit':
@@ -1727,23 +1832,20 @@
           applyBacklogContext(msg.data);
           break;
 
+        case 'topic_update':
+          if (msg.data && msg.data.topic_title) {
+            topicPill.textContent = `Topic: ${msg.data.topic_title}`;
+            updateWhiteboardTopicHeader(msg.data.topic_title);
+            clearWhiteboardNotes();
+          }
+          break;
+
         case 'assistant_state':
           applyAssistantState(msg.data);
           break;
 
         case 'assistant_prompt':
-          if (msg.data) {
-            captionTutor.textContent = 'SeeMe: ' + msg.data;
-            captionTutor.classList.add('active');
-            captionStudent.classList.remove('active');
-            if (captionTutorOverlay) captionTutorOverlay.textContent = 'SeeMe: ' + msg.data;
-            if (captionOverlay) {
-              clearTimeout(captionOverlayHideTimer);
-              captionOverlay.classList.add('active');
-              captionOverlayHideTimer = setTimeout(() => captionOverlay.classList.remove('active'), 5000);
-            }
-            showToast(msg.data, 4200);
-          }
+          if (msg.data) showToast(msg.data, 4200);
           break;
 
         default:
@@ -1769,20 +1871,42 @@
       statusText.textContent = labelOverride || labels[statusKey] || statusKey;
     }
 
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderProfileStatus(message, isError = false) {
+      profileList.innerHTML = '';
+      const node = document.createElement('div');
+      node.className = `profile-status${isError ? ' error' : ''}`;
+      node.textContent = message;
+      profileList.appendChild(node);
+    }
+
     function renderProfileCards() {
       profileList.innerHTML = '';
-      STUDENT_PROFILES.forEach((profile) => {
+      if (!state.profiles.length) {
+        renderProfileStatus('No profiles found in Firestore. Add student documents first.', true);
+        return;
+      }
+
+      state.profiles.forEach((profile) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'profile-card';
         btn.dataset.profileId = profile.id;
         btn.innerHTML = `
-          <div class="profile-name">${profile.name}</div>
-          <div class="profile-track">${profile.track}</div>
-          <div class="profile-focus">${profile.focus}</div>
+          <div class="profile-name">${escapeHtml(profile.name)}</div>
+          <div class="profile-track">${escapeHtml(profile.track)}</div>
+          <div class="profile-focus">${escapeHtml(profile.focus)}</div>
         `;
         btn.addEventListener('click', () => {
-          selectProfile(profile.id);
+          if (!selectProfile(profile.id)) return;
           profileModal.classList.remove('visible');
           if (localStorage.getItem('seeme_consent')) {
             startSession();
@@ -1794,9 +1918,40 @@
       });
     }
 
+    async function loadProfiles() {
+      renderProfileStatus('Loading profiles...');
+      try {
+        const response = await fetch(PROFILE_API_PATH, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`profiles_http_${response.status}`);
+        }
+        const payload = await response.json();
+        const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
+        state.profiles = profiles
+          .map((profile) => {
+            const id = String(profile?.id || '').trim().toLowerCase();
+            if (!id) return null;
+            return {
+              id,
+              name: String(profile?.name || id).trim() || id,
+              track: String(profile?.track || 'General Learning').trim() || 'General Learning',
+              focus: String(profile?.focus || 'Continue learning').trim() || 'Continue learning',
+              preferredLanguage: String(profile?.preferred_language || 'en').trim().toLowerCase() || 'en',
+            };
+          })
+          .filter(Boolean);
+        renderProfileCards();
+      } catch (error) {
+        state.profiles = [];
+        renderProfileStatus('Could not load profiles from backend. Please refresh and try again.', true);
+        showToast('Could not load profiles from backend.', 4200, true);
+      }
+    }
+
     function selectProfile(profileId) {
-      const profile = STUDENT_PROFILES.find((p) => p.id === profileId);
-      if (!profile) return;
+      const normalizedId = String(profileId || '').trim().toLowerCase();
+      const profile = state.profiles.find((p) => p.id === normalizedId);
+      if (!profile) return false;
       state.selectedProfileId = profile.id;
       state.selectedProfile = profile;
       localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
@@ -1804,6 +1959,7 @@
       trackPill.textContent = `Track: ${profile.track}`;
       topicPill.textContent = 'Topic: loading...';
       setStatus('idle', 'Profile selected');
+      return true;
     }
 
     function applyBacklogContext(context) {
@@ -1812,6 +1968,7 @@
       const track = context.track_title || state.selectedProfile?.track || '--';
       trackPill.textContent = `Track: ${track}`;
       topicPill.textContent = `Topic: ${topic}`;
+      if (topic && topic !== '--') updateWhiteboardTopicHeader(topic);
     }
 
     function applyAssistantState(data) {
@@ -1832,24 +1989,127 @@
     // =========================================================================
     // WHITEBOARD
     // =========================================================================
-    function addWhiteboardNote(note) {
-      if (!note || !note.title) return;
-      state.whiteboardNotes.push(note);
+    const NOTE_STATUS_LABELS = {
+      pending: 'To do',
+      in_progress: 'Working',
+      done: 'Done',
+      mastered: 'Mastered',
+      struggling: 'Needs help',
+    };
+
+    const NOTE_TYPE_ICONS = {
+      checklist_item: '[ ]',
+      formula: 'f(x)',
+      vocabulary: 'Aa',
+    };
+
+    const CHECKLIST_DONE_ICON = '[x]';
+
+    function addWhiteboardNote(data) {
+      // Handle clear action (board reset for new homework capture)
+      if (data && data.action === 'clear') {
+        clearWhiteboardNotes();
+        return;
+      }
+
+      // Handle status update messages
+      if (data && data.action === 'update_status') {
+        updateWhiteboardNoteStatus(data.id, data.status);
+        return;
+      }
+
+      if (!data || !data.title) return;
+      state.whiteboardNotes.push(data);
       if (whiteboardEmpty) whiteboardEmpty.style.display = 'none';
+
+      const noteType = data.note_type || 'insight';
+      const status = data.status || 'pending';
 
       const card = document.createElement('div');
       card.className = 'note-card';
-      card.id = note.id || '';
-      const title = document.createElement('div');
-      title.className = 'note-card-title';
-      title.textContent = note.title;
+      card.id = data.id || '';
+      card.dataset.type = noteType;
+      card.dataset.status = status;
+
+      // Title row: type icon + title + status badge
+      const titleRow = document.createElement('div');
+      titleRow.className = 'note-card-title-row';
+
+      const typeIcon = NOTE_TYPE_ICONS[noteType];
+      if (typeIcon) {
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'note-type-icon';
+        iconSpan.textContent = typeIcon;
+        titleRow.appendChild(iconSpan);
+      }
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'note-card-title';
+      titleSpan.style.marginBottom = '0';
+      titleSpan.textContent = data.title;
+      titleRow.appendChild(titleSpan);
+
+      const badge = document.createElement('span');
+      badge.className = `note-status-badge status-${status}`;
+      badge.textContent = NOTE_STATUS_LABELS[status] || status;
+      titleRow.appendChild(badge);
+
       const content = document.createElement('div');
       content.className = 'note-card-content';
-      content.textContent = note.content || '';
-      card.appendChild(title);
+      content.textContent = data.content || '';
+
+      card.appendChild(titleRow);
       card.appendChild(content);
       whiteboard.appendChild(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function updateWhiteboardNoteStatus(noteId, newStatus) {
+      if (!noteId || !newStatus) return;
+
+      // Update state array
+      const stateNote = state.whiteboardNotes.find((n) => n.id === noteId);
+      if (stateNote) stateNote.status = newStatus;
+
+      // Update DOM
+      const card = document.getElementById(noteId);
+      if (!card) return;
+
+      card.dataset.status = newStatus;
+
+      // Update badge
+      const badge = card.querySelector('.note-status-badge');
+      if (badge) {
+        badge.className = `note-status-badge status-${newStatus}`;
+        badge.textContent = NOTE_STATUS_LABELS[newStatus] || newStatus;
+      }
+
+      // Update checklist icon if applicable
+      if (card.dataset.type === 'checklist_item') {
+        const icon = card.querySelector('.note-type-icon');
+        if (icon) {
+          icon.textContent = (newStatus === 'done' || newStatus === 'mastered')
+            ? CHECKLIST_DONE_ICON
+            : NOTE_TYPE_ICONS.checklist_item;
+        }
+      }
+    }
+
+    function updateWhiteboardTopicHeader(topicTitle) {
+      if (!topicTitle) return;
+      let header = whiteboard.querySelector('.whiteboard-topic-header');
+      if (!header) {
+        header = document.createElement('div');
+        header.className = 'whiteboard-topic-header';
+        whiteboard.insertBefore(header, whiteboard.firstChild);
+      }
+      header.textContent = topicTitle;
+    }
+
+    function clearWhiteboardNotes() {
+      state.whiteboardNotes = [];
+      whiteboard.querySelectorAll('.note-card').forEach((el) => el.remove());
+      if (whiteboardEmpty) whiteboardEmpty.style.display = '';
     }
 
     // =========================================================================
@@ -1911,7 +2171,13 @@
         if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
-        maybeSendSpeechActivity(float32);
+        const rms = calculateRms(float32);
+        maybeSendSpeechActivity(rms);
+        maybeHandleLocalBargeIn(rms);
+
+        // Noise gate: don't send quiet audio to Gemini to prevent VAD false triggers
+        if (rms < NOISE_GATE_RMS) return;
+
         const int16 = float32ToInt16(float32);
         const b64 = arrayBufferToBase64(int16.buffer);
 
@@ -2011,6 +2277,9 @@
 
     function setSpeakingState(active) {
       state.isSpeaking = active;
+      if (active) {
+        bargeInFrameCount = 0;
+      }
       // Sync tutor tile
       if (tutorWaveOverlay) tutorWaveOverlay.classList.toggle('active', active);
       if (tutorTileStatus) {
@@ -2028,11 +2297,18 @@
         activeSources.forEach(s => { try { s.stop(); } catch (_) { } });
         activeSources.clear();
         nextAudioTime = 0;
+
+        if (audioCtxPlay) {
+          audioCtxPlay.close().catch(() => { });
+          audioCtxPlay = null;
+        }
+
         if (!state.micActive) {
           micBtnWrapper.className = 'mic-btn-wrapper';
           setStatus('connected');
         }
       }
+
     }
 
     // =========================================================================
@@ -2163,48 +2439,17 @@
     }
 
     // =========================================================================
-    // LIVE CAPTIONS
+    // TUTOR TEXT ACCUMULATOR (for checkpoint hint detection)
     // =========================================================================
     let tutorCaptionText = '';
 
-    let captionOverlayHideTimer = null;
-
     function updateTutorCaption(text) {
       tutorCaptionText += text;
-      captionTutor.textContent = 'SeeMe: ' + tutorCaptionText;
-      captionTutor.style.opacity = '';
-      captionTutor.classList.add('active');
-      captionStudent.classList.remove('active');
-      // Mirror to floating overlay
-      if (captionTutorOverlay) {
-        captionTutorOverlay.textContent = 'SeeMe: ' + tutorCaptionText;
-        captionTutorOverlay.style.opacity = '';
-      }
-      if (captionOverlay) {
-        clearTimeout(captionOverlayHideTimer);
-        captionOverlay.classList.add('active');
-      }
       maybeShowCheckpointVoiceHint(tutorCaptionText);
     }
 
     function finishTutorCaption() {
       tutorCaptionText = '';
-      // Fade overlay after a delay
-      captionOverlayHideTimer = setTimeout(() => {
-        if (captionOverlay) captionOverlay.classList.remove('active');
-      }, 4000);
-    }
-
-    function updateStudentCaption(text) {
-      captionStudent.textContent = 'You: ' + text;
-      captionStudent.classList.add('active');
-      captionTutor.classList.remove('active');
-      // Mirror to floating overlay
-      if (captionStudentOverlay) captionStudentOverlay.textContent = 'You: ' + text;
-      if (captionOverlay) {
-        clearTimeout(captionOverlayHideTimer);
-        captionOverlay.classList.add('active');
-      }
     }
 
     // =========================================================================
@@ -2241,6 +2486,7 @@
       if (ws) { ws.close(); ws = null; }
       disableMicBtn();
       setStatus('idle', 'Select profile');
+      void loadProfiles();
       profileModal.classList.add('visible');
       showToast('Select a profile to continue.', 2500);
     }
@@ -2291,9 +2537,56 @@
         .trim();
     }
 
-    function commandMatches(normalized, commandId) {
+    function escapeRegExp(value) {
+      return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function phraseInNormalizedText(normalized, phrase) {
+      const cleanedPhrase = String(phrase || '').trim();
+      if (!cleanedPhrase) return false;
+      const escaped = escapeRegExp(cleanedPhrase);
+      return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(normalized);
+    }
+
+    function findCommandPhrase(normalized, commandId) {
       const phrases = VOICE_COMMAND_CATALOG[commandId] || [];
-      return phrases.some((phrase) => normalized.includes(phrase));
+      return phrases.find((phrase) => phraseInNormalizedText(normalized, phrase)) || '';
+    }
+
+    function hasAnySignal(normalized, signals) {
+      return (signals || []).some((signal) => phraseInNormalizedText(normalized, signal));
+    }
+
+    function detectVoiceCommand(normalized) {
+      for (const commandId of VOICE_COMMAND_ORDER) {
+        if (findCommandPhrase(normalized, commandId)) {
+          return { commandId, source: 'phrase' };
+        }
+      }
+
+      const hasCameraTarget = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.cameraTargets);
+      if (!hasCameraTarget) return null;
+
+      const hasOpenAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.openActions);
+      const hasCloseAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.closeActions);
+      const hasSwitchAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.switchActions);
+      const hasFrontCue = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.frontCues);
+      const hasBackCue = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.backCues);
+
+      if (hasFrontCue && (hasSwitchAction || hasOpenAction)) {
+        return { commandId: 'front_camera', source: 'intent' };
+      }
+      if (hasBackCue && (hasSwitchAction || hasOpenAction)) {
+        return { commandId: 'back_camera', source: 'intent' };
+      }
+      if (hasOpenAction && !hasCloseAction) {
+        return { commandId: 'open_camera', source: 'intent' };
+      }
+      if (hasCloseAction && !hasOpenAction) {
+        return { commandId: 'close_camera', source: 'intent' };
+      }
+
+      return null;
     }
 
     function nextCommandAttempt(commandId) {
@@ -2320,9 +2613,12 @@
     function getRecognitionLang() {
       const profile = state.selectedProfile;
       if (!profile) return 'en-US';
+      const preferredLanguage = String(profile.preferredLanguage || '').toLowerCase();
+      if (preferredLanguage.startsWith('de')) return 'de-DE';
+      if (preferredLanguage.startsWith('pt')) return 'pt-BR';
       const track = (profile.track || '').toLowerCase();
       if (track.includes('german')) return 'de-DE';
-      if (track.includes('portug') || profile.id.includes('chem')) return 'pt-BR';
+      if (track.includes('portug')) return 'pt-BR';
       return 'en-US';
     }
 
@@ -2344,12 +2640,7 @@
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           const spoken = result[0]?.transcript || '';
-          if (result.isFinal) {
-            updateStudentCaption(spoken);
-            handleVoiceCommand(spoken);
-          } else {
-            updateStudentCaption(spoken);
-          }
+          if (result.isFinal) handleVoiceCommand(spoken);
         }
       };
 
@@ -2380,20 +2671,13 @@
       const normalized = normalizeSpokenCommand(spokenText);
       if (!normalized) return;
       const words = normalized.split(' ').filter(Boolean);
-      if (words.length > MAX_COMMAND_WORDS) {
-        emitCommandEvent({
-          commandId: 'unknown',
-          spokenText,
-          normalizedText: normalized,
-          matchStatus: 'unmatched',
-          actionStatus: 'ignored',
-          detail: `too_many_words:${words.length}`,
-          attempt: 0,
-        });
-        return;
+      const detectedCommand = detectVoiceCommand(normalized);
+      const matchedCommandId = detectedCommand?.commandId || '';
+      if (detectedCommand?.source === 'intent') {
+        console.info('[VoiceCommand] intent_match', { normalized, command_id: matchedCommandId });
       }
 
-      if (commandMatches(normalized, 'open_camera')) {
+      if (matchedCommandId === 'open_camera') {
         const attempt = nextCommandAttempt('open_camera');
         markUserActivity('cmd_open_camera');
         const ok = await startCamera(state.cameraFacingMode);
@@ -2410,7 +2694,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'close_camera')) {
+      if (matchedCommandId === 'close_camera') {
         const attempt = nextCommandAttempt('close_camera');
         markUserActivity('cmd_close_camera');
         const closed = stopCamera();
@@ -2427,7 +2711,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'front_camera')) {
+      if (matchedCommandId === 'front_camera') {
         const attempt = nextCommandAttempt('front_camera');
         markUserActivity('cmd_front_camera');
         const ok = await switchCameraFacingMode('user');
@@ -2444,7 +2728,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'back_camera')) {
+      if (matchedCommandId === 'back_camera') {
         const attempt = nextCommandAttempt('back_camera');
         markUserActivity('cmd_back_camera');
         const ok = await switchCameraFacingMode('environment');
@@ -2461,7 +2745,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'away')) {
+      if (matchedCommandId === 'away') {
         const attempt = nextCommandAttempt('away');
         toggleAwayMode(true);
         emitCommandEvent({
@@ -2477,7 +2761,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'resume')) {
+      if (matchedCommandId === 'resume') {
         const attempt = nextCommandAttempt('resume');
         toggleAwayMode(false);
         emitCommandEvent({
@@ -2493,7 +2777,24 @@
         return;
       }
 
-      if (commandMatches(normalized, 'end_session')) {
+      if (matchedCommandId === 'slow_speech') {
+        const attempt = nextCommandAttempt('slow_speech');
+        markUserActivity('cmd_slow_speech');
+        wsSend({ type: 'speech_pace', pace: 'slow', source: 'voice_command' });
+        emitCommandEvent({
+          commandId: 'slow_speech',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'sent',
+          detail: 'speech_pace_slow_requested',
+          attempt,
+        });
+        showToast('Voice command: slowing down.', 2200);
+        return;
+      }
+
+      if (matchedCommandId === 'end_session') {
         const attempt = nextCommandAttempt('end_session');
         emitCommandEvent({
           commandId: 'end_session',
@@ -2509,7 +2810,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'checkpoint_later')) {
+      if (matchedCommandId === 'checkpoint_later') {
         const attempt = nextCommandAttempt('checkpoint_later');
         markUserActivity('checkpoint_later');
         wsSend({ type: 'checkpoint_decision', decision: 'later' });
@@ -2526,7 +2827,7 @@
         return;
       }
 
-      if (commandMatches(normalized, 'checkpoint_now')) {
+      if (matchedCommandId === 'checkpoint_now') {
         const attempt = nextCommandAttempt('checkpoint_now');
         markUserActivity('checkpoint_now');
         wsSend({ type: 'checkpoint_decision', decision: 'now' });
@@ -2540,6 +2841,19 @@
           attempt,
         });
         showToast('Voice command: solve now.', 2200);
+        return;
+      }
+
+      if (words.length > MAX_COMMAND_WORDS) {
+        emitCommandEvent({
+          commandId: 'unknown',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'unmatched',
+          actionStatus: 'ignored',
+          detail: `too_many_words:${words.length}`,
+          attempt: 0,
+        });
         return;
       }
 
@@ -2566,13 +2880,45 @@
       wsSend({ type: 'user_activity', data: { kind, at: Date.now() } });
     }
 
-    function maybeSendSpeechActivity(float32) {
+    function calculateRms(float32) {
       let sumSquares = 0;
       for (let i = 0; i < float32.length; i++) {
         const sample = float32[i];
         sumSquares += sample * sample;
       }
-      const rms = Math.sqrt(sumSquares / float32.length);
+      return Math.sqrt(sumSquares / float32.length);
+    }
+
+    function forceClientInterruption() {
+      state.discardingAudio = true;
+      setSpeakingState(false);
+      nextAudioTime = 0;
+      finishTutorCaption();
+    }
+
+    function maybeHandleLocalBargeIn(rms) {
+      if (!state.isSpeaking || state.discardingAudio) {
+        bargeInFrameCount = 0;
+        return;
+      }
+
+      if (rms < BARGE_IN_RMS_THRESHOLD) {
+        bargeInFrameCount = 0;
+        return;
+      }
+
+      bargeInFrameCount += 1;
+      if (bargeInFrameCount < BARGE_IN_MIN_FRAMES) return;
+
+      bargeInFrameCount = 0;
+      forceClientInterruption();
+      if (!bargeInSentForTurn) {
+        bargeInSentForTurn = true;
+        wsSend({ type: 'barge_in', data: { rms: Number(rms.toFixed(4)), at: Date.now() } });
+      }
+    }
+
+    function maybeSendSpeechActivity(rms) {
       const now = Date.now();
       if (rms >= SPEECH_ACTIVITY_THRESHOLD && now - lastSpeechActivitySentAt >= SPEECH_ACTIVITY_DEBOUNCE_MS) {
         lastSpeechActivitySentAt = now;
@@ -2750,7 +3096,7 @@
     // =========================================================================
     // INITIALISE
     // =========================================================================
-    function init() {
+    async function init() {
       // Check browser support
       const missing = [];
       if (!window.WebSocket) missing.push('WebSocket');
@@ -2768,18 +3114,19 @@
         showToast('Voice commands unavailable in this browser.', 4500, true);
       }
 
-      renderProfileCards();
+      await loadProfiles();
 
       const lastProfileId = localStorage.getItem(PROFILE_STORAGE_KEY);
-      if (lastProfileId) {
-        selectProfile(lastProfileId);
+      const restored = lastProfileId ? selectProfile(lastProfileId) : false;
+      if (lastProfileId && !restored) {
+        localStorage.removeItem(PROFILE_STORAGE_KEY);
       }
 
       // Hide loader, show mandatory profile selector gate
       loadingOverlay.classList.add('fade-out');
       setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
       profileModal.classList.add('visible');
-      if (lastProfileId) {
+      if (restored) {
         showToast('Select profile to start this session.', 2600);
       }
     }
@@ -2802,7 +3149,10 @@
     }
 
     // Kick off
-    init();
+    init().catch((error) => {
+      console.error('[Init] failed:', error);
+      showToast('Could not initialize the app. Please reload.', 0, true);
+    });
   </script>
 
 </body>
