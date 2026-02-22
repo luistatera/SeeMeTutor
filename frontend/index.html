@@ -70,8 +70,7 @@
       display: flex;
       flex-direction: column;
       height: 100dvh;
-      /* dynamic viewport height for mobile */
-      max-width: 480px;
+      max-width: 600px;
       margin: 0 auto;
       position: relative;
       background: var(--bg-primary);
@@ -85,8 +84,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 20px 12px;
-      padding-top: calc(16px + env(safe-area-inset-top, 0px));
+      padding: 10px 16px 8px;
+      padding-top: calc(10px + env(safe-area-inset-top, 0px));
       background: var(--bg-primary);
       z-index: 10;
     }
@@ -208,6 +207,22 @@
       border-color: var(--red-glow);
     }
 
+    .profile-pill {
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 10px;
+      white-space: nowrap;
+      color: var(--text-primary);
+      background: var(--bg-card);
+    }
+
+    .profile-pill.muted {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
     @keyframes pulse-dot {
 
       0%,
@@ -223,17 +238,301 @@
     }
 
     /* =====================================================================
-       CAMERA PANEL
+       TUTOR TILE — compact horizontal strip
     ===================================================================== */
-    .camera-panel {
+    .tutor-tile {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tutor-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .tutor-wave-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      background: rgba(22, 41, 61, 0.85);
+      border-radius: 50%;
+    }
+
+    .tutor-wave-overlay.active {
+      opacity: 1;
+    }
+
+    .tutor-wave-overlay .wave-bar {
+      width: 2.5px;
+      height: 8px;
+      background: var(--blue);
+      border-radius: 2px;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(1) {
+      height: 6px;
+      animation-delay: 0s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(2) {
+      height: 12px;
+      animation-delay: 0.1s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(3) {
+      height: 16px;
+      animation-delay: 0.2s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(4) {
+      height: 12px;
+      animation-delay: 0.3s;
+    }
+
+    .tutor-wave-overlay .wave-bar:nth-child(5) {
+      height: 6px;
+      animation-delay: 0.4s;
+    }
+
+    .tutor-tile-info {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    .tutor-tile-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .tutor-tile-status {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .tutor-tile-pills {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-left: auto;
+      overflow-x: auto;
+      scrollbar-width: none;
+      flex-shrink: 1;
+      min-width: 0;
+    }
+
+    .tutor-tile-pills::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* =====================================================================
+       MAIN AREA — whiteboard + PiP
+    ===================================================================== */
+    .main-area {
       flex: 1;
       position: relative;
-      background: var(--bg-secondary);
-      border-radius: var(--radius-lg);
-      margin: 0 16px;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
-      min-height: 0;
+      margin: 8px 16px 0;
+      border-radius: var(--radius-lg);
+      background: var(--bg-secondary);
       border: 1px solid var(--border);
+      min-height: 0;
+    }
+
+    /* =====================================================================
+       WHITEBOARD — scrollable note cards
+    ===================================================================== */
+    .whiteboard {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .whiteboard-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .whiteboard-empty p {
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 240px;
+    }
+
+    .note-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      animation: note-enter 0.3s ease-out;
+    }
+
+    .note-card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--blue-light);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .note-card-content {
+      font-size: 14px;
+      color: var(--text-primary);
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    /* Note status borders */
+    .note-card[data-status="in_progress"] {
+      border-left: 3px solid var(--blue);
+    }
+
+    .note-card[data-status="done"] {
+      border-left: 3px solid var(--green);
+      opacity: 0.8;
+    }
+
+    .note-card[data-status="mastered"] {
+      border-left: 3px solid var(--green);
+      opacity: 0.65;
+    }
+
+    .note-card[data-status="struggling"] {
+      border-left: 3px solid var(--red);
+    }
+
+    /* Strikethrough for completed checklist items */
+    .note-card[data-type="checklist_item"][data-status="done"] .note-card-content,
+    .note-card[data-type="checklist_item"][data-status="mastered"] .note-card-content {
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .note-status-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .note-status-badge.status-pending {
+      background: rgba(74, 106, 136, 0.25);
+      color: var(--text-muted);
+    }
+
+    .note-status-badge.status-in_progress {
+      background: rgba(66, 133, 244, 0.2);
+      color: var(--blue-light);
+    }
+
+    .note-status-badge.status-done {
+      background: rgba(52, 168, 83, 0.2);
+      color: var(--green);
+    }
+
+    .note-status-badge.status-mastered {
+      background: rgba(52, 168, 83, 0.3);
+      color: var(--green);
+    }
+
+    .note-status-badge.status-struggling {
+      background: rgba(234, 67, 53, 0.2);
+      color: var(--red);
+    }
+
+    .note-type-icon {
+      font-size: 11px;
+      margin-right: 4px;
+      opacity: 0.7;
+      font-family: monospace;
+    }
+
+    .note-card-title-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+      gap: 2px;
+    }
+
+    .whiteboard-topic-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--blue-light);
+      margin: -16px -16px 4px -16px;
+    }
+
+    @keyframes note-enter {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* =====================================================================
+       CAMERA PiP — small overlay in bottom-right of main area
+    ===================================================================== */
+    .camera-panel {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      width: 120px;
+      height: 90px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 2px solid var(--border);
+      z-index: 20;
+      background: var(--bg-card);
       transition: border-color 0.3s;
     }
 
@@ -247,12 +546,10 @@
       object-fit: cover;
       display: none;
       transform: scaleX(-1);
-      /* mirror for user-facing cam */
     }
 
     #camera-canvas {
       display: none;
-      /* offscreen canvas for captures */
     }
 
     .camera-placeholder {
@@ -262,15 +559,15 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 14px;
-      padding: 24px;
+      gap: 6px;
+      padding: 8px;
     }
 
     .camera-icon-wrapper {
-      width: 72px;
-      height: 72px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
-      background: var(--bg-card);
+      background: var(--bg-secondary);
       border: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -278,8 +575,8 @@
     }
 
     .camera-icon-wrapper svg {
-      width: 32px;
-      height: 32px;
+      width: 16px;
+      height: 16px;
       color: var(--text-muted);
       fill: none;
       stroke: currentColor;
@@ -288,27 +585,30 @@
       stroke-linejoin: round;
     }
 
-    .camera-placeholder-text {
-      text-align: center;
+    .cam-live-badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(234, 67, 53, 0.9);
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 2px 5px;
+      border-radius: 6px;
+      display: none;
     }
 
-    .camera-placeholder-text p {
-      font-size: 14px;
-      color: var(--text-secondary);
-      font-weight: 500;
-      margin-bottom: 4px;
+    .camera-panel.camera-active .cam-live-badge {
+      display: block;
     }
 
-    .camera-placeholder-text span {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* wave bars (speaking animation) in camera overlay */
+    /* =====================================================================
+       WAVE OVERLAY (speaking animation on main area)
+    ===================================================================== */
     .wave-overlay {
       position: absolute;
-      bottom: 16px;
+      bottom: 110px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
@@ -317,6 +617,7 @@
       opacity: 0;
       transition: opacity 0.3s;
       pointer-events: none;
+      z-index: 15;
     }
 
     .wave-overlay.active {
@@ -377,81 +678,20 @@
       }
     }
 
-    /* camera active corner badge */
-    .cam-live-badge {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(234, 67, 53, 0.9);
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      padding: 3px 8px;
-      border-radius: 10px;
+    .voice-command-hint {
+      margin: 8px 16px 0;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px dashed var(--blue-glow);
+      color: var(--blue-light);
+      background: rgba(66, 133, 244, 0.08);
+      font-size: 11px;
+      line-height: 1.45;
       display: none;
     }
 
-    .camera-panel.camera-active .cam-live-badge {
+    .voice-command-hint.visible {
       display: block;
-    }
-
-    /* =====================================================================
-       TRANSCRIPT PANEL
-    ===================================================================== */
-    .transcript-panel {
-      flex-shrink: 0;
-      margin: 10px 16px 0;
-      min-height: 52px;
-      max-height: 130px;
-      overflow-y: auto;
-      padding: 10px 14px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-
-    .transcript-panel::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    .transcript-panel::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .transcript-panel::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 4px;
-    }
-
-    .transcript-empty {
-      color: var(--text-muted);
-      font-size: 12px;
-      font-style: italic;
-      text-align: center;
-      padding: 4px 0;
-    }
-
-    #transcript-text {
-      font-size: 13px;
-      line-height: 1.55;
-      color: var(--text-secondary);
-      display: none;
-    }
-
-    #transcript-text.visible {
-      display: block;
-    }
-
-    .transcript-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--blue);
-      font-weight: 600;
-      margin-bottom: 4px;
     }
 
     /* =====================================================================
@@ -943,6 +1183,62 @@
     .reconnect-banner.visible {
       display: block;
     }
+
+    .profile-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+
+    .profile-card {
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .profile-card:hover {
+      border-color: var(--blue-glow);
+      background: var(--bg-card-hover);
+    }
+
+    .profile-name {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .profile-track {
+      font-size: 12px;
+      color: var(--blue-light);
+      margin-bottom: 2px;
+    }
+
+    .profile-focus {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .profile-status {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-card);
+    }
+
+    .profile-status.error {
+      border-color: rgba(234, 67, 53, 0.45);
+      color: #f8a7a1;
+    }
   </style>
 </head>
 
@@ -976,6 +1272,23 @@
       <p id="modal-body">SeeMe Tutor needs your microphone to hear your questions. Please allow microphone access when
         prompted by your browser.</p>
       <button class="modal-btn" id="modal-btn">Got it</button>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+     PROFILE SELECTOR MODAL
+===================================================================== -->
+  <div class="modal-backdrop" id="profile-modal">
+    <div class="modal">
+      <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
+          <circle cx="12" cy="8" r="3.2" />
+          <path d="M4 20c1.1-4.2 3.8-6.3 8-6.3s6.9 2.1 8 6.3" />
+        </svg>
+      </div>
+      <h2>Choose student profile</h2>
+      <p>Select who is studying now so SeeMe can load the correct backlog and last checkpoint.</p>
+      <div class="profile-list" id="profile-list"></div>
     </div>
   </div>
 
@@ -1044,37 +1357,77 @@
           <span class="seeme">SeeMe</span> <span class="tutor">Tutor</span>
         </div>
         <div class="logo-tagline">Your AI homework guide · <a href="#" id="privacy-link"
-            style="color:var(--text-muted); text-decoration:none;">Privacy</a></div>
+            style="color:var(--text-muted); text-decoration:none;">Privacy</a> · <a href="#" id="switch-profile-link"
+            style="color:var(--text-muted); text-decoration:none;">Switch profile</a></div>
       </div>
       <div class="status-badge connecting" id="status-badge">
         <div class="status-dot"></div>
-        <span class="status-text" id="status-text">Connecting…</span>
+        <span class="status-text" id="status-text">Select profile</span>
       </div>
     </header>
 
-    <!-- CAMERA PANEL -->
-    <div class="camera-panel" id="camera-panel">
-      <!-- Live video -->
-      <video id="camera-video" autoplay playsinline muted></video>
-      <!-- Offscreen canvas for frame capture -->
-      <canvas id="camera-canvas" width="640" height="480"></canvas>
-
-      <!-- Placeholder (shown when camera off) -->
-      <div class="camera-placeholder" id="camera-placeholder">
-        <div class="camera-icon-wrapper">
-          <!-- camera icon -->
-          <svg viewBox="0 0 24 24">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
+    <!-- TUTOR TILE — compact strip showing avatar, name, speaking state -->
+    <div class="tutor-tile" id="tutor-tile">
+      <div class="tutor-avatar" id="tutor-avatar">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--blue-light)" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 10v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6" />
+          <path d="M6 10L12 3l6 7" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        <div class="tutor-wave-overlay" id="tutor-wave-overlay">
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
         </div>
-        <div class="camera-placeholder-text">
-          <p>Camera is off</p>
-          <span>Tap the camera button below<br />to show your homework</span>
+      </div>
+      <div class="tutor-tile-info">
+        <span class="tutor-tile-name">SeeMe Tutor</span>
+        <span class="tutor-tile-status" id="tutor-tile-status">Ready</span>
+      </div>
+      <div class="tutor-tile-pills" id="tutor-tile-pills">
+        <span class="profile-pill" id="profile-name-pill">No profile</span>
+        <span class="profile-pill muted" id="track-pill">Track: --</span>
+        <span class="profile-pill muted" id="topic-pill">Topic: --</span>
+      </div>
+    </div>
+
+    <!-- MAIN AREA — whiteboard + camera PiP -->
+    <div class="main-area" id="main-area">
+
+      <!-- Whiteboard -->
+      <div class="whiteboard" id="whiteboard">
+        <div class="whiteboard-empty" id="whiteboard-empty">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-muted)" stroke-width="1.2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+          <p>Notes will appear here as we work together</p>
         </div>
       </div>
 
-      <!-- Speaking wave overlay -->
+      <!-- Camera PiP (small overlay) -->
+      <div class="camera-panel" id="camera-panel">
+        <video id="camera-video" autoplay playsinline muted></video>
+        <canvas id="camera-canvas" width="640" height="480"></canvas>
+        <div class="camera-placeholder" id="camera-placeholder">
+          <div class="camera-icon-wrapper">
+            <svg viewBox="0 0 24 24">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+          </div>
+        </div>
+        <div class="cam-live-badge">LIVE</div>
+      </div>
+
+      <!-- Speaking wave overlay (on main area) -->
       <div class="wave-overlay" id="wave-overlay">
         <div class="wave-bar"></div>
         <div class="wave-bar"></div>
@@ -1085,18 +1438,8 @@
         <div class="wave-bar"></div>
       </div>
 
-      <!-- Live badge -->
-      <div class="cam-live-badge">LIVE</div>
-    </div>
-
-    <!-- TRANSCRIPT PANEL -->
-    <div class="transcript-panel" id="transcript-panel">
-      <p class="transcript-empty" id="transcript-empty">Tutor's guidance will appear here…</p>
-      <div id="transcript-text">
-        <div class="transcript-label">SeeMe Tutor</div>
-        <span id="transcript-content"></span>
-      </div>
-    </div>
+    </div><!-- /.main-area -->
+    <div class="voice-command-hint" id="voice-command-hint" aria-live="polite"></div>
 
     <!-- CONTROL BAR -->
     <div class="control-bar">
@@ -1132,6 +1475,15 @@
         </button>
         <span class="mic-label" id="mic-label">Tap to start</span>
       </div>
+
+      <!-- Pause / Resume -->
+      <button class="ctrl-btn" id="away-btn" title="Take a moment" aria-label="Take a moment">
+        <svg viewBox="0 0 24 24">
+          <path d="M9 5h1v14H9z" />
+          <path d="M14 5h1v14h-1z" />
+          <path d="M7 19h10" />
+        </svg>
+      </button>
 
       <!-- End session -->
       <button class="ctrl-btn end-btn" id="end-btn" title="End session" aria-label="End session">
@@ -1194,6 +1546,61 @@
     const VIDEO_HEIGHT = 480;
     const WS_RECONNECT_DELAY = 3000;
     const WS_MAX_ATTEMPTS = 5;
+    const SPEECH_ACTIVITY_THRESHOLD = 0.02;
+    const SPEECH_ACTIVITY_DEBOUNCE_MS = 1200;
+    const NOISE_GATE_RMS = 0.01;
+    const BARGE_IN_RMS_THRESHOLD = 0.06;
+    const BARGE_IN_MIN_FRAMES = 4;
+    const CHECKPOINT_HINT_DURATION_MS = 12000;
+    const MAX_COMMAND_WORDS = 7;
+    const VOICE_COMMAND_CATALOG = {
+      open_camera: ['open camera', 'open the camera', 'camera on', 'turn on camera', 'turn on the camera'],
+      close_camera: ['close camera', 'close the camera', 'camera off', 'turn off camera', 'turn off the camera'],
+      front_camera: ['front camera', 'selfie camera'],
+      back_camera: ['back camera', 'rear camera', 'environment camera'],
+      away: ['give me a moment', 'one moment', 'wait a moment', 'hold on'],
+      resume: ["i am back", "i'm back", 'im back', 'back now'],
+      slow_speech: [
+        'slow down',
+        'can you slow down',
+        'please slow down',
+        'speak slowly',
+        'speak slower',
+        'talk slower',
+        'go slower',
+        'mais devagar',
+        'fale devagar',
+        'mais lento',
+        'langsamer',
+        'sprich langsamer',
+        'rede langsamer',
+      ],
+      end_session: ['end session', 'finish session', 'stop session'],
+      checkpoint_later: ['save for later', 'save it for later'],
+      checkpoint_now: ['solve now', 'continue now'],
+    };
+    const VOICE_COMMAND_ORDER = [
+      'open_camera',
+      'close_camera',
+      'front_camera',
+      'back_camera',
+      'away',
+      'resume',
+      'slow_speech',
+      'end_session',
+      'checkpoint_later',
+      'checkpoint_now',
+    ];
+    const VOICE_COMMAND_INTENT_SIGNALS = {
+      cameraTargets: ['camera', 'cam', 'webcam', 'video', 'kamera', 'camara'],
+      openActions: ['open', 'turn on', 'switch on', 'start', 'enable', 'activate', 'ligar', 'liga', 'ativar', 'einschalten', 'anmachen'],
+      closeActions: ['close', 'turn off', 'switch off', 'stop', 'disable', 'deactivate', 'desligar', 'desliga', 'ausschalten', 'ausmachen'],
+      switchActions: ['switch', 'change', 'set', 'use', 'move', 'go', 'usar', 'mudar', 'trocar', 'wechsel', 'nutze'],
+      frontCues: ['front', 'selfie', 'user', 'frente', 'frontal', 'vorne'],
+      backCues: ['back', 'rear', 'environment', 'world', 'tras', 'traseira', 'hinten'],
+    };
+    const PROFILE_STORAGE_KEY = 'seeme_profile_id';
+    const PROFILE_API_PATH = '/api/profiles';
 
     // =========================================================================
     // STATE
@@ -1206,6 +1613,15 @@
       discardingAudio: false,          // true after interrupted, cleared on turn_complete
       wsAttempts: 0,
       permGranted: false,
+      selectedProfileId: null,
+      selectedProfile: null,
+      profiles: [],
+      lastServerError: '',
+      awayMode: false,
+      voiceCommandsSupported: false,
+      cameraFacingMode: 'environment',
+      commandAttempts: {},
+      whiteboardNotes: [],
     };
 
     // =========================================================================
@@ -1221,14 +1637,17 @@
     const cameraCanvas = $('camera-canvas');
     const cameraPlaceholder = $('camera-placeholder');
     const waveOverlay = $('wave-overlay');
-    const transcriptEmpty = $('transcript-empty');
-    const transcriptText = $('transcript-text');
-    const transcriptContent = $('transcript-content');
+    const voiceCommandHint = $('voice-command-hint');
+    const whiteboard = $('whiteboard');
+    const whiteboardEmpty = $('whiteboard-empty');
+    const tutorTileStatus = $('tutor-tile-status');
+    const tutorWaveOverlay = $('tutor-wave-overlay');
     const cameraBtn = $('camera-btn');
     const micBtn = $('mic-btn');
     const micBtnWrapper = $('mic-btn-wrapper');
     const micLabel = $('mic-label');
     const endBtn = $('end-btn');
+    const awayBtn = $('away-btn');
     const toast = $('toast');
     const permModal = $('permission-modal');
     const modalTitle = $('modal-title');
@@ -1243,29 +1662,63 @@
     const consentLearnMore = $('consent-learn-more');
     const consentDetails = $('consent-details');
     const privacyLink = $('privacy-link');
+    const switchProfileLink = $('switch-profile-link');
+    const profileModal = $('profile-modal');
+    const profileList = $('profile-list');
+    const profileNamePill = $('profile-name-pill');
+    const trackPill = $('track-pill');
+    const topicPill = $('topic-pill');
 
     // =========================================================================
     // WEBSOCKET
     // =========================================================================
     let ws = null;
     let wsReconnectTimer = null;
+    let lastSpeechActivitySentAt = 0;
+    let checkpointHintTimer = null;
+    let commandRecognition = null;
+    let bargeInFrameCount = 0;
+    let bargeInSentForTurn = false;
 
     function wsConnect() {
       if (ws && ws.readyState <= WebSocket.OPEN) return;
       clearTimeout(wsReconnectTimer);
+
+      const profileId = state.selectedProfileId;
+      if (!profileId) {
+        setStatus('error', 'Profile required');
+        showToast('Select a student profile before starting a session.', 3000, true);
+        return;
+      }
+
+      // Demo Access Code Check
+      let demoCode = localStorage.getItem('demoAccessCode');
+      if (!demoCode) {
+        demoCode = prompt("Please enter the Demo Access Code to connect:");
+        if (!demoCode) {
+          setStatus('error', 'Access code required');
+          showToast('Reload page to try again.', 0, true);
+          return;
+        }
+        localStorage.setItem('demoAccessCode', demoCode);
+      }
 
       setStatus('connecting');
       reconnectBanner.classList.remove('visible');
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
-      ws = new WebSocket(`${protocol}//${backendHost}/ws`);
+      ws = new WebSocket(
+        `${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}&student_id=${encodeURIComponent(profileId)}`
+      );
 
       ws.onopen = () => {
+        state.lastServerError = '';
         state.wsStatus = 'connected';
         state.wsAttempts = 0;
         setStatus('connected');
         enableMicBtn();
+        setAwayModeUI(false);
         showToast('Connected — tap the mic to begin', 3000);
         wsSend({ type: 'consent_ack' });
       };
@@ -1285,6 +1738,7 @@
 
       ws.onclose = (event) => {
         state.wsStatus = 'disconnected';
+        setAwayModeUI(false);
         disableMicBtn();
 
         if (state.micActive) {
@@ -1292,6 +1746,17 @@
         }
         if (state.isSpeaking) {
           setSpeakingState(false);
+        }
+
+        if (event.code === 1008) {
+          const lastError = (state.lastServerError || '').toLowerCase();
+          if (lastError.includes('access code')) {
+            localStorage.removeItem('demoAccessCode');
+          }
+          state.wsAttempts = WS_MAX_ATTEMPTS; // prevent reconnect
+          setStatus('error');
+          showToast(state.lastServerError || 'Connection rejected. Please reload to try again.', 0, true);
+          return;
         }
 
         if (state.wsAttempts < WS_MAX_ATTEMPTS) {
@@ -1326,25 +1791,19 @@
           break;
 
         case 'text':
-          if (msg.data) updateTranscript(msg.data);
+          if (msg.data) updateTutorCaption(msg.data);
           break;
 
         case 'turn_complete':
           state.discardingAudio = false;
+          bargeInFrameCount = 0;
+          bargeInSentForTurn = false;
           setSpeakingState(false);
-          finishTranscriptTurn();
+          finishTutorCaption();
           break;
 
         case 'interrupted':
-          // VAD detected student speech — stop audio and discard in-flight chunks
-          state.discardingAudio = true;
-          setSpeakingState(false);
-          nextAudioTime = 0;
-          // Fade the partial transcript to signal it was cut off
-          if (currentTranscriptSpan) {
-            currentTranscriptSpan.style.opacity = '0.5';
-            currentTranscriptSpan = null;
-          }
+          forceClientInterruption();
           break;
 
         case 'session_limit':
@@ -1361,7 +1820,32 @@
           break;
 
         case 'error':
+          state.lastServerError = String(msg.data || '');
           showToast(msg.data || 'An error occurred', 4000, true);
+          break;
+
+        case 'whiteboard':
+          if (msg.data) addWhiteboardNote(msg.data);
+          break;
+
+        case 'backlog_context':
+          applyBacklogContext(msg.data);
+          break;
+
+        case 'topic_update':
+          if (msg.data && msg.data.topic_title) {
+            topicPill.textContent = `Topic: ${msg.data.topic_title}`;
+            updateWhiteboardTopicHeader(msg.data.topic_title);
+            clearWhiteboardNotes();
+          }
+          break;
+
+        case 'assistant_state':
+          applyAssistantState(msg.data);
+          break;
+
+        case 'assistant_prompt':
+          if (msg.data) showToast(msg.data, 4200);
           break;
 
         default:
@@ -1375,6 +1859,7 @@
     // =========================================================================
     function setStatus(statusKey, labelOverride) {
       const labels = {
+        idle: 'Select profile',
         connecting: 'Connecting…',
         connected: 'Ready',
         listening: 'Listening…',
@@ -1384,6 +1869,247 @@
 
       statusBadge.className = `status-badge ${statusKey}`;
       statusText.textContent = labelOverride || labels[statusKey] || statusKey;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderProfileStatus(message, isError = false) {
+      profileList.innerHTML = '';
+      const node = document.createElement('div');
+      node.className = `profile-status${isError ? ' error' : ''}`;
+      node.textContent = message;
+      profileList.appendChild(node);
+    }
+
+    function renderProfileCards() {
+      profileList.innerHTML = '';
+      if (!state.profiles.length) {
+        renderProfileStatus('No profiles found in Firestore. Add student documents first.', true);
+        return;
+      }
+
+      state.profiles.forEach((profile) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'profile-card';
+        btn.dataset.profileId = profile.id;
+        btn.innerHTML = `
+          <div class="profile-name">${escapeHtml(profile.name)}</div>
+          <div class="profile-track">${escapeHtml(profile.track)}</div>
+          <div class="profile-focus">${escapeHtml(profile.focus)}</div>
+        `;
+        btn.addEventListener('click', () => {
+          if (!selectProfile(profile.id)) return;
+          profileModal.classList.remove('visible');
+          if (localStorage.getItem('seeme_consent')) {
+            startSession();
+          } else {
+            consentModal.classList.add('visible');
+          }
+        });
+        profileList.appendChild(btn);
+      });
+    }
+
+    async function loadProfiles() {
+      renderProfileStatus('Loading profiles...');
+      try {
+        const response = await fetch(PROFILE_API_PATH, { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`profiles_http_${response.status}`);
+        }
+        const payload = await response.json();
+        const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
+        state.profiles = profiles
+          .map((profile) => {
+            const id = String(profile?.id || '').trim().toLowerCase();
+            if (!id) return null;
+            return {
+              id,
+              name: String(profile?.name || id).trim() || id,
+              track: String(profile?.track || 'General Learning').trim() || 'General Learning',
+              focus: String(profile?.focus || 'Continue learning').trim() || 'Continue learning',
+              preferredLanguage: String(profile?.preferred_language || 'en').trim().toLowerCase() || 'en',
+            };
+          })
+          .filter(Boolean);
+        renderProfileCards();
+      } catch (error) {
+        state.profiles = [];
+        renderProfileStatus('Could not load profiles from backend. Please refresh and try again.', true);
+        showToast('Could not load profiles from backend.', 4200, true);
+      }
+    }
+
+    function selectProfile(profileId) {
+      const normalizedId = String(profileId || '').trim().toLowerCase();
+      const profile = state.profiles.find((p) => p.id === normalizedId);
+      if (!profile) return false;
+      state.selectedProfileId = profile.id;
+      state.selectedProfile = profile;
+      localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
+      profileNamePill.textContent = profile.name;
+      trackPill.textContent = `Track: ${profile.track}`;
+      topicPill.textContent = 'Topic: loading...';
+      setStatus('idle', 'Profile selected');
+      return true;
+    }
+
+    function applyBacklogContext(context) {
+      if (!context || typeof context !== 'object') return;
+      const topic = context.topic_title || '--';
+      const track = context.track_title || state.selectedProfile?.track || '--';
+      trackPill.textContent = `Track: ${track}`;
+      topicPill.textContent = `Topic: ${topic}`;
+      if (topic && topic !== '--') updateWhiteboardTopicHeader(topic);
+    }
+
+    function applyAssistantState(data) {
+      const nextState = String(data?.state || '');
+      if (!nextState) return;
+
+      if (nextState === 'away') {
+        setAwayModeUI(true);
+        return;
+      }
+
+      if (nextState === 'active') {
+        setAwayModeUI(false);
+        return;
+      }
+    }
+
+    // =========================================================================
+    // WHITEBOARD
+    // =========================================================================
+    const NOTE_STATUS_LABELS = {
+      pending: 'To do',
+      in_progress: 'Working',
+      done: 'Done',
+      mastered: 'Mastered',
+      struggling: 'Needs help',
+    };
+
+    const NOTE_TYPE_ICONS = {
+      checklist_item: '[ ]',
+      formula: 'f(x)',
+      vocabulary: 'Aa',
+    };
+
+    const CHECKLIST_DONE_ICON = '[x]';
+
+    function addWhiteboardNote(data) {
+      // Handle clear action (board reset for new homework capture)
+      if (data && data.action === 'clear') {
+        clearWhiteboardNotes();
+        return;
+      }
+
+      // Handle status update messages
+      if (data && data.action === 'update_status') {
+        updateWhiteboardNoteStatus(data.id, data.status);
+        return;
+      }
+
+      if (!data || !data.title) return;
+      state.whiteboardNotes.push(data);
+      if (whiteboardEmpty) whiteboardEmpty.style.display = 'none';
+
+      const noteType = data.note_type || 'insight';
+      const status = data.status || 'pending';
+
+      const card = document.createElement('div');
+      card.className = 'note-card';
+      card.id = data.id || '';
+      card.dataset.type = noteType;
+      card.dataset.status = status;
+
+      // Title row: type icon + title + status badge
+      const titleRow = document.createElement('div');
+      titleRow.className = 'note-card-title-row';
+
+      const typeIcon = NOTE_TYPE_ICONS[noteType];
+      if (typeIcon) {
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'note-type-icon';
+        iconSpan.textContent = typeIcon;
+        titleRow.appendChild(iconSpan);
+      }
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'note-card-title';
+      titleSpan.style.marginBottom = '0';
+      titleSpan.textContent = data.title;
+      titleRow.appendChild(titleSpan);
+
+      const badge = document.createElement('span');
+      badge.className = `note-status-badge status-${status}`;
+      badge.textContent = NOTE_STATUS_LABELS[status] || status;
+      titleRow.appendChild(badge);
+
+      const content = document.createElement('div');
+      content.className = 'note-card-content';
+      content.textContent = data.content || '';
+
+      card.appendChild(titleRow);
+      card.appendChild(content);
+      whiteboard.appendChild(card);
+      card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    function updateWhiteboardNoteStatus(noteId, newStatus) {
+      if (!noteId || !newStatus) return;
+
+      // Update state array
+      const stateNote = state.whiteboardNotes.find((n) => n.id === noteId);
+      if (stateNote) stateNote.status = newStatus;
+
+      // Update DOM
+      const card = document.getElementById(noteId);
+      if (!card) return;
+
+      card.dataset.status = newStatus;
+
+      // Update badge
+      const badge = card.querySelector('.note-status-badge');
+      if (badge) {
+        badge.className = `note-status-badge status-${newStatus}`;
+        badge.textContent = NOTE_STATUS_LABELS[newStatus] || newStatus;
+      }
+
+      // Update checklist icon if applicable
+      if (card.dataset.type === 'checklist_item') {
+        const icon = card.querySelector('.note-type-icon');
+        if (icon) {
+          icon.textContent = (newStatus === 'done' || newStatus === 'mastered')
+            ? CHECKLIST_DONE_ICON
+            : NOTE_TYPE_ICONS.checklist_item;
+        }
+      }
+    }
+
+    function updateWhiteboardTopicHeader(topicTitle) {
+      if (!topicTitle) return;
+      let header = whiteboard.querySelector('.whiteboard-topic-header');
+      if (!header) {
+        header = document.createElement('div');
+        header.className = 'whiteboard-topic-header';
+        whiteboard.insertBefore(header, whiteboard.firstChild);
+      }
+      header.textContent = topicTitle;
+    }
+
+    function clearWhiteboardNotes() {
+      state.whiteboardNotes = [];
+      whiteboard.querySelectorAll('.note-card').forEach((el) => el.remove());
+      if (whiteboardEmpty) whiteboardEmpty.style.display = '';
     }
 
     // =========================================================================
@@ -1445,6 +2171,13 @@
         if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
+        const rms = calculateRms(float32);
+        maybeSendSpeechActivity(rms);
+        maybeHandleLocalBargeIn(rms);
+
+        // Noise gate: don't send quiet audio to Gemini to prevent VAD false triggers
+        if (rms < NOISE_GATE_RMS) return;
+
         const int16 = float32ToInt16(float32);
         const b64 = arrayBufferToBase64(int16.buffer);
 
@@ -1454,10 +2187,15 @@
       micSourceNode.connect(scriptProcessor);
       scriptProcessor.connect(audioCtxCapture.destination);
 
+      // Signal mic lifecycle to backend idle orchestrator.
+      wsSend({ type: 'mic_start' });
+
       // UI
       micBtnWrapper.className = 'mic-btn-wrapper listening';
       micLabel.textContent = 'Tap to stop';
       setStatus('listening');
+      if (tutorTileStatus) tutorTileStatus.textContent = 'Listening';
+      startVoiceCommandRecognition();
     }
 
     function stopMic() {
@@ -1471,17 +2209,20 @@
 
       // Signal to backend
       wsSend({ type: 'mic_stop' });
+      stopVoiceCommandRecognition();
 
       // UI
       if (!state.isSpeaking) {
         micBtnWrapper.className = 'mic-btn-wrapper';
         setStatus('connected');
+        if (tutorTileStatus) tutorTileStatus.textContent = 'Ready';
       }
       micLabel.textContent = 'Tap to start';
     }
 
     function toggleMic() {
       if (micBtn.disabled) return;
+      markUserActivity('mic_toggle');
       if (state.micActive) {
         stopMic();
       } else {
@@ -1537,6 +2278,14 @@
     function setSpeakingState(active) {
       state.isSpeaking = active;
       if (active) {
+        bargeInFrameCount = 0;
+      }
+      // Sync tutor tile
+      if (tutorWaveOverlay) tutorWaveOverlay.classList.toggle('active', active);
+      if (tutorTileStatus) {
+        tutorTileStatus.textContent = active ? 'Speaking...' : (state.micActive ? 'Listening' : 'Ready');
+      }
+      if (active) {
         waveOverlay.classList.add('active');
         if (!state.micActive) {
           micBtnWrapper.className = 'mic-btn-wrapper speaking';
@@ -1548,11 +2297,18 @@
         activeSources.forEach(s => { try { s.stop(); } catch (_) { } });
         activeSources.clear();
         nextAudioTime = 0;
+
+        if (audioCtxPlay) {
+          audioCtxPlay.close().catch(() => { });
+          audioCtxPlay = null;
+        }
+
         if (!state.micActive) {
           micBtnWrapper.className = 'mic-btn-wrapper';
           setStatus('connected');
         }
       }
+
     }
 
     // =========================================================================
@@ -1562,37 +2318,54 @@
     let videoInterval = null;
     const canvasCtx = cameraCanvas.getContext('2d');
 
-    async function startCamera() {
-      if (state.cameraActive) return;
+    async function requestCameraStream(facingModePreference) {
+      const exactConstraints = {
+        video: {
+          facingMode: { exact: facingModePreference },
+          width: { ideal: VIDEO_WIDTH },
+          height: { ideal: VIDEO_HEIGHT },
+        }
+      };
+      const idealConstraints = {
+        video: {
+          facingMode: facingModePreference,
+          width: { ideal: VIDEO_WIDTH },
+          height: { ideal: VIDEO_HEIGHT },
+        }
+      };
+      try {
+        return await navigator.mediaDevices.getUserMedia(exactConstraints);
+      } catch (_) {
+        return await navigator.mediaDevices.getUserMedia(idealConstraints);
+      }
+    }
+
+    async function startCamera(facingModePreference = null) {
+      if (state.cameraActive) return true;
+      const facing = facingModePreference || state.cameraFacingMode || 'environment';
+      state.cameraFacingMode = facing;
 
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width: { ideal: VIDEO_WIDTH },
-            height: { ideal: VIDEO_HEIGHT },
-          }
-        });
+        cameraStream = await requestCameraStream(facing);
       } catch (err) {
         const denied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
         if (denied) {
           cameraBtn.classList.add('disabled');
           showToast('Camera access denied — voice-only mode active', 3500, true);
-          return;
+          return false;
         }
         // Environment camera unavailable (common on laptops) — retry with any camera
         try {
           cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
         } catch (_) {
           showToast('Camera unavailable — voice-only mode active', 3000, false);
-          return;
+          return false;
         }
       }
 
       cameraVideo.srcObject = cameraStream;
       cameraVideo.style.display = 'block';
-      // Flip back for rear camera (environment)
-      cameraVideo.style.transform = 'none';
+      cameraVideo.style.transform = state.cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none';
       cameraPlaceholder.style.display = 'none';
       cameraPanel.classList.add('camera-active');
       cameraBtn.classList.add('active');
@@ -1600,10 +2373,11 @@
 
       // Start sending frames
       videoInterval = setInterval(captureAndSendFrame, VIDEO_INTERVAL_MS);
+      return true;
     }
 
     function stopCamera() {
-      if (!state.cameraActive) return;
+      if (!state.cameraActive) return false;
       state.cameraActive = false;
 
       clearInterval(videoInterval);
@@ -1621,6 +2395,7 @@
       cameraBtn.classList.remove('active');
 
       wsSend({ type: 'camera_off' });
+      return true;
     }
 
     function captureAndSendFrame() {
@@ -1645,40 +2420,36 @@
 
     function toggleCamera() {
       if (cameraBtn.classList.contains('disabled')) return;
+      markUserActivity('camera_toggle');
       if (state.cameraActive) {
         stopCamera();
       } else {
-        startCamera();
+        startCamera(state.cameraFacingMode);
       }
     }
 
-    // =========================================================================
-    // TRANSCRIPT
-    // =========================================================================
-    let currentTranscriptSpan = null;
-
-    function updateTranscript(text) {
-      transcriptEmpty.style.display = 'none';
-      transcriptText.classList.add('visible');
-
-      // Append to current turn span (create one if needed)
-      if (!currentTranscriptSpan) {
-        currentTranscriptSpan = document.createElement('span');
-        transcriptContent.appendChild(currentTranscriptSpan);
+    async function switchCameraFacingMode(nextFacingMode) {
+      if (!['user', 'environment'].includes(nextFacingMode)) return false;
+      state.cameraFacingMode = nextFacingMode;
+      if (!state.cameraActive) {
+        return await startCamera(nextFacingMode);
       }
-      currentTranscriptSpan.textContent += text;
-
-      // Scroll to bottom
-      const panel = document.getElementById('transcript-panel');
-      panel.scrollTop = panel.scrollHeight;
+      stopCamera();
+      return await startCamera(nextFacingMode);
     }
 
-    function finishTranscriptTurn() {
-      if (currentTranscriptSpan && currentTranscriptSpan.textContent.trim()) {
-        const br = document.createElement('br');
-        transcriptContent.appendChild(br);
-      }
-      currentTranscriptSpan = null;
+    // =========================================================================
+    // TUTOR TEXT ACCUMULATOR (for checkpoint hint detection)
+    // =========================================================================
+    let tutorCaptionText = '';
+
+    function updateTutorCaption(text) {
+      tutorCaptionText += text;
+      maybeShowCheckpointVoiceHint(tutorCaptionText);
+    }
+
+    function finishTutorCaption() {
+      tutorCaptionText = '';
     }
 
     // =========================================================================
@@ -1686,6 +2457,7 @@
     // =========================================================================
     function endSession() {
       stopMic();
+      stopVoiceCommandRecognition();
       stopCamera();
 
       wsSend({ type: 'end_session' });
@@ -1702,6 +2474,456 @@
       disableMicBtn();
       cameraBtn.classList.add('disabled');
       showToast('Session ended. Reload to start again.', 0);
+    }
+
+    function switchProfile() {
+      stopMic();
+      stopVoiceCommandRecognition();
+      stopCamera();
+      setAwayModeUI(false);
+      clearTimeout(wsReconnectTimer);
+      state.wsAttempts = WS_MAX_ATTEMPTS;
+      if (ws) { ws.close(); ws = null; }
+      disableMicBtn();
+      setStatus('idle', 'Select profile');
+      void loadProfiles();
+      profileModal.classList.add('visible');
+      showToast('Select a profile to continue.', 2500);
+    }
+
+    function setAwayModeUI(active) {
+      state.awayMode = active;
+      awayBtn.classList.toggle('active', active);
+      awayBtn.title = active ? 'I am back' : 'Take a moment';
+      awayBtn.setAttribute('aria-label', active ? 'I am back' : 'Take a moment');
+      if (active) {
+        stopMic();
+        micBtn.disabled = true;
+        micLabel.textContent = 'Paused';
+        setStatus('connected', 'Waiting for you…');
+      } else if (state.wsStatus === 'connected') {
+        enableMicBtn();
+      }
+    }
+
+    function showCheckpointVoiceHint() {
+      clearTimeout(checkpointHintTimer);
+      voiceCommandHint.textContent =
+        "Voice tip: say 'save for later' to keep this topic in your backlog, or say 'solve now' to continue now.";
+      voiceCommandHint.classList.add('visible');
+      checkpointHintTimer = setTimeout(() => {
+        voiceCommandHint.classList.remove('visible');
+      }, CHECKPOINT_HINT_DURATION_MS);
+    }
+
+    function maybeShowCheckpointVoiceHint(transcriptSoFar) {
+      const normalized = String(transcriptSoFar || '').toLowerCase();
+      const hasSaveLater = normalized.includes('save for later') || normalized.includes('save it for later');
+      const hasNowLater = normalized.includes('now or later') || (normalized.includes('solve now') && normalized.includes('later'));
+      const hasStruggleCue = normalized.includes('struggl') || normalized.includes('difficult') || normalized.includes('checkpoint');
+
+      if (hasSaveLater || hasNowLater || (hasStruggleCue && normalized.includes('later'))) {
+        showCheckpointVoiceHint();
+      }
+    }
+
+    function normalizeSpokenCommand(text) {
+      return String(text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s']/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function escapeRegExp(value) {
+      return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function phraseInNormalizedText(normalized, phrase) {
+      const cleanedPhrase = String(phrase || '').trim();
+      if (!cleanedPhrase) return false;
+      const escaped = escapeRegExp(cleanedPhrase);
+      return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(normalized);
+    }
+
+    function findCommandPhrase(normalized, commandId) {
+      const phrases = VOICE_COMMAND_CATALOG[commandId] || [];
+      return phrases.find((phrase) => phraseInNormalizedText(normalized, phrase)) || '';
+    }
+
+    function hasAnySignal(normalized, signals) {
+      return (signals || []).some((signal) => phraseInNormalizedText(normalized, signal));
+    }
+
+    function detectVoiceCommand(normalized) {
+      for (const commandId of VOICE_COMMAND_ORDER) {
+        if (findCommandPhrase(normalized, commandId)) {
+          return { commandId, source: 'phrase' };
+        }
+      }
+
+      const hasCameraTarget = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.cameraTargets);
+      if (!hasCameraTarget) return null;
+
+      const hasOpenAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.openActions);
+      const hasCloseAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.closeActions);
+      const hasSwitchAction = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.switchActions);
+      const hasFrontCue = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.frontCues);
+      const hasBackCue = hasAnySignal(normalized, VOICE_COMMAND_INTENT_SIGNALS.backCues);
+
+      if (hasFrontCue && (hasSwitchAction || hasOpenAction)) {
+        return { commandId: 'front_camera', source: 'intent' };
+      }
+      if (hasBackCue && (hasSwitchAction || hasOpenAction)) {
+        return { commandId: 'back_camera', source: 'intent' };
+      }
+      if (hasOpenAction && !hasCloseAction) {
+        return { commandId: 'open_camera', source: 'intent' };
+      }
+      if (hasCloseAction && !hasOpenAction) {
+        return { commandId: 'close_camera', source: 'intent' };
+      }
+
+      return null;
+    }
+
+    function nextCommandAttempt(commandId) {
+      const current = Number(state.commandAttempts[commandId] || 0);
+      const next = current + 1;
+      state.commandAttempts[commandId] = next;
+      return next;
+    }
+
+    function emitCommandEvent({ commandId, spokenText, normalizedText, matchStatus, actionStatus, detail, attempt }) {
+      const payload = {
+        command_id: commandId || 'unknown',
+        spoken_text: spokenText || '',
+        normalized_text: normalizedText || '',
+        match_status: matchStatus || 'unknown',
+        action_status: actionStatus || 'unknown',
+        detail: detail || '',
+        attempt: Number(attempt || 0),
+      };
+      wsSend({ type: 'command_event', data: payload });
+      console.info('[VoiceCommand]', payload);
+    }
+
+    function getRecognitionLang() {
+      const profile = state.selectedProfile;
+      if (!profile) return 'en-US';
+      const preferredLanguage = String(profile.preferredLanguage || '').toLowerCase();
+      if (preferredLanguage.startsWith('de')) return 'de-DE';
+      if (preferredLanguage.startsWith('pt')) return 'pt-BR';
+      const track = (profile.track || '').toLowerCase();
+      if (track.includes('german')) return 'de-DE';
+      if (track.includes('portug')) return 'pt-BR';
+      return 'en-US';
+    }
+
+    function initVoiceCommandRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        state.voiceCommandsSupported = false;
+        return;
+      }
+
+      state.voiceCommandsSupported = true;
+      commandRecognition = new SpeechRecognition();
+      commandRecognition.continuous = true;
+      commandRecognition.interimResults = true;
+      commandRecognition.maxAlternatives = 1;
+      commandRecognition.lang = getRecognitionLang();
+
+      commandRecognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          const spoken = result[0]?.transcript || '';
+          if (result.isFinal) handleVoiceCommand(spoken);
+        }
+      };
+
+      commandRecognition.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+        console.warn('[VoiceCommand] recognition error:', event.error);
+      };
+
+      commandRecognition.onend = () => {
+        if (!state.voiceCommandsSupported || !state.micActive) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        try { commandRecognition.start(); } catch (_) { }
+      };
+    }
+
+    function startVoiceCommandRecognition() {
+      if (!state.voiceCommandsSupported || !commandRecognition) return;
+      commandRecognition.lang = getRecognitionLang();
+      try { commandRecognition.start(); } catch (_) { }
+    }
+
+    function stopVoiceCommandRecognition() {
+      if (!commandRecognition) return;
+      try { commandRecognition.stop(); } catch (_) { }
+    }
+
+    async function handleVoiceCommand(spokenText) {
+      const normalized = normalizeSpokenCommand(spokenText);
+      if (!normalized) return;
+      const words = normalized.split(' ').filter(Boolean);
+      const detectedCommand = detectVoiceCommand(normalized);
+      const matchedCommandId = detectedCommand?.commandId || '';
+      if (detectedCommand?.source === 'intent') {
+        console.info('[VoiceCommand] intent_match', { normalized, command_id: matchedCommandId });
+      }
+
+      if (matchedCommandId === 'open_camera') {
+        const attempt = nextCommandAttempt('open_camera');
+        markUserActivity('cmd_open_camera');
+        const ok = await startCamera(state.cameraFacingMode);
+        emitCommandEvent({
+          commandId: 'open_camera',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: ok ? 'success' : 'failed',
+          detail: ok ? 'camera_started' : 'camera_start_failed',
+          attempt,
+        });
+        showToast(ok ? 'Voice command: opening camera.' : 'Voice command heard, but camera did not open.', 2600, !ok);
+        return;
+      }
+
+      if (matchedCommandId === 'close_camera') {
+        const attempt = nextCommandAttempt('close_camera');
+        markUserActivity('cmd_close_camera');
+        const closed = stopCamera();
+        emitCommandEvent({
+          commandId: 'close_camera',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: closed ? 'success' : 'noop',
+          detail: closed ? 'camera_closed' : 'camera_already_off',
+          attempt,
+        });
+        showToast(closed ? 'Voice command: closing camera.' : 'Voice command heard: camera was already off.', 2600);
+        return;
+      }
+
+      if (matchedCommandId === 'front_camera') {
+        const attempt = nextCommandAttempt('front_camera');
+        markUserActivity('cmd_front_camera');
+        const ok = await switchCameraFacingMode('user');
+        emitCommandEvent({
+          commandId: 'front_camera',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: ok ? 'success' : 'failed',
+          detail: ok ? 'facing_user' : 'front_camera_switch_failed',
+          attempt,
+        });
+        showToast(ok ? 'Voice command: front camera.' : 'Voice command heard, but front camera switch failed.', 2600, !ok);
+        return;
+      }
+
+      if (matchedCommandId === 'back_camera') {
+        const attempt = nextCommandAttempt('back_camera');
+        markUserActivity('cmd_back_camera');
+        const ok = await switchCameraFacingMode('environment');
+        emitCommandEvent({
+          commandId: 'back_camera',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: ok ? 'success' : 'failed',
+          detail: ok ? 'facing_environment' : 'back_camera_switch_failed',
+          attempt,
+        });
+        showToast(ok ? 'Voice command: back camera.' : 'Voice command heard, but back camera switch failed.', 2600, !ok);
+        return;
+      }
+
+      if (matchedCommandId === 'away') {
+        const attempt = nextCommandAttempt('away');
+        toggleAwayMode(true);
+        emitCommandEvent({
+          commandId: 'away',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'success',
+          detail: 'away_mode_enabled',
+          attempt,
+        });
+        showToast('Voice command: pausing.', 2200);
+        return;
+      }
+
+      if (matchedCommandId === 'resume') {
+        const attempt = nextCommandAttempt('resume');
+        toggleAwayMode(false);
+        emitCommandEvent({
+          commandId: 'resume',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'success',
+          detail: 'away_mode_disabled',
+          attempt,
+        });
+        showToast('Voice command: resumed.', 2200);
+        return;
+      }
+
+      if (matchedCommandId === 'slow_speech') {
+        const attempt = nextCommandAttempt('slow_speech');
+        markUserActivity('cmd_slow_speech');
+        wsSend({ type: 'speech_pace', pace: 'slow', source: 'voice_command' });
+        emitCommandEvent({
+          commandId: 'slow_speech',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'sent',
+          detail: 'speech_pace_slow_requested',
+          attempt,
+        });
+        showToast('Voice command: slowing down.', 2200);
+        return;
+      }
+
+      if (matchedCommandId === 'end_session') {
+        const attempt = nextCommandAttempt('end_session');
+        emitCommandEvent({
+          commandId: 'end_session',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'success',
+          detail: 'session_end_requested',
+          attempt,
+        });
+        showToast('Voice command: ending session.', 2200);
+        endSession();
+        return;
+      }
+
+      if (matchedCommandId === 'checkpoint_later') {
+        const attempt = nextCommandAttempt('checkpoint_later');
+        markUserActivity('checkpoint_later');
+        wsSend({ type: 'checkpoint_decision', decision: 'later' });
+        emitCommandEvent({
+          commandId: 'checkpoint_later',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'sent',
+          detail: 'checkpoint_later_sent',
+          attempt,
+        });
+        showToast('Voice command: saved for later.', 2200);
+        return;
+      }
+
+      if (matchedCommandId === 'checkpoint_now') {
+        const attempt = nextCommandAttempt('checkpoint_now');
+        markUserActivity('checkpoint_now');
+        wsSend({ type: 'checkpoint_decision', decision: 'now' });
+        emitCommandEvent({
+          commandId: 'checkpoint_now',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'matched',
+          actionStatus: 'sent',
+          detail: 'checkpoint_now_sent',
+          attempt,
+        });
+        showToast('Voice command: solve now.', 2200);
+        return;
+      }
+
+      if (words.length > MAX_COMMAND_WORDS) {
+        emitCommandEvent({
+          commandId: 'unknown',
+          spokenText,
+          normalizedText: normalized,
+          matchStatus: 'unmatched',
+          actionStatus: 'ignored',
+          detail: `too_many_words:${words.length}`,
+          attempt: 0,
+        });
+        return;
+      }
+
+      emitCommandEvent({
+        commandId: 'unknown',
+        spokenText,
+        normalizedText: normalized,
+        matchStatus: 'unmatched',
+        actionStatus: 'ignored',
+        detail: 'no_supported_command_match',
+        attempt: 0,
+      });
+    }
+
+    function toggleAwayMode(forceState = null) {
+      const nextActive = forceState === null ? !state.awayMode : !!forceState;
+      if (nextActive === state.awayMode) return;
+      markUserActivity(nextActive ? 'away' : 'resume');
+      wsSend({ type: 'away_mode', active: nextActive });
+      setAwayModeUI(nextActive);
+    }
+
+    function markUserActivity(kind) {
+      wsSend({ type: 'user_activity', data: { kind, at: Date.now() } });
+    }
+
+    function calculateRms(float32) {
+      let sumSquares = 0;
+      for (let i = 0; i < float32.length; i++) {
+        const sample = float32[i];
+        sumSquares += sample * sample;
+      }
+      return Math.sqrt(sumSquares / float32.length);
+    }
+
+    function forceClientInterruption() {
+      state.discardingAudio = true;
+      setSpeakingState(false);
+      nextAudioTime = 0;
+      finishTutorCaption();
+    }
+
+    function maybeHandleLocalBargeIn(rms) {
+      if (!state.isSpeaking || state.discardingAudio) {
+        bargeInFrameCount = 0;
+        return;
+      }
+
+      if (rms < BARGE_IN_RMS_THRESHOLD) {
+        bargeInFrameCount = 0;
+        return;
+      }
+
+      bargeInFrameCount += 1;
+      if (bargeInFrameCount < BARGE_IN_MIN_FRAMES) return;
+
+      bargeInFrameCount = 0;
+      forceClientInterruption();
+      if (!bargeInSentForTurn) {
+        bargeInSentForTurn = true;
+        wsSend({ type: 'barge_in', data: { rms: Number(rms.toFixed(4)), at: Date.now() } });
+      }
+    }
+
+    function maybeSendSpeechActivity(rms) {
+      const now = Date.now();
+      if (rms >= SPEECH_ACTIVITY_THRESHOLD && now - lastSpeechActivitySentAt >= SPEECH_ACTIVITY_DEBOUNCE_MS) {
+        lastSpeechActivitySentAt = now;
+        wsSend({ type: 'user_activity', data: { kind: 'speech', rms: Number(rms.toFixed(4)), at: now } });
+      }
     }
 
     // =========================================================================
@@ -1790,6 +3012,7 @@
     });
 
     cameraBtn.addEventListener('click', toggleCamera);
+    awayBtn.addEventListener('click', toggleAwayMode);
 
     endBtn.addEventListener('click', () => {
       endSessionModal.classList.add('visible');
@@ -1850,6 +3073,11 @@
       showToast('Audio/video is streamed, never stored. Only anonymized session metadata is saved.', 4000);
     });
 
+    switchProfileLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchProfile();
+    });
+
     // =========================================================================
     // CONSENT MODAL
     // =========================================================================
@@ -1868,7 +3096,7 @@
     // =========================================================================
     // INITIALISE
     // =========================================================================
-    function init() {
+    async function init() {
       // Check browser support
       const missing = [];
       if (!window.WebSocket) missing.push('WebSocket');
@@ -1881,18 +3109,35 @@
         return;
       }
 
-      // Check if consent was already given
-      if (localStorage.getItem('seeme_consent')) {
-        startSession();
-      } else {
-        // Hide loader, show consent modal
-        loadingOverlay.classList.add('fade-out');
-        setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
-        consentModal.classList.add('visible');
+      initVoiceCommandRecognition();
+      if (!state.voiceCommandsSupported) {
+        showToast('Voice commands unavailable in this browser.', 4500, true);
+      }
+
+      await loadProfiles();
+
+      const lastProfileId = localStorage.getItem(PROFILE_STORAGE_KEY);
+      const restored = lastProfileId ? selectProfile(lastProfileId) : false;
+      if (lastProfileId && !restored) {
+        localStorage.removeItem(PROFILE_STORAGE_KEY);
+      }
+
+      // Hide loader, show mandatory profile selector gate
+      loadingOverlay.classList.add('fade-out');
+      setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
+      profileModal.classList.add('visible');
+      if (restored) {
+        showToast('Select profile to start this session.', 2600);
       }
     }
 
     function startSession() {
+      if (!state.selectedProfileId) {
+        setStatus('error', 'Profile required');
+        profileModal.classList.add('visible');
+        return;
+      }
+
       // Hide loader after brief delay (gives time for WS to init)
       setTimeout(() => {
         loadingOverlay.classList.add('fade-out');
@@ -1904,7 +3149,10 @@
     }
 
     // Kick off
-    init();
+    init().catch((error) => {
+      console.error('[Init] failed:', error);
+      showToast('Could not initialize the app. Please reload.', 0, true);
+    });
   </script>
 
 </body>
