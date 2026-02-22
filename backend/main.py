@@ -1462,6 +1462,7 @@ async def _forward_to_client(
                 logger.info("STUDENT HEARD: %s", event["data"])
 
             elif event_type == "turn_complete":
+                turn_count += 1
                 runtime_state["assistant_speaking"] = False
                 runtime_state["last_user_activity_at"] = time.time()
                 runtime_state["idle_stage"] = 0
@@ -1469,6 +1470,11 @@ async def _forward_to_client(
                     dc["turn_complete"] += 1
                 _debug_logger.debug("TURN_COMPLETE sid=%s", session_id[:8])
                 await _send_json(websocket, {"type": "turn_complete"})
+                logger.info(
+                    "Turn #%d complete — sent %d audio chunks to browser",
+                    turn_count, audio_response_chunks,
+                )
+                audio_response_chunks = 0
 
             elif event_type == "interrupted":
                 runtime_state["assistant_speaking"] = False
@@ -1486,6 +1492,11 @@ async def _forward_to_client(
                     )
                     lat["awaiting_first_response"] = False
                 await _send_json(websocket, {"type": "interrupted"})
+                logger.info(
+                    "INTERRUPTED by student (had sent %d audio chunks before interruption)",
+                    audio_response_chunks,
+                )
+                audio_response_chunks = 0
 
             else:
                 _debug_logger.debug(
