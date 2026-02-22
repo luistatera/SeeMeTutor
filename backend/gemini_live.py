@@ -6,6 +6,7 @@ same dict format that main.py already consumes. The frontend WebSocket
 protocol does not change at all.
 """
 
+import asyncio
 import logging
 from types import TracebackType
 from typing import AsyncGenerator, Optional
@@ -19,6 +20,26 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 APP_NAME = "seeme_tutor"
+
+# ---------------------------------------------------------------------------
+# Whiteboard queue registry — allows the write_notes tool to push notes
+# to the correct client without circular imports.
+# ---------------------------------------------------------------------------
+_whiteboard_queues: dict[str, asyncio.Queue] = {}
+
+
+def register_whiteboard_queue(session_id: str) -> asyncio.Queue:
+    q: asyncio.Queue = asyncio.Queue()
+    _whiteboard_queues[session_id] = q
+    return q
+
+
+def get_whiteboard_queue(session_id: str) -> asyncio.Queue | None:
+    return _whiteboard_queues.get(session_id)
+
+
+def unregister_whiteboard_queue(session_id: str) -> None:
+    _whiteboard_queues.pop(session_id, None)
 
 class ADKLiveSession:
     """
