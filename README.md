@@ -79,7 +79,6 @@ flowchart TD
     GEMINI -- "Audio response\nPCM 24kHz" --> GL
     GL -- "WebSocket\naudio: base64 PCM 24kHz" --> PLAY
     WS <--> FS
-    SM -- "GEMINI_API_KEY" --> WS
 ```
 
 ---
@@ -93,14 +92,17 @@ Get SeeMe Tutor running locally in three steps.
 git clone https://github.com/luistatera/seeme-tutor.git
 cd seeme-tutor
 
-# 2. Configure your API key
+# 2. Configure Environment (Optional)
 cp .env.example .env
-# Open .env and set: GEMINI_API_KEY=your_key_here
+# Open .env and set overrides if needed
 
-# 3. Install dependencies and run
+# 3. Authenticate with Google Cloud
+gcloud auth application-default login
+
+# 4. Install dependencies and run
 cd backend
 pip install -r requirements.txt
-GEMINI_API_KEY=your_key uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 Open [http://localhost:8000](http://localhost:8000) in your browser. Allow microphone and camera access when prompted.
@@ -112,7 +114,6 @@ Open [http://localhost:8000](http://localhost:8000) in your browser. Allow micro
 | Requirement | Details |
 |-------------|---------|
 | Python | 3.12 or higher |
-| Gemini API key | Free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | Modern browser | Chrome or Edge recommended (WebRTC + AudioContext support) |
 | HTTPS or localhost | Camera/mic APIs require a secure context |
 
@@ -126,11 +127,12 @@ Open [http://localhost:8000](http://localhost:8000) in your browser. Allow micro
 
 ## Full Setup Guide
 
-### Get a Gemini API Key
+### Authenticate with Google Cloud
 
-1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Click **Create API key**
-3. Copy the key — you will use it in `.env` for local development and in Secret Manager for production
+This application uses Vertex AI. Before running locally, you must authenticate:
+
+1. Ensure the Google Cloud CLI (`gcloud`) is installed.
+2. Run `gcloud auth application-default login`
 
 ### Local Development
 
@@ -147,8 +149,8 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Set your API key and start the server
-GEMINI_API_KEY=your_key_here uvicorn main:app --reload --port 8000
+# Start the server
+uvicorn main:app --reload --port 8000
 ```
 
 The FastAPI server serves the frontend at `http://localhost:8000` and exposes a WebSocket at `ws://localhost:8000/ws`.
@@ -200,10 +202,6 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:seeme-tutor-sa@$PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/datastore.user"
-
-# Store the Gemini API key in Secret Manager
-echo -n "your_gemini_api_key_here" | \
-  gcloud secrets create gemini-api-key --data-file=-
 ```
 
 ---
@@ -273,20 +271,24 @@ SeeMe is a patient, encouraging tutor with a calm and warm voice. Its pedagogica
 SeeMe Tutor is designed for families and educational use. Data handling is minimal by design:
 
 **What is stored:**
+
 - Firestore session metadata only: session ID, start time, duration, detected language, end reason
 - Anonymized client identifier (hashed IP — raw IPs are never persisted)
 
 **What is NOT stored:**
+
 - No audio recordings
 - No video frames or screenshots
 - No conversation transcripts
 - No personal data (name, age, school, etc.)
 
 **Educational scope:**
+
 - The tutor's system instructions restrict it to educational topics — it will redirect non-educational requests back to learning
 - Socratic method ensures the tutor guides rather than provides answers, keeping the student in the driver's seat
 
 **Supervised use:**
+
 - SeeMe is designed to be used with a parent or guardian present
 - A consent screen is shown before each session begins
 - Sessions are capped at 20 minutes to encourage focused, supervised study time
@@ -304,7 +306,6 @@ The deploy script performs the following steps automatically:
 - Builds the Docker container image using Cloud Build
 - Pushes the image to Artifact Registry
 - Deploys the container to Cloud Run in `europe-west1`
-- Binds `GEMINI_API_KEY` as a Cloud Run secret reference to Secret Manager
 - Runs `firebase deploy` to publish the frontend PWA to Firebase Hosting
 - Prints the live URLs for both the backend and frontend
 
@@ -324,7 +325,7 @@ After deployment:
 | **Cloud Run** | Serverless hosting for the FastAPI WebSocket backend; auto-scales to zero when idle, scales up on demand |
 | **Firebase Hosting** | Hosts the PWA frontend on a global CDN; serves over HTTPS (required for camera/mic browser APIs) |
 | **Firestore** | Stores session metadata (start time, duration, language detected, end reason) for analytics |
-| **Secret Manager** | Stores the Gemini API key securely; Cloud Run mounts the secret at runtime via `--set-secrets` binding |
+| **Secret Manager** | Stores secrets like `DEMO_ACCESS_CODE` securely; Cloud Run mounts the secret at runtime via `--set-secrets` binding |
 | **Cloud Build** | Builds the Docker container image from source on each deploy; no local Docker daemon required |
 | **Artifact Registry** | Stores built container images; used as the image source for Cloud Run deployments |
 
@@ -335,13 +336,12 @@ After deployment:
 Copy `.env.example` to `.env` and fill in the values:
 
 ```
-GEMINI_API_KEY=        # Your Gemini Developer API key
 GCP_PROJECT_ID=seeme-tutor
 GCP_REGION=europe-west1
 FIRESTORE_COLLECTION=sessions
 ```
 
-In production (Cloud Run), `GEMINI_API_KEY` is mounted from Secret Manager via `--set-secrets` and the other variables are set as Cloud Run environment variables.
+In production (Cloud Run), `DEMO_ACCESS_CODE` is mounted from Secret Manager via `--set-secrets` and the other variables are set as Cloud Run environment variables.
 
 ---
 
@@ -353,7 +353,7 @@ In production (Cloud Run), `GEMINI_API_KEY` is mounted from Secret Manager via `
 | **Camera not working** | Same as above — ensure Camera is set to "Allow". On macOS, check System Preferences → Privacy → Camera. |
 | **No audio from tutor** | Check that your browser tab is not muted (right-click the tab → Unmute). Ensure system volume is up. |
 | **"Secure context required"** | Camera and mic APIs require HTTPS or `localhost`. Use `http://localhost:8000` for local dev, not a raw IP. |
-| **WebSocket connection fails** | Verify the backend is running (`curl http://localhost:8000/health`). Check that the Gemini API key is set. |
+| **WebSocket connection fails** | Verify the backend is running (`curl http://localhost:8000/health`). Check that your Application Default Credentials are set. |
 | **Browser not supported** | Use Chrome or Edge (latest version). Safari and Firefox have limited WebRTC/AudioContext support. |
 
 ---

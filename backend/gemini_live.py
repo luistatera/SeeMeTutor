@@ -1,52 +1,29 @@
 """
-ADK Live session management for SeeMe Tutor.
+Gemini Live session management for SeeMe Tutor.
 
-Wraps the ADK Runner's live streaming mode, translating ADK Events into the
-same dict format that main.py already consumes. The frontend WebSocket
-protocol does not change at all.
+Uses the google-genai SDK directly to manage a Live API session via
+client.aio.live.connect(). Translates Gemini server messages into the
+same dict format that main.py already consumes.
 """
 
 import asyncio
+import inspect
+import json
 import logging
 import time
 from types import TracebackType
 from typing import AsyncGenerator, Optional
 
-from google.adk import Runner
-from google.adk.agents.live_request_queue import LiveRequestQueue
-from google.adk.runners import RunConfig
-from google.adk.flows.llm_flows.base_llm_flow import StreamingMode
+from google import genai
 from google.genai import types
 
-# --- MONKEY PATCH FOR ADK APIError 1007 ---
-import google.adk.models.gemini_llm_connection
-
-_original_send_content = google.adk.models.gemini_llm_connection.GeminiLlmConnection.send_content
-
-async def _patched_send_content(self, content: types.Content):
-    """
-    Avoid sending turn_complete=True to prevent APIError 1007 when VAD is active.
-    If the content is a function response, let it behave normally.
-    """
-    assert content.parts
-    if content.parts[0].function_response:
-        await _original_send_content(self, content)
-    else:
-        # For regular text content, omit turn_complete to avoid conflicting with VAD
-        # The ADK logger uses 'google_adk.google.adk.models.gemini_llm_connection'
-        import logging
-        logging.getLogger('google_adk.google.adk.models.gemini_llm_connection').debug('Sending LLM new content (patched) %s', content)
-        
-        # Omit turn_complete=True
-        await self._gemini_session.send(
-            input=types.LiveClientContent(
-                turns=[content],
-            )
-        )
-
-# Apply patch
-google.adk.models.gemini_llm_connection.GeminiLlmConnection.send_content = _patched_send_content
-# ------------------------------------------
+from tutor_agent.agent import (
+    GOOGLE_SEARCH_TOOL,
+    MODEL,
+    SYSTEM_PROMPT,
+    TOOL_DECLARATIONS,
+    TOOL_FUNCTIONS,
+)
 
 # --- MONKEY PATCH FOR WEBSOCKET KEEPALIVE TIMEOUT (1011 Error) ---
 # The Gemini Live API can sometimes take longer than the default 20s to respond to pings
@@ -128,33 +105,71 @@ def get_topic_update_queue(session_id: str) -> asyncio.Queue | None:
 def unregister_topic_update_queue(session_id: str) -> None:
     _topic_update_queues.pop(session_id, None)
 
-class ADKLiveSession:
-    """
-    Async context manager for a single ADK-backed Gemini Live session.
 
-    Presents the same public interface as the old GeminiLiveSession so that
-    main.py's forwarding logic works without changes.
+class GeminiLiveSession:
+    """
+    Async context manager for a direct Gemini Live API session.
 
     Usage:
-        async with ADKLiveSession(runner=runner, user_id=uid, session_id=sid) as session:
-            session.send_audio(pcm_bytes)
+        async with GeminiLiveSession(state=session_state) as session:
+            await session.send_audio(pcm_bytes)
             async for event_dict in session.receive():
                 ...
     """
 
-    def __init__(self, runner: Runner, user_id: str, session_id: str) -> None:
-        self._runner = runner
-        self._user_id = user_id
-        self._session_id = session_id
-        self._queue: Optional[LiveRequestQueue] = None
+    def __init__(self, state: dict) -> None:
+        self._state = state
+        self._client = genai.Client()
+        self._session = None  # set in __aenter__
+        self._session_cm = None  # the context manager from live.connect()
 
-    async def __aenter__(self) -> "ADKLiveSession":
-        self._queue = LiveRequestQueue()
-        logger.info(
-            "ADK live session ready (user=%s, session=%s)",
-            self._user_id,
-            self._session_id,
+    async def __aenter__(self) -> "GeminiLiveSession":
+        student_context = {
+            "student_name": self._state.get("student_name"),
+            "preferred_language": self._state.get("preferred_language"),
+            "resume_message": self._state.get("resume_message"),
+            "topic_title": self._state.get("topic_title"),
+            "topic_status": self._state.get("topic_status"),
+            "language_contract": self._state.get("language_contract"),
+            "previous_notes_count": len(self._state.get("previous_notes", [])),
+        }
+
+        system_instruction = (
+            SYSTEM_PROMPT
+            + "\n\n## Current Session\n"
+            + json.dumps(student_context, ensure_ascii=False)
         )
+
+        config = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name="Puck",
+                    ),
+                ),
+            ),
+            system_instruction=types.Content(
+                parts=[types.Part(text=system_instruction)],
+            ),
+            tools=[TOOL_DECLARATIONS, GOOGLE_SEARCH_TOOL],
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    prefix_padding_ms=300,
+                    silence_duration_ms=500,
+                ),
+            ),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+        )
+
+        self._session_cm = self._client.aio.live.connect(
+            model=MODEL,
+            config=config,
+        )
+        self._session = await self._session_cm.__aenter__()
+        logger.info("Gemini Live session connected (model=%s)", MODEL)
         return self
 
     async def __aexit__(
@@ -163,160 +178,187 @@ class ADKLiveSession:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> None:
-        if self._queue is not None:
-            self._queue.close()
-            logger.info("ADK live queue closed (session=%s)", self._session_id)
-        self._queue = None
+        if self._session_cm is not None:
+            try:
+                await self._session_cm.__aexit__(exc_type, exc_val, exc_tb)
+            except Exception:
+                logger.debug("Error closing Gemini session", exc_info=True)
+            logger.info("Gemini Live session closed")
+        self._session = None
+        self._session_cm = None
 
-    def send_audio(self, audio_bytes: bytes) -> None:
-        """Forward a raw PCM audio chunk (16-bit, 16 kHz) to the live session."""
-        if self._queue is None:
+    async def send_audio(self, audio_bytes: bytes) -> None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        self._queue.send_realtime(
-            types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
+        await self._session.send_realtime_input(
+            audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
         )
 
-    def send_video_frame(self, jpeg_bytes: bytes) -> None:
-        """Forward a JPEG-encoded video frame to the live session."""
-        if self._queue is None:
+    async def send_video_frame(self, jpeg_bytes: bytes) -> None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        self._queue.send_realtime(
-            types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+        await self._session.send_realtime_input(
+            video=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
         )
 
-    def send_text(self, text: str, role: str = "user") -> None:
-        """Forward a text instruction/message to the live session."""
-        if self._queue is None:
+    async def send_text(self, text: str) -> None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-
         normalized = str(text or "").strip()
         if not normalized:
             return
-
-        self._queue.send_content(
-            types.Content(
-                role=role,
-                parts=[types.Part(text=normalized)],
-            )
+        await self._session.send_realtime_input(
+            text=normalized,
         )
 
-    def send_activity_start(self) -> None:
-        """Signal that the user started speaking (helps barge-in handling)."""
-        if self._queue is None:
+    async def send_activity_start(self) -> None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        self._queue.send_activity_start()
+        await self._session.send_realtime_input(
+            activity_start=types.ActivityStart(),
+        )
 
-    def send_activity_end(self) -> None:
-        """Signal that the user finished speaking."""
-        if self._queue is None:
+    async def send_activity_end(self) -> None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-        self._queue.send_activity_end()
+        await self._session.send_realtime_input(
+            activity_end=types.ActivityEnd(),
+        )
 
     async def receive(self) -> AsyncGenerator[dict, None]:
         """
-        Async generator that yields response events from the ADK live session.
+        Async generator that yields response events from the Gemini Live session.
 
-        Yields dicts with the same shapes as the old GeminiLiveSession:
+        Yields dicts with shapes:
             {"type": "audio", "data": bytes}
             {"type": "text", "data": str}
+            {"type": "input_transcript", "data": str}
             {"type": "turn_complete"}
             {"type": "interrupted"}
         """
-        if self._queue is None:
+        if self._session is None:
             raise RuntimeError("Session is not open. Use as async context manager.")
-
-        run_config = RunConfig(
-            streaming_mode=StreamingMode.BIDI,
-            response_modalities=["AUDIO"],
-            realtime_input_config=types.RealtimeInputConfig(
-                automaticActivityDetection=types.AutomaticActivityDetection(
-                    startOfSpeechSensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-                    prefixPaddingMs=300,
-                    silenceDurationMs=500,
-                ),
-            ),
-        )
 
         event_count = 0
         t_start = time.time()
+        turn_index = 0
 
-        async for event in self._runner.run_live(
-            user_id=self._user_id,
-            session_id=self._session_id,
-            live_request_queue=self._queue,
-            run_config=run_config,
-        ):
-            event_count += 1
-            # Translate ADK Event objects into the dict format main.py expects.
+        while True:
             try:
-                # Log raw event attributes for debugging speech detection issues
-                has_content = bool(event.content and event.content.parts)
-                content_role = getattr(event.content, "role", None) if event.content else None
-                logger.debug(
-                    "ADK event #%d: interrupted=%s turn_complete=%s has_content=%s role=%s",
-                    event_count,
-                    event.interrupted,
-                    event.turn_complete,
-                    has_content,
-                    content_role,
-                )
-                # Log tool calls/responses for debugging silence issues
-                if event.content and event.content.parts:
-                    for part in event.content.parts:
-                        fc = getattr(part, "function_call", None)
-                        if fc:
+                turn_index += 1
+                turn_events = 0
+                async for msg in self._session.receive():
+                    event_count += 1
+                    turn_events += 1
+
+                    # --- Tool calls ---
+                    tool_call = getattr(msg, "tool_call", None)
+                    if tool_call is not None:
+                        function_calls = getattr(tool_call, "function_calls", None) or []
+                        tool_responses = []
+                        for fc in function_calls:
+                            fn_name = fc.name
+                            fn_args = dict(fc.args) if fc.args else {}
                             _debug_logger.debug(
-                                "TOOL_CALL sid=%s fn=%s t=%.2fs",
-                                self._session_id[:8],
-                                getattr(fc, "name", "?"),
-                                time.time() - t_start,
+                                "TOOL_CALL fn=%s args=%s t=%.2fs",
+                                fn_name, json.dumps(fn_args)[:200], time.time() - t_start,
                             )
-                        fr = getattr(part, "function_response", None)
-                        if fr:
+                            result = await self._dispatch_tool(fn_name, fn_args)
                             _debug_logger.debug(
-                                "TOOL_RESPONSE sid=%s fn=%s t=%.2fs",
-                                self._session_id[:8],
-                                getattr(fr, "name", "?"),
-                                time.time() - t_start,
+                                "TOOL_RESPONSE fn=%s result=%s t=%.2fs",
+                                fn_name, json.dumps(result)[:200], time.time() - t_start,
                             )
-
-                if event.interrupted:
-                    logger.info("ADK event #%d: INTERRUPTED", event_count)
-                    yield {"type": "interrupted"}
-                    continue
-
-                if event.content and event.content.parts:
-                    for part in event.content.parts:
-                        inline_data = getattr(part, "inline_data", None)
-                        if inline_data is not None and inline_data.data:
-                            yield {"type": "audio", "data": inline_data.data}
-                            continue
-
-                        text = getattr(part, "text", None)
-                        if text:
-                            # Check if this is an input transcript (what the model heard)
-                            if content_role == "user":
-                                logger.info(
-                                    "ADK event #%d: INPUT TRANSCRIPT (student): %s",
-                                    event_count, text,
+                            tool_responses.append(
+                                types.FunctionResponse(
+                                    name=fn_name,
+                                    id=fc.id,
+                                    response=result,
                                 )
-                                yield {"type": "input_transcript", "data": text}
-                            else:
-                                logger.info(
-                                    "ADK event #%d: OUTPUT TEXT (tutor): %s",
-                                    event_count, text,
-                                )
+                            )
+                        await self._session.send_tool_response(
+                            function_responses=tool_responses,
+                        )
+                        continue
+
+                    # --- Server content ---
+                    server_content = getattr(msg, "server_content", None)
+                    if server_content is None:
+                        continue
+
+                    # Check for interruption
+                    if getattr(server_content, "interrupted", False):
+                        logger.info("Event #%d: INTERRUPTED", event_count)
+                        yield {"type": "interrupted"}
+                        continue
+
+                    # Check turn_complete
+                    turn_complete = getattr(server_content, "turn_complete", False)
+
+                    # Process content parts
+                    model_turn = getattr(server_content, "model_turn", None)
+                    if model_turn is not None:
+                        parts = getattr(model_turn, "parts", None) or []
+                        for part in parts:
+                            inline_data = getattr(part, "inline_data", None)
+                            if inline_data is not None and inline_data.data:
+                                yield {"type": "audio", "data": inline_data.data}
+                                continue
+
+                            text = getattr(part, "text", None)
+                            if text:
+                                logger.info("Event #%d: OUTPUT TEXT (tutor): %s", event_count, text)
                                 yield {"type": "text", "data": text}
 
-                if event.turn_complete:
-                    logger.info("ADK event #%d: TURN COMPLETE", event_count)
-                    yield {"type": "turn_complete"}
+                    # Input transcription (what the model heard from the student)
+                    input_transcription = getattr(server_content, "input_transcription", None)
+                    if input_transcription is not None:
+                        transcript_text = getattr(input_transcription, "text", None)
+                        if transcript_text:
+                            logger.info("Event #%d: INPUT TRANSCRIPT (student): %s", event_count, transcript_text)
+                            yield {"type": "input_transcript", "data": transcript_text}
 
-            except (AttributeError, TypeError, KeyError) as parse_exc:
-                logger.exception(
-                    "Failed to parse ADK event #%d — skipping (event=%r): %s",
+                    # Output transcription (model's own speech as text)
+                    output_transcription = getattr(server_content, "output_transcription", None)
+                    if output_transcription is not None:
+                        transcript_text = getattr(output_transcription, "text", None)
+                        if transcript_text:
+                            logger.info("Event #%d: OUTPUT TRANSCRIPT (tutor): %s", event_count, transcript_text)
+                            yield {"type": "text", "data": transcript_text}
+
+                    if turn_complete:
+                        logger.info("Event #%d: TURN COMPLETE", event_count)
+                        yield {"type": "turn_complete"}
+
+                # google-genai>=1.64.0 returns one model turn per `receive()` call.
+                # Re-enter receive() for the next turn instead of treating this as
+                # full-session closure.
+                logger.debug(
+                    "Gemini receive turn #%d ended after %d total events (elapsed=%.2fs)",
+                    turn_index,
                     event_count,
-                    event,
-                    parse_exc,
+                    time.time() - t_start,
                 )
+                if turn_events == 0:
+                    logger.info("Gemini receive stream ended after %d events", event_count)
+                    return
+                await asyncio.sleep(0)
                 continue
+
+            except Exception as exc:
+                logger.exception("Error in Gemini receive loop: %s", exc)
+                raise
+
+    async def _dispatch_tool(self, name: str, args: dict) -> dict:
+        fn = TOOL_FUNCTIONS.get(name)
+        if fn is None:
+            logger.warning("Unknown tool call: %s", name)
+            return {"result": "error", "detail": f"Unknown tool: {name}"}
+
+        try:
+            result = fn(**args, state=self._state)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        except Exception:
+            logger.exception("Tool %s raised an exception", name)
+            return {"result": "error", "detail": f"Tool {name} failed internally."}

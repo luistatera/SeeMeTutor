@@ -109,6 +109,12 @@ info "This builds the container via Cloud Build and deploys to Cloud Run..."
 info "Source: backend/"
 info "Secrets will be mounted from Secret Manager at runtime"
 
+info "Ensuring Cloud Run service account has Vertex AI User permissions..."
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/aiplatform.user" \
+    --quiet >/dev/null || warn "Failed to verify IAM policy, deploy might fail if lacking aiplatform.user"
+
 # Build from project root so Dockerfile can COPY frontend/ alongside backend/
 cp backend/Dockerfile .
 gcloud run deploy "${SERVICE_NAME}" \

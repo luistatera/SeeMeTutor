@@ -29,18 +29,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from google.adk import Runner
-from google.adk.sessions import InMemorySessionService
-
 from gemini_live import (
-    ADKLiveSession,
-    APP_NAME,
+    GeminiLiveSession,
     register_whiteboard_queue,
     unregister_whiteboard_queue,
     register_topic_update_queue,
     unregister_topic_update_queue,
 )
-from tutor_agent.agent import root_agent
 
 load_dotenv()
 
@@ -65,25 +60,19 @@ _debug_fh.setFormatter(logging.Formatter("%(asctime)s.%(msecs)03d %(message)s", 
 _debug_logger.addHandler(_debug_fh)
 
 # ---------------------------------------------------------------------------
-# Gemini backend: Vertex AI (default) or Developer API key (local fallback)
+# Gemini backend: Vertex AI
 # ---------------------------------------------------------------------------
-_GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
 DEMO_ACCESS_CODE = os.environ.get("DEMO_ACCESS_CODE", "")
-if _GEMINI_API_KEY:
-    # Local dev without gcloud auth — use Developer API key
-    os.environ["GOOGLE_API_KEY"] = _GEMINI_API_KEY
-    os.environ.pop("GEMINI_API_KEY", None)
-    logger.info("Gemini backend: Developer API (API key set)")
-else:
-    # Production (Cloud Run) / local dev with `gcloud auth application-default login`
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
-    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ.get("GCP_PROJECT_ID", "seeme-tutor"))
-    os.environ.setdefault("GOOGLE_CLOUD_LOCATION", os.environ.get("GCP_REGION", "europe-west1"))
-    logger.info(
-        "Gemini backend: Vertex AI (project=%s, location=%s)",
-        os.environ["GOOGLE_CLOUD_PROJECT"],
-        os.environ["GOOGLE_CLOUD_LOCATION"],
-    )
+
+# Production (Cloud Run) / local dev with `gcloud auth application-default login`
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "TRUE")
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", os.environ.get("GCP_PROJECT_ID", "seeme-tutor"))
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", os.environ.get("GCP_REGION", "europe-west1"))
+logger.info(
+    "Gemini backend: Vertex AI (project=%s, location=%s)",
+    os.environ["GOOGLE_CLOUD_PROJECT"],
+    os.environ["GOOGLE_CLOUD_LOCATION"],
+)
 
 
 SESSION_TIMEOUT_SECONDS = 20 * 60  # 20-minute focused session limit
@@ -572,13 +561,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-_session_service = InMemorySessionService()
-_runner = Runner(
-    app_name=APP_NAME,
-    agent=root_agent,
-    session_service=_session_service,
-)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -708,29 +690,24 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         except Exception:
             logger.warning("Session %s: failed to log start to Firestore", session_id, exc_info=True)
 
-    # Create ADK session with state accessible to tools (e.g. log_progress)
-    await _session_service.create_session(
-        app_name=APP_NAME,
-        user_id=raw_student_id,
-        session_id=session_id,
-        state={
-            "session_id": session_id,
-            "gcp_project_id": GCP_PROJECT_ID,
-            "student_id": raw_student_id,
-            "student_name": backlog_context.get("student_name"),
-            "preferred_language": backlog_context.get("preferred_language"),
-            "track_id": backlog_context.get("track_id"),
-            "track_title": backlog_context.get("track_title"),
-            "topic_id": backlog_context.get("topic_id"),
-            "topic_title": backlog_context.get("topic_title"),
-            "topic_status": backlog_context.get("topic_status"),
-            "available_topics": backlog_context.get("available_topics", []),
-            "language_policy": backlog_context.get("language_policy"),
-            "language_contract": backlog_context.get("language_contract"),
-            "previous_notes": backlog_context.get("previous_notes", []),
-            "session_phase": "greeting",
-        },
-    )
+    session_state = {
+        "session_id": session_id,
+        "gcp_project_id": GCP_PROJECT_ID,
+        "student_id": raw_student_id,
+        "student_name": backlog_context.get("student_name"),
+        "preferred_language": backlog_context.get("preferred_language"),
+        "track_id": backlog_context.get("track_id"),
+        "track_title": backlog_context.get("track_title"),
+        "topic_id": backlog_context.get("topic_id"),
+        "topic_title": backlog_context.get("topic_title"),
+        "topic_status": backlog_context.get("topic_status"),
+        "available_topics": backlog_context.get("available_topics", []),
+        "language_policy": backlog_context.get("language_policy"),
+        "language_contract": backlog_context.get("language_contract"),
+        "previous_notes": backlog_context.get("previous_notes", []),
+        "resume_message": backlog_context.get("resume_message"),
+        "session_phase": "greeting",
+    }
     await _send_json(websocket, {"type": "backlog_context", "data": backlog_context})
     for note in backlog_context.get("previous_notes", []):
         await _send_json(websocket, {"type": "whiteboard", "data": note})
@@ -789,11 +766,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     ended_reason = "disconnect"
     try:
         try:
-            async with ADKLiveSession(
-                runner=_runner,
-                user_id=raw_student_id,
-                session_id=session_id,
-            ) as gemini_session:
+            async with GeminiLiveSession(state=session_state) as gemini_session:
                 forward_task = asyncio.create_task(
                     _forward_to_gemini(websocket, gemini_session, session_id, runtime_state),
                     name="forward_to_gemini",
@@ -1170,7 +1143,7 @@ async def _log_command_event(session_id: str, runtime_state: dict, payload: dict
 
 async def _forward_to_gemini(
     websocket: WebSocket,
-    session: ADKLiveSession,
+    session: GeminiLiveSession,
     session_id: str,
     runtime_state: dict,
 ) -> None:
@@ -1230,6 +1203,10 @@ async def _forward_to_gemini(
                 runtime_state["conversation_started"] = False
                 runtime_state["last_user_activity_at"] = now
                 runtime_state["idle_stage"] = 0
+                try:
+                    await session.send_activity_start()
+                except Exception:
+                    logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
                 logger.info("Control message from browser: 'mic_start'")
                 continue
             if msg_type == "away_mode":
@@ -1283,7 +1260,7 @@ async def _forward_to_gemini(
                 runtime_state["conversation_started"] = True
                 runtime_state["mic_kickoff_sent"] = True
                 try:
-                    session.send_text(instruction, role="user")
+                    await session.send_text(instruction)
                 except Exception:
                     logger.warning("Session %s: failed to forward speech pace command", session_id, exc_info=True)
                 continue
@@ -1304,6 +1281,10 @@ async def _forward_to_gemini(
                     runtime_state["mic_opened_at"] = None
                     runtime_state["mic_kickoff_sent"] = False
                     runtime_state["idle_stage"] = 0
+                    try:
+                        await session.send_activity_end()
+                    except Exception:
+                        logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
                 logger.info("Control message from browser: '%s'", msg_type)
                 continue
 
@@ -1336,13 +1317,13 @@ async def _forward_to_gemini(
                 if dc is not None:
                     dc["audio_in"] += 1
                     dc["last_audio_in_at"] = now
-                session.send_audio(raw_bytes)
+                await session.send_audio(raw_bytes)
                 audio_chunks_sent += 1
             elif msg_type == "video":
                 dc = _debug_counters.get(session_id)
                 if dc is not None:
                     dc["video_in"] += 1
-                session.send_video_frame(raw_bytes)
+                await session.send_video_frame(raw_bytes)
                 video_frames_sent += 1
             else:
                 logger.warning("Unknown message type from browser: '%s'", msg_type)
@@ -1373,7 +1354,7 @@ async def _forward_to_gemini(
 
 async def _forward_to_client(
     websocket: WebSocket,
-    session: ADKLiveSession,
+    session: GeminiLiveSession,
     session_id: str = "",
     runtime_state: dict | None = None,
     wb_queue: asyncio.Queue | None = None,

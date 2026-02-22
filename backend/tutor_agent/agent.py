@@ -1,16 +1,15 @@
 """
-SeeMe Tutor — ADK agent definition.
+SeeMe Tutor — agent tools and system prompt.
 
-Defines the root agent with phase-based instruction, Socratic tutoring tools,
+Defines Socratic tutoring tools, tool declarations for the Gemini Live API,
 and Google Search for factual grounding.
 """
 
+import inspect
 import logging
 import time
 
-from google.adk.agents import Agent
-from google.adk.tools import google_search
-from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 import os
 try:
     from google.cloud import firestore
@@ -20,7 +19,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-live-2.5-flash-native-audio"
+MODEL = "gemini-2.0-flash-live-001"
 STRUGGLE_CHECKPOINT_THRESHOLD = 2
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
 
@@ -74,10 +73,11 @@ If a student speaks to you in an unsupported language, respond warmly in \
 English: "I can help you in English, Portuguese, or German — which would you \
 prefer?"
 
-At the beginning of each session, call get_backlog_context and read \
-preferred_language, language_policy, and language_contract. The \
-language_contract is mandatory for this student and overrides generic language \
-behavior.
+At the beginning of each session, a [SESSION START] message is sent containing \
+the student's preferred_language, language_contract, and other context. Use this \
+immediately to greet the student — do not call get_backlog_context at session \
+start. The language_contract in that message is mandatory and overrides generic \
+language behavior. Use get_backlog_context only to refresh context mid-session.
 
 Hard turn-level rule: use one language per tutor turn. Never mix two languages \
 in one response unless the language_contract explicitly allows it.
@@ -124,12 +124,13 @@ but avoid trivial lookups to conserve API costs."""
 _PHASE_GREETING = """\
 ## Greeting Phase
 
-1. Call `get_backlog_context` FIRST to load the student profile.
-2. Greet the student by name in their preferred language.
-3. Reference what they worked on last time (use the resume_message from backlog context).
-4. If `previous_notes` is not empty, the student has unfinished exercises from last time. \
-Tell them: "I see we still have [N] exercises from last time on the board. Want to \
-continue where we left off, or show me new homework?" If they want to continue, call \
+1. Read the student context from the [SESSION START] message. Do NOT call \
+get_backlog_context — the context is already provided. Start speaking immediately.
+2. Greet the student by name in their preferred_language.
+3. Reference what they worked on last time (use resume_message from the context).
+4. If previous_notes_count > 0, the student has unfinished exercises on the board. \
+Tell them: "I see we still have [N] exercises from last time. Want to continue \
+where we left off, or show me new homework?" If they want to continue, call \
 `set_session_phase("tutoring")` directly — the exercises are already on the whiteboard.
 5. Invite them to show their homework on camera OR pick a topic to work on verbally.
 6. Keep it brief — one warm greeting, one invitation to start.
@@ -146,9 +147,8 @@ Your ONLY job right now is to capture every exercise visible on camera. Do NOT \
 start teaching yet.
 
 ### First-time capture (from greeting)
-1. Check `previous_notes` from `get_backlog_context` first. If exercises are already \
-on the board from a previous session, do NOT re-capture them. Only call `write_notes` \
-for NEW exercises not already present.
+1. Exercises from previous sessions are already on the board. Do NOT re-capture \
+them. Only call `write_notes` for NEW exercises not already present.
 
 ### Re-capture (from tutoring — new homework shown)
 When you enter capture from the tutoring phase, the board has already been cleared \
@@ -344,7 +344,7 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
-def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
+def set_session_phase(phase: str, *, state: dict) -> dict:
     """Transition the tutoring session to a new phase.
 
     Call this when the session should move to a different phase (e.g. from
@@ -356,7 +356,6 @@ def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
 
     Args:
         phase: Target phase — one of 'greeting', 'capture', 'tutoring', 'review'.
-        tool_context: Injected by ADK — provides access to session state.
 
     Returns:
         A dict confirming the transition, including the new phase instructions.
@@ -370,7 +369,7 @@ def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
             "detail": f"Invalid phase '{phase}'. Must be one of: {', '.join(sorted(_VALID_PHASES))}",
         }
 
-    current_phase = tool_context.state.get("session_phase", "greeting")
+    current_phase = state.get("session_phase", "greeting")
     allowed = _VALID_TRANSITIONS.get(current_phase, frozenset())
     if normalized not in allowed:
         return {
@@ -381,21 +380,21 @@ def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
             ),
         }
 
-    tool_context.state["session_phase"] = normalized
+    state["session_phase"] = normalized
     logger.info("Phase transition: %s -> %s", current_phase, normalized)
 
     # When re-entering capture from tutoring, clear the whiteboard so the
     # student sees a fresh board for the new homework.
     board_cleared = False
     if normalized == "capture" and current_phase == "tutoring":
-        session_id = tool_context.state.get("session_id")
+        session_id = state.get("session_id")
         queue = get_whiteboard_queue(session_id)
         if queue:
             queue.put_nowait({"action": "clear"})
             board_cleared = True
         # Reset previous_notes so capture doesn't skip new exercises that
         # happen to share a title with old ones.
-        tool_context.state["previous_notes"] = []
+        state["previous_notes"] = []
         logger.info("Whiteboard cleared for re-capture (session=%s)", session_id)
 
     result = {
@@ -412,25 +411,25 @@ def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
     return result
 
 
-def get_backlog_context(tool_context: ToolContext) -> dict:
+def get_backlog_context(*, state: dict) -> dict:
     """Return session backlog context loaded during websocket bootstrap."""
     return {
-        "student_id": tool_context.state.get("student_id"),
-        "student_name": tool_context.state.get("student_name"),
-        "preferred_language": tool_context.state.get("preferred_language"),
-        "track_id": tool_context.state.get("track_id"),
-        "track_title": tool_context.state.get("track_title"),
-        "topic_id": tool_context.state.get("topic_id"),
-        "topic_title": tool_context.state.get("topic_title"),
-        "topic_status": tool_context.state.get("topic_status"),
-        "available_topics": tool_context.state.get("available_topics", []),
-        "previous_notes": tool_context.state.get("previous_notes", []),
-        "language_policy": tool_context.state.get("language_policy"),
-        "language_contract": tool_context.state.get("language_contract"),
+        "student_id": state.get("student_id"),
+        "student_name": state.get("student_name"),
+        "preferred_language": state.get("preferred_language"),
+        "track_id": state.get("track_id"),
+        "track_title": state.get("track_title"),
+        "topic_id": state.get("topic_id"),
+        "topic_title": state.get("topic_title"),
+        "topic_status": state.get("topic_status"),
+        "available_topics": state.get("available_topics", []),
+        "previous_notes": state.get("previous_notes", []),
+        "language_policy": state.get("language_policy"),
+        "language_contract": state.get("language_contract"),
     }
 
 
-async def log_progress(topic: str, status: str, tool_context: ToolContext) -> dict:
+async def log_progress(topic: str, status: str, *, state: dict) -> dict:
     """Record a student learning milestone.
 
     Call this when the student clearly masters a concept or struggles
@@ -439,15 +438,14 @@ async def log_progress(topic: str, status: str, tool_context: ToolContext) -> di
     Args:
         topic: The subject or concept, e.g. 'long division', 'German dative case'.
         status: The student's current grasp — one of 'mastered', 'struggling', or 'improving'.
-        tool_context: Injected by ADK — provides access to session state.
 
     Returns:
         A dict confirming the progress was recorded.
     """
-    session_id = tool_context.state.get("session_id", "unknown")
-    student_id = tool_context.state.get("student_id")
-    track_id = tool_context.state.get("track_id")
-    topic_id = tool_context.state.get("topic_id")
+    session_id = state.get("session_id", "unknown")
+    student_id = state.get("student_id")
+    track_id = state.get("track_id")
+    topic_id = state.get("topic_id")
     normalized_status = (status or "").strip().lower()
     t0 = time.time()
     try:
@@ -511,7 +509,7 @@ async def log_progress(topic: str, status: str, tool_context: ToolContext) -> di
                             await checkpoint_ref.set({
                                 "topic_id": topic_id,
                                 "track_id": track_id,
-                                "topic_title": tool_context.state.get("topic_title", topic),
+                                "topic_title": state.get("topic_title", topic),
                                 "status": "open",
                                 "decision": "pending",
                                 "trigger": checkpoint_reason,
@@ -557,12 +555,12 @@ async def log_progress(topic: str, status: str, tool_context: ToolContext) -> di
         logger.info("TOOL_METRIC session=%s tool=log_progress duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def set_checkpoint_decision(decision: str, tool_context: ToolContext) -> dict:
+async def set_checkpoint_decision(decision: str, *, state: dict) -> dict:
     """Persist learner decision for the current topic checkpoint."""
-    session_id = tool_context.state.get("session_id", "unknown")
-    student_id = tool_context.state.get("student_id")
-    track_id = tool_context.state.get("track_id")
-    topic_id = tool_context.state.get("topic_id")
+    session_id = state.get("session_id", "unknown")
+    student_id = state.get("student_id")
+    track_id = state.get("track_id")
+    topic_id = state.get("topic_id")
     t0 = time.time()
     try:
         normalized_decision = (decision or "").strip().lower()
@@ -626,9 +624,10 @@ async def set_checkpoint_decision(decision: str, tool_context: ToolContext) -> d
 async def write_notes(
     title: str,
     content: str,
-    tool_context: ToolContext,
     note_type: str = "insight",
     status: str = "pending",
+    *,
+    state: dict,
 ) -> dict:
     """Write a note to the student's whiteboard.
 
@@ -638,7 +637,6 @@ async def write_notes(
     Args:
         title: Short heading for the note (2-5 words).
         content: The note body — formulas, steps, or vocabulary.
-        tool_context: Injected by ADK — provides access to session state.
         note_type: Category of note — one of 'insight', 'checklist_item',
             'formula', 'summary', 'vocabulary'. Defaults to 'insight'.
         status: Initial status — one of 'pending', 'in_progress', 'done',
@@ -662,13 +660,13 @@ async def write_notes(
 
         # Check if a note with the same title already exists (loaded from previous session)
         normalized_title = title.strip().lower()
-        for prev in tool_context.state.get("previous_notes", []):
+        for prev in state.get("previous_notes", []):
             if str(prev.get("title", "")).strip().lower() == normalized_title:
                 existing_id = prev.get("id", "")
                 logger.info("write_notes: skipping duplicate — '%s' already on board as %s", title.strip(), existing_id)
                 return {"result": "already_exists", "title": title, "note_id": existing_id, "note_type": note_type, "status": prev.get("status", status)}
 
-        session_id = tool_context.state.get("session_id")
+        session_id = state.get("session_id")
         note_id = f"note-{int(time.time() * 1000)}"
         queue = get_whiteboard_queue(session_id)
         if queue:
@@ -683,9 +681,9 @@ async def write_notes(
             logger.info("Session %s: whiteboard note queued — %s [%s/%s]", session_id, title.strip(), note_type, status)
 
         # Persist to Firestore
-        student_id = tool_context.state.get("student_id")
-        track_id = tool_context.state.get("track_id")
-        topic_id = tool_context.state.get("topic_id")
+        student_id = state.get("student_id")
+        track_id = state.get("track_id")
+        topic_id = state.get("topic_id")
         fs_client = get_firestore_client()
         if fs_client:
             try:
@@ -709,11 +707,11 @@ async def write_notes(
 
         return {"result": "displayed", "title": title, "note_id": note_id, "note_type": note_type, "status": status}
     finally:
-        session_id = tool_context.state.get("session_id", "unknown")
+        session_id = state.get("session_id", "unknown")
         logger.info("TOOL_METRIC session=%s tool=write_notes duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def update_note_status(note_id: str, status: str, tool_context: ToolContext) -> dict:
+async def update_note_status(note_id: str, status: str, *, state: dict) -> dict:
     """Update the status of an existing whiteboard note.
 
     Call this to mark checklist items as in_progress, done, mastered, or
@@ -723,12 +721,11 @@ async def update_note_status(note_id: str, status: str, tool_context: ToolContex
         note_id: The note identifier returned by write_notes (e.g. 'note-1234567890').
         status: New status — one of 'pending', 'in_progress', 'done',
             'mastered', 'struggling'.
-        tool_context: Injected by ADK — provides access to session state.
 
     Returns:
         A dict confirming the status was updated.
     """
-    session_id = tool_context.state.get("session_id")
+    session_id = state.get("session_id")
     t0 = time.time()
     try:
         from gemini_live import get_whiteboard_queue
@@ -765,7 +762,7 @@ async def update_note_status(note_id: str, status: str, tool_context: ToolContex
         logger.info("TOOL_METRIC session=%s tool=update_note_status duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def switch_topic(topic_id: str, topic_title: str, tool_context: ToolContext) -> dict:
+async def switch_topic(topic_id: str, topic_title: str, *, state: dict) -> dict:
     """Switch the active topic for the current session.
 
     Call this when the student asks to change topic, or after mastering the
@@ -774,16 +771,15 @@ async def switch_topic(topic_id: str, topic_title: str, tool_context: ToolContex
     Args:
         topic_id: The topic identifier, e.g. 'linear-equations', 'separable-verbs'.
         topic_title: Human-readable title, e.g. 'Linear Equations'.
-        tool_context: Injected by ADK — provides access to session state.
 
     Returns:
         A dict confirming the topic was switched.
     """
-    session_id = tool_context.state.get("session_id")
-    student_id = tool_context.state.get("student_id")
-    track_id = tool_context.state.get("track_id")
-    old_topic_id = tool_context.state.get("topic_id")
-    old_topic = tool_context.state.get("topic_title", "--")
+    session_id = state.get("session_id")
+    student_id = state.get("student_id")
+    track_id = state.get("track_id")
+    old_topic_id = state.get("topic_id")
+    old_topic = state.get("topic_title", "--")
     t0 = time.time()
     try:
         from gemini_live import get_topic_update_queue, get_whiteboard_queue
@@ -812,9 +808,9 @@ async def switch_topic(topic_id: str, topic_title: str, tool_context: ToolContex
         else:
             logger.info("Firestore not available — topic switch not persisted (OK for local dev)")
 
-        tool_context.state["topic_id"] = topic_id
-        tool_context.state["topic_title"] = topic_title
-        tool_context.state["topic_status"] = "in_progress"
+        state["topic_id"] = topic_id
+        state["topic_title"] = topic_title
+        state["topic_status"] = "in_progress"
 
         # Push update to frontend via queue
         queue = get_topic_update_queue(session_id)
@@ -842,18 +838,53 @@ async def switch_topic(topic_id: str, topic_title: str, tool_context: ToolContex
         logger.info("TOOL_METRIC session=%s tool=switch_topic duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-root_agent = Agent(
-    name="seeme_tutor",
-    model=MODEL,
-    instruction=SYSTEM_PROMPT,
-    tools=[
-        get_backlog_context,
-        log_progress,
-        set_checkpoint_decision,
-        write_notes,
-        update_note_status,
-        switch_topic,
-        set_session_phase,
-        google_search,
-    ],
-)
+# ---------------------------------------------------------------------------
+# Tool registry — maps tool names to callables for dispatch
+# ---------------------------------------------------------------------------
+
+TOOL_FUNCTIONS: dict[str, callable] = {
+    "set_session_phase": set_session_phase,
+    "get_backlog_context": get_backlog_context,
+    "log_progress": log_progress,
+    "set_checkpoint_decision": set_checkpoint_decision,
+    "write_notes": write_notes,
+    "update_note_status": update_note_status,
+    "switch_topic": switch_topic,
+}
+
+# ---------------------------------------------------------------------------
+# Tool declarations for the Gemini Live API
+# ---------------------------------------------------------------------------
+
+
+def _build_tool_declarations() -> types.Tool:
+    """Build FunctionDeclaration list from the tool functions."""
+    declarations = []
+    for name, fn in TOOL_FUNCTIONS.items():
+        sig = inspect.signature(fn)
+        properties: dict = {}
+        required: list[str] = []
+        for param_name, param in sig.parameters.items():
+            if param_name == "state":
+                continue  # injected, not sent by model
+            if param.kind == inspect.Parameter.KEYWORD_ONLY:
+                continue
+            schema: dict = {"type": "STRING"}
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
+            properties[param_name] = schema
+
+        declarations.append(types.FunctionDeclaration(
+            name=name,
+            description=(fn.__doc__ or "").split("\n")[0].strip(),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={k: types.Schema(**v) for k, v in properties.items()},
+                required=required,
+            ),
+        ))
+    return types.Tool(function_declarations=declarations)
+
+
+TOOL_DECLARATIONS: types.Tool = _build_tool_declarations()
+GOOGLE_SEARCH_TOOL: types.Tool = types.Tool(google_search=types.GoogleSearch())

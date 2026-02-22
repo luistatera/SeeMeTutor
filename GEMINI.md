@@ -22,7 +22,7 @@ If these are not stable, all other work is secondary.
 - Backend: FastAPI websocket bridge (`backend/main.py`) on Cloud Run.
 - AI: Gemini Live API via `google-genai` (`backend/gemini_live.py`).
 - Data: Firestore session metadata/progress.
-- Secrets: Secret Manager (`GEMINI_API_KEY`).
+- Secrets: Secret Manager.
 
 ---
 
@@ -54,7 +54,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-GEMINI_API_KEY=your_key_here uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 Open `http://localhost:8000` and allow mic/camera.

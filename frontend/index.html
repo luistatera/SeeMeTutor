@@ -1745,7 +1745,7 @@
           stopMic();
         }
         if (state.isSpeaking) {
-          setSpeakingState(false);
+          setSpeakingState(false, { hardStop: true });
         }
 
         if (event.code === 1008) {
@@ -1798,7 +1798,7 @@
           state.discardingAudio = false;
           bargeInFrameCount = 0;
           bargeInSentForTurn = false;
-          setSpeakingState(false);
+          finishSpeakingAfterDrain();
           finishTutorCaption();
           break;
 
@@ -1921,7 +1921,10 @@
     async function loadProfiles() {
       renderProfileStatus('Loading profiles...');
       try {
-        const response = await fetch(PROFILE_API_PATH, { cache: 'no-store' });
+        const protocol = location.protocol;
+        const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
+        const apiPath = `${protocol}//${backendHost}${PROFILE_API_PATH}`;
+        const response = await fetch(apiPath, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`profiles_http_${response.status}`);
         }
@@ -2175,10 +2178,11 @@
         maybeSendSpeechActivity(rms);
         maybeHandleLocalBargeIn(rms);
 
-        // Noise gate: don't send quiet audio to Gemini to prevent VAD false triggers
-        if (rms < NOISE_GATE_RMS) return;
-
-        const int16 = float32ToInt16(float32);
+        // Keep a continuous stream for server-side VAD. For quiet frames, send
+        // explicit silence instead of dropping chunks entirely.
+        const int16 = (rms < NOISE_GATE_RMS)
+          ? new Int16Array(float32.length)
+          : float32ToInt16(float32);
         const b64 = arrayBufferToBase64(int16.buffer);
 
         wsSend({ type: 'audio', data: b64 });
@@ -2236,6 +2240,7 @@
     let audioCtxPlay = null;
     let nextAudioTime = 0;
     const activeSources = new Set(); // track scheduled nodes for hard-stop on barge-in
+    let speakingStopTimer = null;
 
     function getPlaybackCtx() {
       if (!audioCtxPlay || audioCtxPlay.state === 'closed') {
@@ -2275,10 +2280,15 @@
       }
     }
 
-    function setSpeakingState(active) {
+    function setSpeakingState(active, options = {}) {
+      const hardStop = !!options.hardStop;
       state.isSpeaking = active;
       if (active) {
         bargeInFrameCount = 0;
+        if (speakingStopTimer) {
+          clearTimeout(speakingStopTimer);
+          speakingStopTimer = null;
+        }
       }
       // Sync tutor tile
       if (tutorWaveOverlay) tutorWaveOverlay.classList.toggle('active', active);
@@ -2293,14 +2303,15 @@
         }
       } else {
         waveOverlay.classList.remove('active');
-        // Hard-stop all in-flight audio buffers (true barge-in behaviour)
-        activeSources.forEach(s => { try { s.stop(); } catch (_) { } });
-        activeSources.clear();
-        nextAudioTime = 0;
-
-        if (audioCtxPlay) {
-          audioCtxPlay.close().catch(() => { });
-          audioCtxPlay = null;
+        if (hardStop) {
+          // Hard-stop all in-flight audio buffers (true barge-in/disconnect behaviour)
+          activeSources.forEach(s => { try { s.stop(); } catch (_) { } });
+          activeSources.clear();
+          nextAudioTime = 0;
+          if (audioCtxPlay) {
+            audioCtxPlay.close().catch(() => { });
+            audioCtxPlay = null;
+          }
         }
 
         if (!state.micActive) {
@@ -2309,6 +2320,26 @@
         }
       }
 
+    }
+
+    function finishSpeakingAfterDrain() {
+      if (speakingStopTimer) {
+        clearTimeout(speakingStopTimer);
+        speakingStopTimer = null;
+      }
+      if (!state.isSpeaking) return;
+      if (!audioCtxPlay) {
+        setSpeakingState(false);
+        return;
+      }
+      const remainingSec = Math.max(0, nextAudioTime - audioCtxPlay.currentTime);
+      const delayMs = Math.max(40, Math.ceil((remainingSec + 0.03) * 1000));
+      speakingStopTimer = setTimeout(() => {
+        speakingStopTimer = null;
+        if (!state.discardingAudio) {
+          setSpeakingState(false);
+        }
+      }, delayMs);
     }
 
     // =========================================================================
@@ -2891,7 +2922,7 @@
 
     function forceClientInterruption() {
       state.discardingAudio = true;
-      setSpeakingState(false);
+      setSpeakingState(false, { hardStop: true });
       nextAudioTime = 0;
       finishTutorCaption();
     }
