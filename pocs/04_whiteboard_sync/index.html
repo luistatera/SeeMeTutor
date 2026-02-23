@@ -950,6 +950,7 @@
       var meta = note.meta || {};
       var synced = !!meta.synced_with_speech;
       var latencyMs = Number(meta.delivery_latency_ms || 0);
+      var dispatchReason = String(meta.dispatch_reason || (synced ? 'speaking_window' : 'deadline_fallback'));
 
       var card = document.createElement('div');
       card.className = 'note-card' + (synced ? '' : ' late');
@@ -978,7 +979,7 @@
 
       var syncBadge = document.createElement('span');
       syncBadge.className = 'badge sync' + (synced ? '' : ' bad');
-      syncBadge.textContent = synced ? 'Live' : 'Delayed';
+      syncBadge.textContent = synced ? 'Live' : (dispatchReason === 'deadline_fallback' ? 'Fallback' : 'Delayed');
       badges.appendChild(syncBadge);
 
       titleRow.appendChild(badges);
@@ -989,9 +990,16 @@
 
       card.appendChild(titleRow);
       card.appendChild(contentNode);
-      whiteboard.appendChild(card);
+      var firstCard = whiteboard.querySelector('.note-card');
+      if (firstCard) {
+        whiteboard.insertBefore(card, firstCard);
+      } else if (whiteboard.firstChild) {
+        whiteboard.insertBefore(card, whiteboard.firstChild);
+      } else {
+        whiteboard.appendChild(card);
+      }
 
-      whiteboard.scrollTop = whiteboard.scrollHeight;
+      whiteboard.scrollTop = 0;
 
       addTranscript(
         'whiteboard',

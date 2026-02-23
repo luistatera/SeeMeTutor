@@ -68,6 +68,10 @@ Your top priority in this session is synchronized teaching:
 - Always explain out loud while teaching.
 - While speaking, proactively call write_notes to place concise notes on the whiteboard.
 - Never wait until the whole explanation is finished to write notes.
+- Timing contract: call write_notes early in the explanation, ideally in the first
+  1-2 spoken sentences of the current turn.
+- If a turn is already ending, skip the tool call and write in the next turn
+  while speaking. Do not tool-call as a post-turn afterthought.
 
 Whiteboard rules:
 1. Keep each note short and structured.
@@ -139,6 +143,8 @@ def _create_session_log(session_id: str):
     """Create per-session logs and return (fh, write_fn, close_fn)."""
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = LOGS_DIR / f"{ts}_{session_id}.jsonl"
+    details_path = LOGS_DIR / f"{ts}_{session_id}_details.log"
+    transcript_path = LOGS_DIR / f"{ts}_{session_id}_transcript.log"
     fh = open(path, "a", buffering=1)
 
     details_lines: list[str] = []
@@ -171,12 +177,22 @@ def _create_session_log(session_id: str):
 
     def close_logs():
         fh.close()
-        (LOGS_DIR / "details.log").write_text(
-            "\n".join(reversed(details_lines)) + ("\n" if details_lines else "")
-        )
-        (LOGS_DIR / "transcript.log").write_text(
-            "\n".join(reversed(transcript_lines)) + ("\n" if transcript_lines else "")
-        )
+        details_text = "\n".join(reversed(details_lines))
+        transcript_text = "\n".join(reversed(transcript_lines))
+
+        details_path.write_text(details_text + ("\n" if details_text else ""))
+        transcript_path.write_text(transcript_text + ("\n" if transcript_text else ""))
+
+        details_rollup = LOGS_DIR / "details.log"
+        transcript_rollup = LOGS_DIR / "transcript.log"
+        with details_rollup.open("a") as out:
+            out.write(f"=== session {session_id} ({ts}) ===\n")
+            if details_text:
+                out.write(details_text + "\n")
+        with transcript_rollup.open("a") as out:
+            out.write(f"=== session {session_id} ({ts}) ===\n")
+            if transcript_text:
+                out.write(transcript_text + "\n")
 
     logger.info("Session log: %s", path)
     return fh, write, close_logs
@@ -295,6 +311,13 @@ def _build_metric_snapshot(metrics: dict[str, Any]) -> dict[str, Any]:
         "delivery_p95_ms": round(_percentile(latencies, 0.95), 1),
         "delivery_max_ms": round(max(latencies), 1) if latencies else 0.0,
         "audio_gap_alerts": metrics["audio_gap_alerts"],
+        "note_avg_lines": round(_avg(metrics["note_line_counts"]), 2),
+        "note_avg_chars": round(_avg(metrics["note_char_counts"]), 1),
+        "note_structured_rate": round(
+            (metrics["note_structured_count"] / metrics["whiteboard_notes_queued"]) * 100, 1
+        )
+        if metrics["whiteboard_notes_queued"]
+        else 0.0,
         "turns": metrics["turn_completes"],
         "audio_chunks_out": metrics["audio_chunks_out"],
         "video_frames_in": metrics["video_frames_in"],
@@ -347,6 +370,9 @@ async def websocket_endpoint(websocket: WebSocket):
         "whiteboard_outside_speaking": 0,
         "whiteboard_delivery_latencies_ms": [],
         "audio_gap_alerts": 0,
+        "note_line_counts": [],
+        "note_char_counts": [],
+        "note_structured_count": 0,
         "turn_completes": 0,
         "audio_chunks_in": 0,
         "audio_chunks_out": 0,
@@ -357,6 +383,7 @@ async def websocket_endpoint(websocket: WebSocket):
         "assistant_speaking": False,
         "client_tutor_playing": False,
         "last_audio_out_at": 0.0,
+        "last_audio_chunk_at": 0.0,
         "last_video_frame_at": 0.0,
         "last_metric_push_at": 0.0,
         "student_speaking": False,
@@ -617,6 +644,7 @@ async def _forward_gemini_to_browser(
 
                 if getattr(server_content, "interrupted", False):
                     runtime["assistant_speaking"] = False
+                    runtime["last_audio_chunk_at"] = 0.0
                     await send_json({"type": "interrupted", "data": {"source": "gemini"}})
                     slog("server", "gemini_interrupted")
                     continue
@@ -629,8 +657,20 @@ async def _forward_gemini_to_browser(
                         inline_data = getattr(part, "inline_data", None)
                         if inline_data is not None and inline_data.data:
                             now = time.time()
+                            prev_audio_chunk_at = runtime["last_audio_chunk_at"]
+                            if runtime["assistant_speaking"] and prev_audio_chunk_at > 0:
+                                chunk_gap_s = now - prev_audio_chunk_at
+                                if chunk_gap_s > AUDIO_GAP_ALERT_THRESHOLD_S:
+                                    metrics["audio_gap_alerts"] += 1
+                                    slog(
+                                        "server",
+                                        "audio_gap_alert",
+                                        gap_ms=round(chunk_gap_s * 1000, 1),
+                                        count=metrics["audio_gap_alerts"],
+                                    )
                             runtime["assistant_speaking"] = True
                             runtime["last_audio_out_at"] = now
+                            runtime["last_audio_chunk_at"] = now
                             metrics["audio_chunks_out"] += 1
 
                             encoded = base64.b64encode(inline_data.data).decode("utf-8")
@@ -662,6 +702,7 @@ async def _forward_gemini_to_browser(
                 if turn_complete:
                     metrics["turn_completes"] += 1
                     runtime["assistant_speaking"] = False
+                    runtime["last_audio_chunk_at"] = 0.0
                     slog("server", "turn_complete", count=metrics["turn_completes"])
                     await send_json(
                         {
@@ -736,6 +777,18 @@ async def _dispatch_tool_call(
 
         dedupe_keys.add(dedupe)
 
+        normalized_lines = [line for line in content.split("\n") if line.strip()]
+        line_count = len(normalized_lines)
+        char_count = len(content)
+        has_structured = any(
+            re.match(r"^([-*]|\d+\.|[A-Za-z]\))\s+", line.strip()) for line in normalized_lines
+        )
+        has_formula = any(("=" in line or "->" in line or "=>" in line) for line in normalized_lines)
+        metrics["note_line_counts"].append(float(line_count))
+        metrics["note_char_counts"].append(float(char_count))
+        if has_structured or has_formula:
+            metrics["note_structured_count"] += 1
+
         now_ms = int(time.time() * 1000)
         note_id = f"note-{now_ms}-{metrics['whiteboard_notes_queued'] + 1}"
         note = {
@@ -758,6 +811,9 @@ async def _dispatch_tool_call(
             title=title,
             note_type=note_type,
             turn_index=turn_index,
+            line_count=line_count,
+            char_count=char_count,
+            structured=(has_structured or has_formula),
             count=metrics["whiteboard_notes_queued"],
         )
 
@@ -810,10 +866,8 @@ async def _whiteboard_dispatcher(
                 deferred: list[dict[str, Any]] = []
 
                 for note in pending:
-                    turn_moved = metrics["turn_completes"] > note.get("turn_index_at_queue", 0)
                     deadline_reached = now_ms >= note.get("dispatch_deadline_ms", now_ms)
-
-                    if speaking_window_open() or turn_moved or deadline_reached:
+                    if speaking_window_open() or deadline_reached:
                         ready.append(note)
                     else:
                         deferred.append(note)
@@ -824,6 +878,7 @@ async def _whiteboard_dispatcher(
                     sent_at_ms = int(time.time() * 1000)
                     delivery_latency_ms = max(0, sent_at_ms - int(note["queued_at_ms"]))
                     speaking_now = speaking_window_open()
+                    dispatch_reason = "speaking_window" if speaking_now else "deadline_fallback"
 
                     if speaking_now:
                         metrics["whiteboard_while_speaking"] += 1
@@ -832,11 +887,6 @@ async def _whiteboard_dispatcher(
 
                     metrics["whiteboard_events_sent"] += 1
                     metrics["whiteboard_delivery_latencies_ms"].append(float(delivery_latency_ms))
-
-                    # Approximation for audio continuity alerts.
-                    last_audio_out = runtime["last_audio_out_at"]
-                    if last_audio_out > 0 and (time.time() - last_audio_out) > AUDIO_GAP_ALERT_THRESHOLD_S:
-                        metrics["audio_gap_alerts"] += 1
 
                     payload = {
                         "id": note["id"],
@@ -848,6 +898,7 @@ async def _whiteboard_dispatcher(
                             "sent_at_ms": sent_at_ms,
                             "delivery_latency_ms": delivery_latency_ms,
                             "synced_with_speech": speaking_now,
+                            "dispatch_reason": dispatch_reason,
                             "camera_active": (
                                 runtime["last_video_frame_at"] > 0
                                 and (time.time() - runtime["last_video_frame_at"]) < CAMERA_ACTIVE_TIMEOUT_S
@@ -866,6 +917,7 @@ async def _whiteboard_dispatcher(
                         title=note["title"],
                         latency_ms=delivery_latency_ms,
                         synced_with_speech=speaking_now,
+                        dispatch_reason=dispatch_reason,
                         count=metrics["whiteboard_events_sent"],
                     )
 

@@ -23,7 +23,7 @@ Open `http://localhost:8400`.
 
 3. Multiple note stacking
 - Ask follow-up questions for 3+ steps.
-- Pass if note cards append in order, old notes remain visible, and whiteboard auto-scrolls.
+- Pass if newest note appears at the top, old notes remain visible below, and no manual scrolling is needed to see fresh notes.
 
 4. Formatting quality
 - Ask for list-style explanation (`step-by-step`, `formula + substitution`).

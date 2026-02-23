@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POC 03 - Multilingual Pedagogy</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c171f;
+      --bg-soft: #112431;
+      --card: #142b3b;
+      --border: rgba(120, 167, 197, 0.28);
+      --teal: #2dc3b3;
+      --cyan: #47b8ff;
+      --amber: #ffbd59;
+      --red: #ff6e73;
+      --text: #ecf5fb;
+      --text-dim: #9cb8cb;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: radial-gradient(130% 130% at 15% 0%, #1b3a4b 0%, var(--bg) 45%);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-size: 24px;
+      color: var(--cyan);
+      font-weight: 700;
+    }
+
+    h1 span {
+      margin-left: 8px;
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #5f7f95;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+
+    .status-dot.listening { background: var(--teal); box-shadow: 0 0 10px rgba(45,195,179,0.65); }
+    .status-dot.speaking { background: var(--cyan); box-shadow: 0 0 12px rgba(71,184,255,0.75); animation: pulse 1s infinite; }
+    .status-dot.error { background: var(--red); box-shadow: 0 0 10px rgba(255,110,115,0.8); }
+
+    .status-label {
+      color: var(--text-dim);
+      font-size: 13px;
+      flex: 1;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto auto;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      align-items: center;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select, button {
+      font-family: var(--font);
+      font-size: 13px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      padding: 9px 10px;
+      background: var(--bg-soft);
+      color: var(--text);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.15s ease;
+      min-width: 120px;
+    }
+
+    button:hover { transform: translateY(-1px); opacity: 0.95; }
+
+    .btn-session {
+      background: var(--teal);
+      color: #07201f;
+      border-color: transparent;
+    }
+
+    .btn-session.active {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn-clear {
+      background: var(--bg-soft);
+      color: var(--text);
+    }
+
+    .contract-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .contract-header {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.55px;
+    }
+
+    .contract-line {
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .contract-meta {
+      color: var(--amber);
+      font-weight: 600;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }
+
+    .metric-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 9px;
+      text-align: center;
+    }
+
+    .metric-value {
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .metric-value.teal { color: var(--teal); }
+    .metric-value.amber { color: var(--amber); }
+    .metric-value.red { color: var(--red); }
+
+    .metric-label {
+      margin-top: 2px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(120, 167, 197, 0.24);
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .transcript, .event-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .transcript {
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .event-log {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+      line-height: 1.5;
+    }
+
+    .transcript::-webkit-scrollbar,
+    .event-log::-webkit-scrollbar { width: 7px; }
+
+    .transcript::-webkit-scrollbar-thumb,
+    .event-log::-webkit-scrollbar-thumb {
+      background: rgba(71,184,255,0.35);
+      border-radius: 4px;
+    }
+
+    .t-entry { margin-bottom: 6px; }
+    .t-time { color: var(--text-dim); margin-right: 6px; font-size: 11px; }
+    .t-label { font-weight: 700; margin-right: 4px; }
+    .t-entry.tutor .t-label, .t-entry.tutor .t-text { color: var(--cyan); }
+    .t-entry.student .t-label, .t-entry.student .t-text { color: var(--teal); }
+    .t-entry.event .t-label, .t-entry.event .t-text { color: var(--amber); }
+    .t-entry.error .t-label, .t-entry.error .t-text { color: var(--red); }
+
+    .evt { margin-bottom: 3px; }
+    .evt.warn { color: var(--amber); }
+    .evt.error { color: var(--red); }
+
+    @media (max-width: 920px) {
+      .controls {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="title-row">
+      <h1>POC 03 - Multilingual Pedagogy <span>SeeMe Tutor</span></h1>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-label" id="statusLabel">Ready - select profile and start session</div>
+    </div>
+
+    <div class="controls">
+      <label>
+        Profile
+        <select id="profileSelect">
+          <option value="luis">Luis (DE Immersion)</option>
+          <option value="daughter">Daughter (PT Immersion)</option>
+          <option value="wife">Wife (Auto PT/EN)</option>
+        </select>
+      </label>
+
+      <label>
+        Mode Override
+        <select id="modeSelect">
+          <option value="">Profile Default</option>
+          <option value="immersion">Immersion</option>
+          <option value="guided_bilingual">Guided Bilingual</option>
+          <option value="auto">Auto</option>
+        </select>
+      </label>
+
+      <button class="btn-session" id="btnSession" onclick="toggleSession()">Start Session</button>
+      <button class="btn-clear" onclick="clearPanels()">Clear</button>
+    </div>
+
+    <div class="contract-box" id="contractBox">
+      <div class="contract-header">Language Contract</div>
+      <div class="contract-line" id="contractMeta">No session contract loaded yet.</div>
+      <div class="contract-line" id="contractText"></div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-value teal" id="mPurity">0%</div>
+        <div class="metric-label">Purity Rate</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value red" id="mMixed">0</div>
+        <div class="metric-label">Mixed Turns</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mGuided">0%</div>
+        <div class="metric-label">Guided Adherence</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value amber" id="mFallback">0</div>
+        <div class="metric-label">Fallback Triggers</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mFallbackLat">0.00</div>
+        <div class="metric-label">Fallback Lat (turns)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mFlips">0</div>
+        <div class="metric-label">Language Flips</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value teal" id="mL2Ratio">0%</div>
+        <div class="metric-label">L2 Ratio</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mConfusion">0</div>
+        <div class="metric-label">Confusion Signals</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mRecaps">0</div>
+        <div class="metric-label">Recap Triggers</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTurns">0</div>
+        <div class="metric-label">Turns</div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="panel">
+        <div class="panel-header">Transcript</div>
+        <div class="transcript" id="transcript"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Event Log</div>
+        <div class="event-log" id="eventLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Session
+    var ws = null;
+    var sessionActive = false;
+
+    // Mic capture
+    var micCtx = null;
+    var micStream = null;
+    var micProcessor = null;
+
+    // Playback
+    var playbackCtx = null;
+    var nextPlayTime = 0;
+    var scheduledSources = [];
+    var turnCompletePending = false;
+    var tutorSpeaking = false;
+
+    // Transcript buffering
+    var turnHasOutputTranscript = false;
+    var tutorTranscriptBuffer = '';
+
+    // Metrics
+    var metricState = {
+      turns: 0,
+      purity_rate: 0,
+      mixed_turns: 0,
+      guided_adherence: 0,
+      fallback_triggers: 0,
+      fallback_latency_avg_turns: 0,
+      language_flips: 0,
+      l2_ratio: 0,
+      confusion_signals: 0,
+      recap_triggers: 0
+    };
+
+    async function toggleSession() {
+      if (sessionActive) {
+        await stopSession();
+      } else {
+        await startSession();
+      }
+    }
+
+    async function startSession() {
+      try {
+        setStatus('', 'Starting session...');
+
+        var profileId = document.getElementById('profileSelect').value;
+        var modeOverride = document.getElementById('modeSelect').value;
+
+        await connectWS(profileId, modeOverride);
+        await startMic();
+
+        sessionActive = true;
+        turnCompletePending = false;
+        tutorSpeaking = false;
+        turnHasOutputTranscript = false;
+        tutorTranscriptBuffer = '';
+
+        document.getElementById('profileSelect').disabled = true;
+        document.getElementById('modeSelect').disabled = true;
+
+        var btn = document.getElementById('btnSession');
+        btn.textContent = 'Stop Session';
+        btn.classList.add('active');
+
+        setStatus('listening', 'Listening...');
+        logEvent('Session started: profile=' + profileId + ', mode=' + (modeOverride || 'default'));
+      } catch (err) {
+        setStatus('error', 'Start failed: ' + err.message);
+        logEvent('Session start error: ' + err.message, 'error');
+      }
+    }
+
+    async function stopSession() {
+      sessionActive = false;
+
+      await stopMic();
+      cancelPlayback();
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      turnCompletePending = false;
+      tutorSpeaking = false;
+      turnHasOutputTranscript = false;
+      tutorTranscriptBuffer = '';
+
+      document.getElementById('profileSelect').disabled = false;
+      document.getElementById('modeSelect').disabled = false;
+
+      var btn = document.getElementById('btnSession');
+      btn.textContent = 'Start Session';
+      btn.classList.remove('active');
+      setStatus('', 'Session stopped');
+      logEvent('Session stopped');
+    }
+
+    function connectWS(profileId, modeOverride) {
+      return new Promise(function(resolve, reject) {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        ws = new WebSocket(proto + '://' + location.host + '/ws');
+
+        var settled = false;
+
+        ws.onopen = function() {
+          if (settled) return;
+          settled = true;
+
+          ws.send(JSON.stringify({
+            type: 'session_config',
+            profile_id: profileId,
+            mode_override: modeOverride || ''
+          }));
+
+          ws.onmessage = handleMessage;
+          resolve();
+        };
+
+        ws.onerror = function() {
+          if (settled) return;
+          settled = true;
+          reject(new Error('Connection error'));
+        };
+
+        ws.onclose = function() {
+          if (sessionActive) {
+            setStatus('error', 'Disconnected');
+            logEvent('WebSocket disconnected', 'warn');
+          }
+        };
+      });
+    }
+
+    function handleMessage(evt) {
+      var msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch (e) {
+        return;
+      }
+
+      switch (msg.type) {
+        case 'audio':
+          handleAudio(msg.data);
+          break;
+
+        case 'text':
+          if (!turnHasOutputTranscript) appendTutorChunk(msg.data || '', false);
+          break;
+
+        case 'output_transcript':
+          turnHasOutputTranscript = true;
+          appendTutorChunk(msg.data || '', true);
+          break;
+
+        case 'input_transcript':
+          addTranscript('student', msg.data || '');
+          break;
+
+        case 'session_contract':
+          applyContract(msg.data || {});
+          break;
+
+        case 'language_metric':
+          applyMetrics(msg.data || {});
+          break;
+
+        case 'language_event':
+          applyLanguageEvent(msg.data || {});
+          break;
+
+        case 'turn_complete':
+          flushTutorTranscriptBuffer();
+          turnCompletePending = true;
+          turnHasOutputTranscript = false;
+          metricState.turns = Number((msg.data && msg.data.count) || metricState.turns);
+          maybeFinalizeTurnComplete();
+          updateMetrics();
+          break;
+
+        case 'interrupted':
+          flushTutorTranscriptBuffer();
+          turnCompletePending = false;
+          cancelPlayback();
+          tutorSpeaking = false;
+          setStatus('listening', 'Interrupted');
+          addTranscript('event', 'INTERRUPTED');
+          break;
+
+        case 'error':
+          addTranscript('error', msg.data || 'Error');
+          setStatus('error', 'Server error');
+          break;
+      }
+    }
+
+    function handleAudio(b64) {
+      turnCompletePending = false;
+
+      if (!tutorSpeaking) {
+        tutorSpeaking = true;
+      }
+
+      playAudioChunk(b64);
+      setStatus('speaking', 'Tutor speaking...');
+    }
+
+    function applyContract(data) {
+      var meta = 'Profile: ' + (data.profile_name || 'Unknown') +
+        ' | Mode: ' + (data.mode || 'auto') +
+        ' | L1: ' + (data.l1 || '-') +
+        ' | L2: ' + (data.l2 || '-');
+
+      document.getElementById('contractMeta').textContent = meta;
+      document.getElementById('contractMeta').className = 'contract-line contract-meta';
+      document.getElementById('contractText').textContent = data.contract || '';
+
+      logEvent('Contract loaded: ' + meta);
+    }
+
+    function applyMetrics(data) {
+      metricState.turns = Number(data.turns || 0);
+      metricState.purity_rate = Number(data.purity_rate || 0);
+      metricState.mixed_turns = Number(data.mixed_turns || 0);
+      metricState.guided_adherence = Number(data.guided_adherence || 0);
+      metricState.fallback_triggers = Number(data.fallback_triggers || 0);
+      metricState.fallback_latency_avg_turns = Number(data.fallback_latency_avg_turns || 0);
+      metricState.language_flips = Number(data.language_flips || 0);
+      metricState.l2_ratio = Number(data.l2_ratio || 0);
+      metricState.confusion_signals = Number(data.confusion_signals || 0);
+      metricState.recap_triggers = Number(data.recap_triggers || 0);
+      updateMetrics();
+    }
+
+    function applyLanguageEvent(data) {
+      var evt = String(data.event || 'event');
+      if (evt === 'fallback_triggered') {
+        addTranscript('event', 'Fallback triggered -> ' + (data.forced_lang || 'l1') + ' (' + (data.fallback_turns || 0) + ' turns)');
+        logEvent('Fallback triggered to ' + (data.forced_lang || 'l1'), 'warn');
+      } else if (evt === 'confusion_signal') {
+        logEvent('Confusion signal streak=' + (data.streak || 0) + ' lang=' + (data.lang || 'unknown'));
+      } else if (evt === 'recap_triggered') {
+        addTranscript('event', 'L1 recap trigger #' + (data.count || 0));
+        logEvent('Recap triggered', 'warn');
+      }
+    }
+
+    function updateMetrics() {
+      document.getElementById('mTurns').textContent = String(metricState.turns || 0);
+      document.getElementById('mPurity').textContent = fixed1(metricState.purity_rate) + '%';
+      document.getElementById('mMixed').textContent = String(metricState.mixed_turns || 0);
+      document.getElementById('mGuided').textContent = fixed1(metricState.guided_adherence) + '%';
+      document.getElementById('mFallback').textContent = String(metricState.fallback_triggers || 0);
+      document.getElementById('mFallbackLat').textContent = fixed2(metricState.fallback_latency_avg_turns);
+      document.getElementById('mFlips').textContent = String(metricState.language_flips || 0);
+      document.getElementById('mL2Ratio').textContent = fixed1(metricState.l2_ratio) + '%';
+      document.getElementById('mConfusion').textContent = String(metricState.confusion_signals || 0);
+      document.getElementById('mRecaps').textContent = String(metricState.recap_triggers || 0);
+    }
+
+    async function startMic() {
+      micCtx = new AudioContext({ sampleRate: 16000 });
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      var source = micCtx.createMediaStreamSource(micStream);
+      micProcessor = micCtx.createScriptProcessor(4096, 1, 1);
+
+      micProcessor.onaudioprocess = function(e) {
+        if (!sessionActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+        var float32 = e.inputBuffer.getChannelData(0);
+        var int16 = float32ToInt16(float32);
+        var b64 = arrayBufferToBase64(int16.buffer);
+        ws.send(JSON.stringify({ type: 'audio', data: b64 }));
+      };
+
+      source.connect(micProcessor);
+      micProcessor.connect(micCtx.destination);
+    }
+
+    async function stopMic() {
+      if (micProcessor) {
+        micProcessor.disconnect();
+        micProcessor = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(function(track) { track.stop(); });
+        micStream = null;
+      }
+      if (micCtx) {
+        await micCtx.close();
+        micCtx = null;
+      }
+    }
+
+    function playAudioChunk(b64Data) {
+      if (!playbackCtx) {
+        playbackCtx = new AudioContext({ sampleRate: 24000 });
+      }
+
+      var raw = base64ToArrayBuffer(b64Data);
+      var int16 = new Int16Array(raw);
+      var float32 = new Float32Array(int16.length);
+      for (var i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      var buffer = playbackCtx.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      var src = playbackCtx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(playbackCtx.destination);
+
+      var now = playbackCtx.currentTime;
+      if (nextPlayTime <= now) {
+        nextPlayTime = now + 0.005;
+      }
+
+      src.start(nextPlayTime);
+      var entry = { source: src, endTime: nextPlayTime + buffer.duration };
+      scheduledSources.push(entry);
+
+      src.onended = function() {
+        var idx = scheduledSources.indexOf(entry);
+        if (idx !== -1) scheduledSources.splice(idx, 1);
+        maybeFinalizeTurnComplete();
+      };
+
+      nextPlayTime += buffer.duration;
+    }
+
+    function cancelPlayback() {
+      for (var i = 0; i < scheduledSources.length; i++) {
+        try { scheduledSources[i].source.stop(); } catch (e) {}
+      }
+      scheduledSources = [];
+      nextPlayTime = 0;
+      maybeFinalizeTurnComplete();
+    }
+
+    function maybeFinalizeTurnComplete() {
+      if (!turnCompletePending) return;
+      if (scheduledSources.length > 0) return;
+
+      turnCompletePending = false;
+      tutorSpeaking = false;
+      setStatus('listening', 'Listening...');
+    }
+
+    function appendTutorChunk(text, replace) {
+      var chunk = String(text || '').trim();
+      if (!chunk) return;
+
+      if (replace) {
+        tutorTranscriptBuffer = chunk;
+      } else {
+        tutorTranscriptBuffer = (tutorTranscriptBuffer + ' ' + chunk).trim();
+      }
+    }
+
+    function flushTutorTranscriptBuffer() {
+      var finalText = String(tutorTranscriptBuffer || '').trim();
+      if (!finalText) return;
+      addTranscript('tutor', finalText);
+      tutorTranscriptBuffer = '';
+    }
+
+    function setStatus(state, text) {
+      var dot = document.getElementById('statusDot');
+      var label = document.getElementById('statusLabel');
+
+      dot.className = 'status-dot';
+      if (state) dot.classList.add(state);
+      label.textContent = text;
+    }
+
+    function addTranscript(kind, text) {
+      var clean = String(text || '').trim();
+      if (!clean) return;
+
+      var panel = document.getElementById('transcript');
+      var row = document.createElement('div');
+      row.className = 't-entry ' + kind;
+
+      var ts = new Date();
+      var hh = String(ts.getHours()).padStart(2, '0');
+      var mm = String(ts.getMinutes()).padStart(2, '0');
+      var ss = String(ts.getSeconds()).padStart(2, '0');
+
+      var time = document.createElement('span');
+      time.className = 't-time';
+      time.textContent = hh + ':' + mm + ':' + ss;
+
+      var label = document.createElement('span');
+      label.className = 't-label';
+      label.textContent = kind === 'tutor' ? 'Tutor:' : (kind === 'student' ? 'Student:' : (kind === 'error' ? 'Error:' : 'Event:'));
+
+      var body = document.createElement('span');
+      body.className = 't-text';
+      body.textContent = clean;
+
+      row.appendChild(time);
+      row.appendChild(label);
+      row.appendChild(body);
+      panel.appendChild(row);
+      panel.scrollTop = panel.scrollHeight;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: 'transcript_' + kind,
+          text: clean
+        }));
+      }
+    }
+
+    function logEvent(text, level) {
+      var clean = String(text || '').trim();
+      if (!clean) return;
+
+      var panel = document.getElementById('eventLog');
+      var line = document.createElement('div');
+      line.className = 'evt' + (level ? ' ' + level : '');
+
+      var ts = new Date();
+      var hh = String(ts.getHours()).padStart(2, '0');
+      var mm = String(ts.getMinutes()).padStart(2, '0');
+      var ss = String(ts.getSeconds()).padStart(2, '0');
+
+      line.textContent = '[' + hh + ':' + mm + ':' + ss + '] ' + clean;
+      panel.appendChild(line);
+      panel.scrollTop = panel.scrollHeight;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: 'ui_event',
+          text: clean,
+          level: level || 'info'
+        }));
+      }
+    }
+
+    function clearPanels() {
+      document.getElementById('transcript').innerHTML = '';
+      document.getElementById('eventLog').innerHTML = '';
+      logEvent('Panels cleared');
+    }
+
+    function fixed1(v) {
+      var n = Number(v || 0);
+      if (!isFinite(n)) n = 0;
+      return n.toFixed(1);
+    }
+
+    function fixed2(v) {
+      var n = Number(v || 0);
+      if (!isFinite(n)) n = 0;
+      return n.toFixed(2);
+    }
+
+    function float32ToInt16(float32) {
+      var out = new Int16Array(float32.length);
+      for (var i = 0; i < float32.length; i++) {
+        var s = Math.max(-1, Math.min(1, float32[i]));
+        out[i] = s < 0 ? s * 32768 : s * 32767;
+      }
+      return out;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var binary = '';
+      var chunk = 0x8000;
+      for (var i = 0; i < bytes.length; i += chunk) {
+        var sub = bytes.subarray(i, i + chunk);
+        binary += String.fromCharCode.apply(null, sub);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      var binary = atob(base64);
+      var len = binary.length;
+      var bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+  </script>
+</body>
+</html>
