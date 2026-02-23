@@ -36,13 +36,13 @@ Ensure your environment has Application Default Credentials configured
 **Steps:**
 1. Start session, establish a goal (e.g., "Let's work on this math problem")
 2. Point camera at a worksheet with a visible error
-3. Stay **completely silent** for 10–20 seconds
+3. Stay **completely silent** for 6–15 seconds
 4. Watch the silence bar fill up
 
 **Pass criteria:**
-- Around 10s: backend sends a soft observation poke (event log)
-- Around 14s: hard backend nudge fires if the tutor still has not spoken (cyan in transcript)
-- Tutor speaks up with a Socratic observation (purple "PROACTIVE" in transcript)
+- Around 6s: backend sends a soft observation poke (event log)
+- Around 9s: hard backend nudge fires if the tutor still has not spoken (cyan in transcript)
+- Tutor speaks up with one concise intervention (observation, hint, or question) (purple "PROACTIVE" in transcript)
 - Tutor references what it sees: "I notice you wrote..." / "Looking at line 2..."
 - Comment is aligned with the established goal
 - **Proactive Triggers** metric increments
@@ -51,6 +51,7 @@ Ensure your environment has Application Default Credentials configured
 - Tutor stays silent past 20s → prompt tuning needed
 - Tutor gives the answer directly → system prompt violation
 - Tutor mentions multiple issues → progressive disclosure failure
+- Nearly every tutor turn ends with a question mark → follow-up fatigue risk
 
 ---
 
@@ -128,6 +129,25 @@ cycles. No proactive triggers should fire while student is speaking.
 
 ---
 
+### Test 7 — Follow-Up Restraint (S3 UX)
+
+**Steps:**
+1. Run a normal 5+ minute session (goal set, at least one proactive trigger)
+2. Save transcript and count tutor turns ending in `?`
+3. Count the longest streak of consecutive tutor turns ending in `?`
+
+**Pass criteria:**
+- **Question Turn Ratio** is between 35-50%
+- Longest consecutive question streak is <= 2 turns
+- Tutor still remains helpful (no direct-answer dumping)
+
+**Quick check command:**
+```bash
+awk -F'Tutor: ' '/Tutor: /{t++; if($2 ~ /\\?/ ) {q++; s++} else {if(s>m) m=s; s=0}} END{if(s>m)m=s; printf "tutor_turns=%d question_turns=%d ratio=%.2f max_streak=%d\n", t,q,(t? q/t:0),m}' logs/transcript.log
+```
+
+---
+
 ## Metrics to Monitor
 
 | Metric | Where | What it means |
@@ -140,6 +160,8 @@ cycles. No proactive triggers should fire while student is speaking.
 | False Positives | Orange counter | Tutor spoke visually with camera off |
 | Video FPS | Counter | Confirms camera frames are flowing |
 | Silence Bar | Progress bar | Live countdown to nudge threshold |
+| Question Turn Ratio | Transcript analysis | `% of tutor turns ending with ?` (target 35-50%) |
+| Question Streak Max | Transcript analysis | Longest consecutive question-ending tutor turn streak (target <= 2) |
 
 ---
 
@@ -150,11 +172,12 @@ cycles. No proactive triggers should fire while student is speaking.
 | M0 | Goal Setting | Tutor asks for/proposes goal at session start |
 | M1 | Reliable Proactive Trigger | 100% trigger rate in 20s silent windows with camera |
 | M2 | Progressive Disclosure | 1 concept per proactive utterance |
-| M3 | Helpfulness | Socratic questions, never direct answers |
+| M3 | Helpfulness | Socratic guidance (questions/hints), never direct answers |
 | M4 | No Audio Overlap | 0 proactive comments during student speech |
 | M5 | Goal Alignment | Comments reference stated goal |
 | M6 | Mission-Control Flow | Goal → Grounding → Plan → Execute → Closeout |
 | M7 | Explicit Closeout | Tutor confirms completion + summarizes |
+| S3 | Follow-Up Restraint (UX) | Question-ending turns stay in 35-50% range; max streak <= 2 |
 
 ---
 

@@ -261,7 +261,7 @@
         <!-- Silence progress bar -->
         <div class="silence-bar">
           <div class="silence-fill" id="silenceFill"></div>
-          <div class="silence-text" id="silenceText">Silence: 0.0s / 10s (poke)</div>
+          <div class="silence-text" id="silenceText">Silence: 0.0s / 6s (poke)</div>
         </div>
       </div>
     </div>
@@ -312,6 +312,8 @@
     // =========================================================================
     var ws = null;
     var sessionActive = false;
+    var reconnectTimer = null;
+    var resumePending = false;
 
     // Audio
     var audioCtx = null;
@@ -323,12 +325,21 @@
     var cameraVideo = null;
     var cameraCanvas = null;
     var cameraCtx2d = null;
+    var analysisCanvas = null;
+    var analysisCtx2d = null;
+    var lastFrameSignature = null;
+    var lastVisualChangeSentAt = 0;
+    var capturedFrameCount = 0;
     var cameraInterval = null;
     var cameraActive = false;
-    var CAMERA_FPS = 1;
+    var CAMERA_FPS = 2;
     var CAMERA_WIDTH = 640;
     var CAMERA_HEIGHT = 480;
     var CAMERA_QUALITY = 0.7;
+    var ANALYSIS_WIDTH = 48;
+    var ANALYSIS_HEIGHT = 36;
+    var VISUAL_CHANGE_DIFF_THRESHOLD = 0.19;
+    var VISUAL_CHANGE_COOLDOWN_MS = 5000;
 
     // VAD state
     var vadInstance = null;
@@ -338,6 +349,8 @@
     var vadInitialized = false;
     var vadGraceTimer = null;
     var VAD_GRACE_MS = 500;
+    var speechKeepaliveTimer = null;
+    var SPEECH_KEEPALIVE_MS = 900;
 
     // Tutor speaking state
     var tutorSpeaking = false;
@@ -352,15 +365,20 @@
     var nextPlayTime = 0;
     var scheduledSources = [];
     var PLAYBACK_RATE = 24000;
+    var TUTOR_PLAYBACK_SPEED = 0.85; // 15% slower than normal for tutoring clarity
     var turnCompletePending = false;
     var tutorTranscriptBuffer = '';
     var turnHasOutputTranscript = false;
+    var conversationHistory = [];
+    var HISTORY_LIMIT = 40;
+    var RESUME_HISTORY_LIMIT = 18;
+    var RESUME_TEXT_MAX = 5000;
 
     // Silence tracking
     var silenceStartedAt = 0;
     var silenceTimerInterval = null;
-    var ORGANIC_POKE_THRESHOLD_S = 10;
-    var HARD_NUDGE_THRESHOLD_S = 14;
+    var ORGANIC_POKE_THRESHOLD_S = 6;
+    var HARD_NUDGE_THRESHOLD_S = 9;
 
     // Metrics
     var proactiveCount = 0;
@@ -409,6 +427,22 @@
       }
     }
 
+    function startSpeechKeepalive() {
+      if (speechKeepaliveTimer || !sessionActive) return;
+      speechKeepaliveTimer = setInterval(function() {
+        if (!sessionActive || !vadSpeechActive) return;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'speech_keepalive' }));
+        }
+      }, SPEECH_KEEPALIVE_MS);
+    }
+
+    function stopSpeechKeepalive() {
+      if (!speechKeepaliveTimer) return;
+      clearInterval(speechKeepaliveTimer);
+      speechKeepaliveTimer = null;
+    }
+
     function onVADSpeechStart() {
       if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
       if (!sessionActive) return;
@@ -421,6 +455,7 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'speech_start' }));
       }
+      startSpeechKeepalive();
 
       logEvent('VAD: speech START', 'evt-vad');
       setStatus('vad-speech', 'Student speaking...');
@@ -445,6 +480,7 @@
         vadSpeechActive = false;
         studentSpeaking = false;
         vadGraceTimer = null;
+        stopSpeechKeepalive();
 
         // Notify backend
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -482,11 +518,23 @@
     function connectWS() {
       var proto = location.protocol === 'https:' ? 'wss' : 'ws';
       ws = new WebSocket(proto + '://' + location.host + '/ws');
-      ws.onopen = function() { logEvent('WS connected'); };
+      ws.onopen = function() {
+        logEvent('WS connected');
+        if (resumePending) {
+          sendResumeContext();
+        }
+      };
       ws.onclose = function() {
         setStatus('error', 'Disconnected');
         logEvent('WS disconnected');
-        if (sessionActive) setTimeout(connectWS, 2000);
+        if (sessionActive) {
+          resumePending = true;
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(function() {
+            reconnectTimer = null;
+            if (sessionActive) connectWS();
+          }, 1500);
+        }
       };
       ws.onerror = function() { setStatus('error', 'Connection error'); };
       ws.onmessage = handleMessage;
@@ -501,6 +549,9 @@
           if (!tutorSpeaking) {
             tutorSpeaking = true;
             tutorSpeakingStartedAt = performance.now();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'tutor_playback_start' }));
+            }
             stopSilenceTimer();
           }
           lastTutorAudioAt = performance.now();
@@ -510,13 +561,13 @@
 
         case 'text':
           if (!turnHasOutputTranscript) {
-            tutorTranscriptBuffer += msg.data || '';
+            appendTutorChunk(msg.data || '');
           }
           break;
 
         case 'output_transcript':
           turnHasOutputTranscript = true;
-          tutorTranscriptBuffer += msg.data || '';
+          appendTutorChunk(msg.data || '');
           break;
 
         case 'input_transcript':
@@ -529,6 +580,9 @@
           cancelPlayback();
           tutorSpeaking = false;
           tutorSpeakingStartedAt = 0;
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'tutor_playback_end' }));
+          }
           turnHasOutputTranscript = false;
           setStatus('interrupted', 'Interrupted');
           addTranscript('event', 'INTERRUPTED');
@@ -560,9 +614,18 @@
           handleIdlePoke(msg.data);
           break;
 
+        case 'visual_change_prompt':
+          handleVisualChangePrompt(msg.data);
+          break;
+
         case 'error':
           addTranscript('error', msg.data);
           setStatus('error', 'Error');
+          break;
+
+        case 'resume_applied':
+          logEvent('Resume context applied on reconnect');
+          setStatus('listening', 'Reconnected (context restored)');
           break;
       }
     }
@@ -609,10 +672,70 @@
       );
     }
 
+    function handleVisualChangePrompt(data) {
+      var score = Number((data && data.score) || 0);
+      var count = (data && data.count) || '?';
+      logEvent('VISUAL_CHANGE_PROMPT #' + count + ' score=' + score.toFixed(3), 'evt-video');
+    }
+
     function flushTutorTranscriptBuffer() {
-      var text = tutorTranscriptBuffer.trim();
+      var text = tutorTranscriptBuffer;
       if (text) addTranscript('tutor', text);
       tutorTranscriptBuffer = '';
+    }
+
+    function appendTutorChunk(chunk) {
+      if (!chunk) return;
+      var incoming = String(chunk);
+      if (!tutorTranscriptBuffer) {
+        tutorTranscriptBuffer = incoming;
+        return;
+      }
+
+      var prev = tutorTranscriptBuffer.charAt(tutorTranscriptBuffer.length - 1);
+      var next = incoming.charAt(0);
+      var prevIsWs = /\s/.test(prev);
+      var nextIsWs = /\s/.test(next);
+      var nextIsPunct = /^[.,!?;:)\]}]/.test(next);
+      var prevIsOpening = /[(\[{\"']/.test(prev);
+      var prevIsJoiner = /[-/]/.test(prev);
+
+      if (!prevIsWs && !nextIsWs && !nextIsPunct && !prevIsOpening && !prevIsJoiner) {
+        tutorTranscriptBuffer += ' ';
+      }
+      tutorTranscriptBuffer += incoming;
+    }
+
+    function rememberTurn(role, text) {
+      var cleaned = (text || '').replace(/\s+/g, ' ').trim();
+      if (!cleaned) return;
+      conversationHistory.push(role.toUpperCase() + ': ' + cleaned);
+      if (conversationHistory.length > HISTORY_LIMIT) {
+        conversationHistory.splice(0, conversationHistory.length - HISTORY_LIMIT);
+      }
+    }
+
+    function buildResumeHistory() {
+      var sliceFrom = Math.max(0, conversationHistory.length - RESUME_HISTORY_LIMIT);
+      var lines = conversationHistory.slice(sliceFrom);
+      var payload = lines.join('\n');
+      if (payload.length > RESUME_TEXT_MAX) {
+        payload = payload.slice(payload.length - RESUME_TEXT_MAX);
+      }
+      return payload;
+    }
+
+    function sendResumeContext() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      var history = buildResumeHistory();
+      if (!history) return;
+
+      ws.send(JSON.stringify({
+        type: 'resume_context',
+        history: history,
+      }));
+      resumePending = false;
+      logEvent('Sent resume context (' + history.length + ' chars)');
     }
 
     // =========================================================================
@@ -681,6 +804,8 @@
         vadSpeechActive = false;
         tutorTranscriptBuffer = '';
         turnHasOutputTranscript = false;
+        conversationHistory = [];
+        resumePending = false;
         document.getElementById('btnSession').textContent = 'Stop Session';
         document.getElementById('btnSession').classList.add('active');
         setStatus('listening', 'Listening (session active)...');
@@ -698,6 +823,7 @@
     async function stopSession() {
       sessionActive = false;
       stopSilenceTimer();
+      stopSpeechKeepalive();
 
       // Stop VAD
       if (vadInstance && vadReady) {
@@ -714,6 +840,7 @@
 
       // Close WS
       if (ws) { ws.close(); ws = null; }
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
 
       tutorSpeaking = false;
       tutorSpeakingStartedAt = 0;
@@ -722,6 +849,7 @@
       turnCompletePending = false;
       tutorTranscriptBuffer = '';
       turnHasOutputTranscript = false;
+      resumePending = false;
 
       document.getElementById('btnSession').textContent = 'Start Session';
       document.getElementById('btnSession').classList.remove('active');
@@ -754,6 +882,13 @@
         cameraCanvas.width = CAMERA_WIDTH;
         cameraCanvas.height = CAMERA_HEIGHT;
         cameraCtx2d = cameraCanvas.getContext('2d');
+        analysisCanvas = document.createElement('canvas');
+        analysisCanvas.width = ANALYSIS_WIDTH;
+        analysisCanvas.height = ANALYSIS_HEIGHT;
+        analysisCtx2d = analysisCanvas.getContext('2d', { willReadFrequently: true });
+        lastFrameSignature = null;
+        lastVisualChangeSentAt = 0;
+        capturedFrameCount = 0;
 
         cameraActive = true;
         cameraInterval = setInterval(captureAndSendFrame, 1000 / CAMERA_FPS);
@@ -776,6 +911,11 @@
         cameraStream.getTracks().forEach(function(t) { t.stop(); });
         cameraStream = null;
       }
+      analysisCanvas = null;
+      analysisCtx2d = null;
+      lastFrameSignature = null;
+      lastVisualChangeSentAt = 0;
+      capturedFrameCount = 0;
 
       document.getElementById('cameraOffLabel').style.display = 'block';
       document.getElementById('btnCamera').textContent = 'Camera Off';
@@ -791,6 +931,54 @@
       }
     }
 
+    function computeFrameSignature() {
+      if (!analysisCtx2d || !cameraCanvas) return null;
+      analysisCtx2d.drawImage(cameraCanvas, 0, 0, ANALYSIS_WIDTH, ANALYSIS_HEIGHT);
+      var img = analysisCtx2d.getImageData(0, 0, ANALYSIS_WIDTH, ANALYSIS_HEIGHT).data;
+      var sig = new Uint8Array(ANALYSIS_WIDTH * ANALYSIS_HEIGHT);
+      for (var i = 0, j = 0; i < img.length; i += 4, j++) {
+        // Luma approximation: cheap + stable for novelty detection.
+        sig[j] = ((img[i] * 3) + (img[i + 1] * 6) + img[i + 2]) / 10;
+      }
+      return sig;
+    }
+
+    function frameDiffScore(a, b) {
+      if (!a || !b || a.length !== b.length) return 0;
+      var sum = 0;
+      for (var i = 0; i < a.length; i++) {
+        sum += Math.abs(a[i] - b[i]);
+      }
+      return sum / (a.length * 255);
+    }
+
+    function maybeSendVisualChangeSignal() {
+      var sig = computeFrameSignature();
+      if (!sig) return;
+      capturedFrameCount++;
+      if (!lastFrameSignature) {
+        lastFrameSignature = sig;
+        return;
+      }
+
+      var score = frameDiffScore(lastFrameSignature, sig);
+      lastFrameSignature = sig;
+
+      if (capturedFrameCount < 4) return;
+      var now = performance.now();
+      if (score < VISUAL_CHANGE_DIFF_THRESHOLD) return;
+      if ((now - lastVisualChangeSentAt) < VISUAL_CHANGE_COOLDOWN_MS) return;
+      lastVisualChangeSentAt = now;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'visual_change',
+          score: Number(score.toFixed(3)),
+        }));
+      }
+      logEvent('VISUAL_CHANGE score=' + score.toFixed(3), 'evt-video');
+    }
+
     function captureAndSendFrame() {
       if (!cameraActive || !cameraVideo || !ws || ws.readyState !== WebSocket.OPEN) return;
 
@@ -799,6 +987,7 @@
       var b64 = dataUrl.split(',')[1];
 
       ws.send(JSON.stringify({ type: 'video', data: b64 }));
+      maybeSendVisualChangeSignal();
 
       videoFramesSent++;
 
@@ -830,6 +1019,7 @@
 
       var src = playbackCtx.createBufferSource();
       src.buffer = buffer;
+      src.playbackRate.value = TUTOR_PLAYBACK_SPEED;
       src.connect(playbackCtx.destination);
 
       var now = playbackCtx.currentTime;
@@ -838,7 +1028,8 @@
       }
       src.start(nextPlayTime);
 
-      var entry = { source: src, endTime: nextPlayTime + buffer.duration };
+      var effectiveDuration = buffer.duration / TUTOR_PLAYBACK_SPEED;
+      var entry = { source: src, endTime: nextPlayTime + effectiveDuration };
       scheduledSources.push(entry);
       src.onended = function() {
         var idx = scheduledSources.indexOf(entry);
@@ -846,7 +1037,7 @@
         maybeFinalizeTurnComplete();
       };
 
-      nextPlayTime += buffer.duration;
+      nextPlayTime += effectiveDuration;
     }
 
     function cancelPlayback() {
@@ -865,6 +1056,9 @@
       turnCompletePending = false;
       tutorSpeaking = false;
       tutorSpeakingStartedAt = 0;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'tutor_playback_end' }));
+      }
 
       // Start silence timer after tutor finishes and student is quiet
       if (!studentSpeaking) {
@@ -968,7 +1162,25 @@
       document.getElementById('statusLabel').textContent = label;
     }
 
+    function sanitizeTutorCaption(text) {
+      if (!text) return '';
+      var cleaned = String(text)
+        .replace(/\[(?:SYSTEM|INTERNAL)[^\]]*]/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      var upper = cleaned.toUpperCase();
+      if (upper.indexOf('SYSTEM:') === 0 || upper.indexOf('INTERNAL CONTROL:') === 0) {
+        return '';
+      }
+      return cleaned;
+    }
+
     function addTranscript(type, text) {
+      if (type === 'tutor') {
+        text = sanitizeTutorCaption(text);
+        if (!text) return;
+      }
+
       var panel = document.getElementById('transcript');
       var entry = document.createElement('div');
       entry.className = 't-entry ' + type;
@@ -998,6 +1210,10 @@
       entry.appendChild(labelSpan);
       entry.appendChild(textSpan);
       panel.insertBefore(entry, panel.firstChild);
+
+      if (type === 'tutor' || type === 'student') {
+        rememberTurn(type, text);
+      }
 
       // Forward transcript to backend for logging
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1049,6 +1265,7 @@
       triggerSilences = []; videoFramesSent = 0; videoFpsWindow = [];
       tutorTranscriptBuffer = '';
       turnHasOutputTranscript = false;
+      conversationHistory = [];
       updateMetrics();
     }
 
