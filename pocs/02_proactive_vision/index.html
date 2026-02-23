@@ -261,7 +261,7 @@
         <!-- Silence progress bar -->
         <div class="silence-bar">
           <div class="silence-fill" id="silenceFill"></div>
-          <div class="silence-text" id="silenceText">Silence: 0.0s / 15s</div>
+          <div class="silence-text" id="silenceText">Silence: 0.0s / 10s (poke)</div>
         </div>
       </div>
     </div>
@@ -353,11 +353,14 @@
     var scheduledSources = [];
     var PLAYBACK_RATE = 24000;
     var turnCompletePending = false;
+    var tutorTranscriptBuffer = '';
+    var turnHasOutputTranscript = false;
 
     // Silence tracking
     var silenceStartedAt = 0;
     var silenceTimerInterval = null;
-    var IDLE_THRESHOLD_S = 15;
+    var ORGANIC_POKE_THRESHOLD_S = 10;
+    var HARD_NUDGE_THRESHOLD_S = 14;
 
     // Metrics
     var proactiveCount = 0;
@@ -506,8 +509,14 @@
           break;
 
         case 'text':
+          if (!turnHasOutputTranscript) {
+            tutorTranscriptBuffer += msg.data || '';
+          }
+          break;
+
         case 'output_transcript':
-          addTranscript('tutor', msg.data);
+          turnHasOutputTranscript = true;
+          tutorTranscriptBuffer += msg.data || '';
           break;
 
         case 'input_transcript':
@@ -515,10 +524,12 @@
           break;
 
         case 'interrupted':
+          flushTutorTranscriptBuffer();
           turnCompletePending = false;
           cancelPlayback();
           tutorSpeaking = false;
           tutorSpeakingStartedAt = 0;
+          turnHasOutputTranscript = false;
           setStatus('interrupted', 'Interrupted');
           addTranscript('event', 'INTERRUPTED');
           logEvent('GEMINI INTERRUPTED', 'evt-int');
@@ -528,8 +539,10 @@
           break;
 
         case 'turn_complete':
+          flushTutorTranscriptBuffer();
           turnCount = (msg.data && msg.data.count) || turnCount + 1;
           turnCompletePending = true;
+          turnHasOutputTranscript = false;
           logEvent('TURN_COMPLETE #' + turnCount, 'evt-tc');
           maybeFinalizeTurnComplete();
           updateMetrics();
@@ -541,6 +554,10 @@
 
         case 'idle_nudge':
           handleIdleNudge(msg.data);
+          break;
+
+        case 'idle_poke':
+          handleIdlePoke(msg.data);
           break;
 
         case 'error':
@@ -584,6 +601,18 @@
         'evt-nudge'
       );
       updateMetrics();
+    }
+
+    function handleIdlePoke(data) {
+      logEvent(
+        'IDLE_POKE #' + ((data && data.count) || '?') + ' silence=' + ((data && data.silence_s) || 0).toFixed(1) + 's'
+      );
+    }
+
+    function flushTutorTranscriptBuffer() {
+      var text = tutorTranscriptBuffer.trim();
+      if (text) addTranscript('tutor', text);
+      tutorTranscriptBuffer = '';
     }
 
     // =========================================================================
@@ -650,6 +679,8 @@
 
         sessionActive = true;
         vadSpeechActive = false;
+        tutorTranscriptBuffer = '';
+        turnHasOutputTranscript = false;
         document.getElementById('btnSession').textContent = 'Stop Session';
         document.getElementById('btnSession').classList.add('active');
         setStatus('listening', 'Listening (session active)...');
@@ -689,6 +720,8 @@
       studentSpeaking = false;
       vadSpeechActive = false;
       turnCompletePending = false;
+      tutorTranscriptBuffer = '';
+      turnHasOutputTranscript = false;
 
       document.getElementById('btnSession').textContent = 'Start Session';
       document.getElementById('btnSession').classList.remove('active');
@@ -860,32 +893,38 @@
       // Reset bar
       document.getElementById('silenceFill').style.width = '0%';
       document.getElementById('silenceFill').className = 'silence-fill';
-      document.getElementById('silenceText').textContent = 'Silence: 0.0s / ' + IDLE_THRESHOLD_S + 's';
+      document.getElementById('silenceText').textContent =
+        'Silence: 0.0s / ' + ORGANIC_POKE_THRESHOLD_S + 's (poke)';
     }
 
     function updateSilenceDisplay() {
       if (silenceStartedAt === 0 || studentSpeaking || tutorSpeaking) {
         document.getElementById('silenceFill').style.width = '0%';
         document.getElementById('silenceFill').className = 'silence-fill';
-        document.getElementById('silenceText').textContent = 'Silence: 0.0s / ' + IDLE_THRESHOLD_S + 's';
+        document.getElementById('silenceText').textContent =
+          'Silence: 0.0s / ' + ORGANIC_POKE_THRESHOLD_S + 's (poke)';
         return;
       }
 
       var elapsed = (performance.now() - silenceStartedAt) / 1000;
-      var pct = Math.min(100, (elapsed / IDLE_THRESHOLD_S) * 100);
+      var pct = Math.min(100, (elapsed / HARD_NUDGE_THRESHOLD_S) * 100);
 
       var fill = document.getElementById('silenceFill');
       fill.style.width = pct + '%';
 
       var text = document.getElementById('silenceText');
-      text.textContent = 'Silence: ' + elapsed.toFixed(1) + 's / ' + IDLE_THRESHOLD_S + 's';
+      text.textContent =
+        'Silence: ' + elapsed.toFixed(1) + 's / ' +
+        ORGANIC_POKE_THRESHOLD_S + 's poke, ' + HARD_NUDGE_THRESHOLD_S + 's nudge';
 
       // Color transitions
-      if (elapsed >= IDLE_THRESHOLD_S) {
+      if (elapsed >= HARD_NUDGE_THRESHOLD_S) {
+        fill.className = 'silence-fill critical';
+      } else if (elapsed >= ORGANIC_POKE_THRESHOLD_S) {
         fill.className = 'silence-fill triggered';
-      } else if (elapsed >= IDLE_THRESHOLD_S * 0.66) {
+      } else if (elapsed >= ORGANIC_POKE_THRESHOLD_S * 0.66) {
         fill.className = 'silence-fill warning';
-      } else if (elapsed >= IDLE_THRESHOLD_S * 0.33) {
+      } else if (elapsed >= ORGANIC_POKE_THRESHOLD_S * 0.33) {
         fill.className = 'silence-fill';
       } else {
         fill.className = 'silence-fill';
@@ -1008,6 +1047,8 @@
       proactiveCount = 0; organicCount = 0; nudgeCount = 0;
       backendNudges = 0; falsePositives = 0; turnCount = 0;
       triggerSilences = []; videoFramesSent = 0; videoFpsWindow = [];
+      tutorTranscriptBuffer = '';
+      turnHasOutputTranscript = false;
       updateMetrics();
     }
 

@@ -8,13 +8,13 @@ without being asked, using a goal-driven mission-control flow.
 Three concurrent tasks per session:
   1. Browser → Gemini: forwards audio + video frames
   2. Gemini → Browser: forwards audio/text responses + detects proactive triggers
-  3. Idle Orchestrator: monitors silence + camera, injects nudge prompts
+  3. Idle Orchestrator: monitors silence + camera, escalates poke → nudge
 
 Key behaviors tested:
   - Proactive trigger: tutor speaks up during student silence with visible work
   - Progressive disclosure: one issue at a time
   - Goal-driven flow: Goal → Grounding → Plan → Execute → Closeout
-  - Backend idle nudge: hidden prompt after configurable silence threshold
+  - Backend idle escalation: soft poke first, hard nudge fallback
 
 Usage:
     cd pocs/02_proactive_vision
@@ -63,13 +63,15 @@ MODEL = "gemini-live-2.5-flash-native-audio"
 # MODEL = "gemini-2.0-flash-live-preview-04-09"  # Fallback: known to work with video
 
 # Idle orchestrator thresholds
-IDLE_THRESHOLD_S = 15.0          # Seconds of silence before backend nudge
-CHECK_INTERVAL_S = 1.0           # How often the idle loop checks
-CAMERA_ACTIVE_TIMEOUT_S = 3.0   # Camera considered off if no frame within this window
+ORGANIC_POKE_THRESHOLD_S = 10.0   # Early soft poke to unlock organic proactive speech
+HARD_NUDGE_THRESHOLD_S = 14.0     # Forced fallback if no response after poke
+CHECK_INTERVAL_S = 0.25           # How often the idle loop checks
+CAMERA_ACTIVE_TIMEOUT_S = 3.0     # Camera considered off if no frame within this window
+POKE_RESPONSE_GRACE_S = 2.0       # Wait after soft poke before escalating to hard nudge
 
 # Proactive trigger detection
-PROACTIVE_SILENCE_MIN_S = 5.0   # Min silence to count tutor speech as "proactive"
-NUDGE_ATTRIBUTION_WINDOW_S = 5.0 # If nudge was sent within this window, attribute trigger to it
+PROACTIVE_SILENCE_MIN_S = 5.0      # Min silence to count tutor speech as "proactive"
+NUDGE_ATTRIBUTION_WINDOW_S = 5.0   # If nudge was sent within this window, attribute trigger to it
 
 # ---------------------------------------------------------------------------
 # System Prompt — Goal-driven proactive visual tutor
@@ -109,6 +111,7 @@ This is what makes you different from a chatbot — you are an active observer.
 • ONE issue at a time — never list multiple problems.
 • NEVER give the answer — always guide with questions.
 • DON'T speak while the student is talking — listen first.
+• Timing target: if student is silent and work is visible, speak within 8–12 seconds.
 • Always reference what you SEE: "Looking at your work, I notice..."
 • If camera shows nothing relevant, ask a brief check-in instead.
 • Match the student's language (English / Portuguese / German).
@@ -122,6 +125,12 @@ Begin by greeting the student warmly and asking about their goal for this sessio
 """
 
 # Hidden prompt injected by the idle orchestrator after silence threshold
+IDLE_POKE_PROMPT = (
+    "[SYSTEM: Silent observation check. The student is quiet and camera frames "
+    "are active. If you see meaningful work, proactively offer ONE short "
+    "Socratic observation now. If work is unclear, ask ONE brief check-in.]"
+)
+
 IDLE_NUDGE_PROMPT = (
     "[SYSTEM: The student has been silent for {silence_s} seconds while the "
     "camera shows their work. Look at what you can see and provide ONE piece "
@@ -188,7 +197,7 @@ def _create_session_log(session_id: str):
             tr_type = event[len("transcript_"):]
             label = _TRANSCRIPT_LABELS.get(tr_type, tr_type.upper())
             ts_short = now.strftime("%H:%M:%S")
-            transcript_lines.append(f"{ts_short}{label}: {text}")
+            transcript_lines.append(f"{ts_short} {label}: {text}")
         else:
             ms = f"{now.microsecond // 1000:03d}"
             ts_detail = now.strftime("%H:%M:%S.") + ms
@@ -235,6 +244,7 @@ async def websocket_endpoint(websocket: WebSocket):
         "proactive_triggers": 0,
         "organic_triggers": 0,
         "nudge_triggers": 0,
+        "backend_pokes": 0,
         "backend_nudges": 0,
         "silence_durations_s": [],
         "false_positives": 0,
@@ -245,8 +255,11 @@ async def websocket_endpoint(websocket: WebSocket):
         "last_student_speech_at": 0.0,
         "last_video_frame_at": 0.0,
         "silence_started_at": 0.0,
-        "idle_prompt_sent": False,
+        "idle_poke_sent": False,
+        "idle_nudge_sent": False,
+        "last_poke_at": 0.0,
         "last_nudge_at": 0.0,
+        "has_seen_tutor_turn_complete": False,
         # General counters
         "turn_completes": 0,
         "audio_chunks_in": 0,
@@ -327,6 +340,7 @@ async def websocket_endpoint(websocket: WebSocket):
              proactive_triggers=metrics["proactive_triggers"],
              organic=metrics["organic_triggers"],
              nudge=metrics["nudge_triggers"],
+             backend_pokes=metrics["backend_pokes"],
              backend_nudges=metrics["backend_nudges"],
              false_positives=metrics["false_positives"],
              turns=metrics["turn_completes"],
@@ -393,7 +407,8 @@ async def _forward_browser_to_gemini(
                 metrics["last_student_speech_at"] = now
                 # Reset idle orchestrator state
                 metrics["silence_started_at"] = 0.0
-                metrics["idle_prompt_sent"] = False
+                metrics["idle_poke_sent"] = False
+                metrics["idle_nudge_sent"] = False
                 slog("client", "speech_start")
 
             elif msg_type == "speech_end":
@@ -402,7 +417,8 @@ async def _forward_browser_to_gemini(
                 metrics["last_student_speech_at"] = now
                 # Start silence window
                 metrics["silence_started_at"] = now
-                metrics["idle_prompt_sent"] = False
+                metrics["idle_poke_sent"] = False
+                metrics["idle_nudge_sent"] = False
                 slog("client", "speech_end")
 
             # ── Barge-in (basic interruption support) ──
@@ -410,7 +426,8 @@ async def _forward_browser_to_gemini(
                 metrics["student_speaking"] = True
                 metrics["last_student_speech_at"] = time.time()
                 metrics["silence_started_at"] = 0.0
-                metrics["idle_prompt_sent"] = False
+                metrics["idle_poke_sent"] = False
+                metrics["idle_nudge_sent"] = False
                 slog("client", "vad_bargein",
                      client_latency_ms=message.get("client_latency_ms", 0))
 
@@ -557,11 +574,13 @@ async def _forward_gemini_to_browser(
                     metrics["turn_completes"] += 1
                     metrics["tutor_speaking"] = False
                     metrics["speaking_started_at"] = 0.0
+                    metrics["has_seen_tutor_turn_complete"] = True
 
                     # Start silence window after tutor finishes
                     if not metrics["student_speaking"]:
                         metrics["silence_started_at"] = time.time()
-                        metrics["idle_prompt_sent"] = False
+                        metrics["idle_poke_sent"] = False
+                        metrics["idle_nudge_sent"] = False
 
                     logger.info("TURN COMPLETE #%d", metrics["turn_completes"])
                     slog("server", "turn_complete", count=metrics["turn_completes"])
@@ -595,11 +614,15 @@ async def _check_proactive_trigger(
     A "proactive trigger" means the tutor started speaking without the student
     having spoken recently. This is the core behavior we're testing.
     """
-    # How long has the student been silent?
-    if metrics["last_student_speech_at"] > 0:
-        silence_s = now - metrics["last_student_speech_at"]
-    else:
-        silence_s = 999.0  # Student never spoke yet (session start greeting)
+    # Ignore session bootstrap greeting/intro before first completed tutor turn.
+    if not metrics["has_seen_tutor_turn_complete"]:
+        return
+
+    # Use current silence window when available to avoid overcounting from prior turns.
+    silence_anchor = metrics["silence_started_at"] or metrics["last_student_speech_at"]
+    if silence_anchor <= 0:
+        return
+    silence_s = now - silence_anchor
 
     if silence_s < PROACTIVE_SILENCE_MIN_S:
         return  # Student spoke recently — normal conversational response
@@ -657,6 +680,17 @@ async def _check_proactive_trigger(
 # ---------------------------------------------------------------------------
 # Idle Orchestrator — monitors silence and injects nudge prompts
 # ---------------------------------------------------------------------------
+async def _send_hidden_turn(session, text: str):
+    """Send hidden system guidance as a synthetic user turn."""
+    await session.send_client_content(
+        turns=types.Content(
+            role="user",
+            parts=[types.Part(text=text)],
+        ),
+        turn_complete=True,
+    )
+
+
 async def _idle_orchestrator(
     websocket: WebSocket,
     session,
@@ -664,14 +698,12 @@ async def _idle_orchestrator(
     metrics: dict,
     slog,
 ):
-    """Background task that nudges Gemini when the student is silent.
+    """Background task that escalates from soft poke to hard nudge.
 
-    When the student has been silent for IDLE_THRESHOLD_S seconds and the
-    camera is actively sending frames, inject a hidden text prompt to Gemini
-    asking it to analyze the current video and provide guidance.
-
-    This is the "S1: Backend Forced Trigger" from the PRD — a fallback when
-    the system prompt alone doesn't produce proactive behavior.
+    Stage 1 (soft poke): at ORGANIC_POKE_THRESHOLD_S, send a lightweight
+    observation check so Gemini can proactively respond on its own.
+    Stage 2 (hard nudge): at HARD_NUDGE_THRESHOLD_S, inject explicit guidance
+    if Stage 1 did not produce tutor speech.
     """
     try:
         while True:
@@ -686,7 +718,8 @@ async def _idle_orchestrator(
             # Don't nudge if student is currently speaking
             if metrics["student_speaking"]:
                 metrics["silence_started_at"] = 0.0
-                metrics["idle_prompt_sent"] = False
+                metrics["idle_poke_sent"] = False
+                metrics["idle_nudge_sent"] = False
                 continue
 
             # Check if camera is active (received frame recently)
@@ -697,51 +730,77 @@ async def _idle_orchestrator(
             if not camera_active:
                 continue
 
-            # Already nudged for this silence window
-            if metrics["idle_prompt_sent"]:
-                continue
-
             # Initialize silence start if not already tracking
             if metrics["silence_started_at"] == 0.0:
                 metrics["silence_started_at"] = now
+                metrics["idle_poke_sent"] = False
+                metrics["idle_nudge_sent"] = False
                 continue
 
             silence_s = now - metrics["silence_started_at"]
 
-            if silence_s >= IDLE_THRESHOLD_S:
-                metrics["idle_prompt_sent"] = True
-                metrics["backend_nudges"] += 1
-                metrics["last_nudge_at"] = now
+            # Stage 1: lightweight poke to encourage organic proactive speech.
+            if (not metrics["idle_poke_sent"]) and silence_s >= ORGANIC_POKE_THRESHOLD_S:
+                metrics["idle_poke_sent"] = True
+                metrics["backend_pokes"] += 1
+                metrics["last_poke_at"] = now
+                poke_count = metrics["backend_pokes"]
 
-                nudge_text = IDLE_NUDGE_PROMPT.format(silence_s=int(silence_s))
-
-                logger.info(
-                    "IDLE NUDGE #%d — silence=%.1fs, injecting prompt",
-                    metrics["backend_nudges"], silence_s,
-                )
-                slog("server", "idle_nudge",
-                     silence_s=round(silence_s, 1),
-                     count=metrics["backend_nudges"])
+                logger.info("IDLE POKE #%d — silence=%.1fs", poke_count, silence_s)
+                slog("server", "idle_poke", silence_s=round(silence_s, 1), count=poke_count)
 
                 try:
-                    await session.send_client_content(
-                        turns=types.Content(
-                            role="user",
-                            parts=[types.Part(text=nudge_text)],
-                        ),
-                        turn_complete=True,
-                    )
+                    await _send_hidden_turn(session, IDLE_POKE_PROMPT)
                 except Exception as exc:
+                    metrics["idle_poke_sent"] = False
+                    metrics["backend_pokes"] -= 1
+                    logger.warning("Idle poke send failed: %s", exc)
+                    continue
+
+                try:
+                    await websocket.send_text(json.dumps({
+                        "type": "idle_poke",
+                        "data": {
+                            "silence_s": round(silence_s, 1),
+                            "count": poke_count,
+                        },
+                    }))
+                except Exception:
+                    pass
+                continue
+
+            # Stage 2: hard fallback nudge if soft poke did not trigger speech.
+            if (not metrics["idle_nudge_sent"]) and silence_s >= HARD_NUDGE_THRESHOLD_S:
+                if (
+                    metrics["idle_poke_sent"]
+                    and metrics["last_poke_at"] > 0
+                    and (now - metrics["last_poke_at"]) < POKE_RESPONSE_GRACE_S
+                ):
+                    continue
+
+                metrics["idle_nudge_sent"] = True
+                metrics["backend_nudges"] += 1
+                metrics["last_nudge_at"] = now
+                nudge_count = metrics["backend_nudges"]
+                nudge_text = IDLE_NUDGE_PROMPT.format(silence_s=int(silence_s))
+
+                logger.info("IDLE NUDGE #%d — silence=%.1fs", nudge_count, silence_s)
+                slog("server", "idle_nudge", silence_s=round(silence_s, 1), count=nudge_count)
+
+                try:
+                    await _send_hidden_turn(session, nudge_text)
+                except Exception as exc:
+                    metrics["idle_nudge_sent"] = False
+                    metrics["backend_nudges"] -= 1
                     logger.warning("Idle nudge send failed: %s", exc)
                     continue
 
-                # Notify frontend
                 try:
                     await websocket.send_text(json.dumps({
                         "type": "idle_nudge",
                         "data": {
                             "silence_s": round(silence_s, 1),
-                            "count": metrics["backend_nudges"],
+                            "count": nudge_count,
                         },
                     }))
                 except Exception:
@@ -765,7 +824,7 @@ def _log_final_metrics(session_id: str, metrics: dict):
     logger.info(
         "Session %s FINAL METRICS:\n"
         "  Proactive triggers=%d (organic=%d, nudge=%d)\n"
-        "  Backend nudges=%d\n"
+        "  Backend pokes=%d  nudges=%d\n"
         "  Avg silence before trigger=%.1fs  all=%s\n"
         "  False positives=%d\n"
         "  Turns=%d  video_frames=%d  audio_in=%d  audio_out=%d",
@@ -773,6 +832,7 @@ def _log_final_metrics(session_id: str, metrics: dict):
         metrics["proactive_triggers"],
         metrics["organic_triggers"],
         metrics["nudge_triggers"],
+        metrics["backend_pokes"],
         metrics["backend_nudges"],
         avg_silence,
         metrics["silence_durations_s"],

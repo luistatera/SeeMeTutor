@@ -36,11 +36,12 @@ Ensure your environment has Application Default Credentials configured
 **Steps:**
 1. Start session, establish a goal (e.g., "Let's work on this math problem")
 2. Point camera at a worksheet with a visible error
-3. Stay **completely silent** for 15–20 seconds
+3. Stay **completely silent** for 10–20 seconds
 4. Watch the silence bar fill up
 
 **Pass criteria:**
-- Silence bar reaches 15s → backend nudge fires (cyan in transcript)
+- Around 10s: backend sends a soft observation poke (event log)
+- Around 14s: hard backend nudge fires if the tutor still has not spoken (cyan in transcript)
 - Tutor speaks up with a Socratic observation (purple "PROACTIVE" in transcript)
 - Tutor references what it sees: "I notice you wrote..." / "Looking at line 2..."
 - Comment is aligned with the established goal
