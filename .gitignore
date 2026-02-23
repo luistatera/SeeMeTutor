@@ -116,3 +116,7 @@ docs/session_features_2026-02-22.md
 pocs/01_interruption/logs/*
 pocs/01_interruption/logs_with_VAD/*
 pocs/01_interruption/prd.md
+pocs/02_proactive_vision/prd.md
+pocs/03_multilingual/prd.md
+.gitignore
+pocs/04_whiteboard_sync/prd.md

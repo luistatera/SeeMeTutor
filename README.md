@@ -420,4 +420,6 @@ Measured over rehearsal sessions on the production Cloud Run deployment.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the [Business Source License 1.1](LICENSE).
+Non-commercial use (personal, educational, research, evaluation) is freely permitted.
+For commercial licensing, contact luistatera@gmail.com.

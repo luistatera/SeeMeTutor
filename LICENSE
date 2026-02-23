@@ -1,21 +1,38 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2026 Luis Guimaraes
+Licensor:             Luis Guimaraes
+Licensed Work:        SeeMe Tutor
+                      The Licensed Work is (c) 2026 Luis Guimaraes
+Change Date:          2027-04-01
+Change License:       Apache License, Version 2.0
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Use Limitation:       The Licensed Work may not be used in production for a
+                      commercial product or service without a separate written
+                      commercial license from the Licensor.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+                      Contact: luistatera@gmail.com
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+-----------------------------------------------------------------------------
+
+"Commercial use" means deploying the Licensed Work to serve end users as
+part of a product or service for which payment is received, directly or
+indirectly.
+
+Non-commercial use — including personal, educational, research, and
+evaluation purposes — is freely permitted under this License.
+
+You may copy, modify, and distribute the Licensed Work for non-commercial
+purposes, provided this License and copyright notice are retained in all
+copies or substantial portions of the Licensed Work.
+
+On the Change Date, the Licensed Work will be made available under the
+Change License (Apache License, Version 2.0), and the Use Limitation above
+will no longer apply.
+
+THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE LICENSED WORK
+OR THE USE OR OTHER DEALINGS IN THE LICENSED WORK.
