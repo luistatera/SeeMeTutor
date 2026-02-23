@@ -132,7 +132,10 @@ Hard behavior rules:
 
 Mode behavior:
 - immersion: stay in L2 unless fallback forces L1.
-- guided_bilingual: alternate explain in L1 and practice in L2.
+- guided_bilingual: you MUST strictly alternate languages every turn.
+  On "explain" turns: respond ENTIRELY in L1. Every word must be L1.
+  On "practice" turns: respond ENTIRELY in L2. Every word must be L2.
+  The INTERNAL CONTROL tells you which phase is active. Obey it absolutely.
 - auto: match learner language dynamically; default to L1 if uncertain.
 
 You may receive hidden control updates starting with "INTERNAL CONTROL:".
@@ -579,7 +582,9 @@ def _build_internal_control(runtime: dict[str, Any], reason: str) -> str:
     ]
 
     if mode == "guided_bilingual":
-        control_parts.append(f"Guided phase: {runtime.get('guided_phase', 'explain')}.")
+        phase = runtime.get("guided_phase", "explain")
+        phase_lang = _language_label(runtime["policy"].get("l1", "en-US")) if phase == "explain" else _language_label(runtime["policy"].get("l2", "en-US"))
+        control_parts.append(f"Guided phase: {phase}. You MUST respond ENTIRELY in {phase_lang}. This is non-negotiable. Every single word of your response must be in {phase_lang}.")
 
     if runtime.get("force_turns_remaining", 0) > 0:
         control_parts.append(
@@ -733,6 +738,7 @@ async def websocket_endpoint(websocket: WebSocket):
         "last_student_lang": "unknown",
         "last_tutor_lang": "unknown",
         "confusion_streak": 0,
+        "confusion_grace_remaining": 0,
         "last_confusion_text": "",
         "last_confusion_at": 0.0,
         "last_control_signature": None,
@@ -1071,6 +1077,7 @@ async def _handle_student_transcript(
         runtime["last_confusion_text"] = normalized
         runtime["last_confusion_at"] = now
         runtime["confusion_streak"] += 1
+        runtime["confusion_grace_remaining"] = 3
         metrics["confusion_signals"] += 1
 
         slog(
@@ -1135,7 +1142,10 @@ async def _handle_student_transcript(
                 count=metrics["fallback_triggers"],
             )
     else:
-        runtime["confusion_streak"] = 0
+        if runtime["confusion_streak"] > 0:
+            runtime["confusion_grace_remaining"] -= 1
+            if runtime["confusion_grace_remaining"] <= 0:
+                runtime["confusion_streak"] = 0
 
     expected = _expected_language(runtime)
     if expected != runtime.get("last_announced_expected"):
@@ -1157,8 +1167,10 @@ async def _finalize_tutor_turn(
     send_json,
     slog,
 ) -> None:
-    transcript_text = " ".join(runtime["current_turn_transcript_parts"]).strip()
-    part_text = " ".join(runtime["current_turn_text_parts"]).strip()
+    transcript_parts = [p for p in runtime["current_turn_transcript_parts"] if not p.startswith("INTERNAL CONTROL:")]
+    text_parts = [p for p in runtime["current_turn_text_parts"] if not p.startswith("INTERNAL CONTROL:")]
+    transcript_text = " ".join(transcript_parts).strip()
+    part_text = " ".join(text_parts).strip()
     turn_text = transcript_text or part_text
 
     runtime["current_turn_transcript_parts"] = []
