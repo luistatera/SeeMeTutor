@@ -1458,6 +1458,13 @@ async def _forward_to_client(
                 audio_response_chunks = 0
 
             elif event_type == "interrupted":
+                # Stale interrupt filter: if assistant already stopped speaking
+                # and no audio chunks were sent this turn, skip forwarding to client.
+                if not runtime_state.get("assistant_speaking") and audio_response_chunks == 0:
+                    _debug_logger.debug(
+                        "INTERRUPTED_STALE sid=%s (already silent, 0 chunks)", session_id[:8],
+                    )
+                    continue
                 runtime_state["assistant_speaking"] = False
                 runtime_state["last_user_activity_at"] = time.time()
                 runtime_state["idle_stage"] = 0

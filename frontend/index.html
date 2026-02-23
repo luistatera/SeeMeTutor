@@ -1240,6 +1240,9 @@
       color: #f8a7a1;
     }
   </style>
+  <!-- Silero VAD via ONNX Runtime — client-side voice activity detection -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/bundle.min.js"></script>
 </head>
 
 <body>
@@ -1548,9 +1551,13 @@
     const WS_MAX_ATTEMPTS = 5;
     const SPEECH_ACTIVITY_THRESHOLD = 0.02;
     const SPEECH_ACTIVITY_DEBOUNCE_MS = 1200;
-    const NOISE_GATE_RMS = 0.01;
-    const BARGE_IN_RMS_THRESHOLD = 0.06;
-    const BARGE_IN_MIN_FRAMES = 4;
+    // VAD-based interruption constants
+    const VAD_GRACE_MS = 500;           // keep sending audio after VAD speech-end
+    const BARGE_IN_CONFIRM_MS = 220;    // confirm barge-in with sustained speech
+    const SERVER_STREAM_GAP_MS = 800;   // gap before client-side barge-in is valid
+    const NOISE_CALIBRATION_MS = 1200;  // initial noise floor calibration period
+    const VOICE_DB_MARGIN = 10;         // dB above noise floor for voice detection
+    const MIN_VOICE_DB = -45;           // absolute minimum for voice signal
     const CHECKPOINT_HINT_DURATION_MS = 12000;
     const MAX_COMMAND_WORDS = 7;
     const VOICE_COMMAND_CATALOG = {
@@ -1677,8 +1684,23 @@
     let lastSpeechActivitySentAt = 0;
     let checkpointHintTimer = null;
     let commandRecognition = null;
-    let bargeInFrameCount = 0;
-    let bargeInSentForTurn = false;
+    // VAD state
+    let vadInstance = null;
+    let vadEnabled = true;
+    let vadReady = false;
+    let vadSpeechActive = false;
+    let vadInitialized = false;
+    let bargeInConfirmTimer = null;
+    let vadGraceTimer = null;
+    let turnCompletePending = false;
+    let tutorSpeakingStartedAt = 0;
+    let lastTutorAudioAt = 0;
+    // Noise floor tracking
+    let micLevelDb = -100;
+    let noiseFloorDb = -60;
+    let hasNoiseFloor = false;
+    let noiseCalibrating = false;
+    let noiseCalibrateUntil = 0;
 
     function wsConnect() {
       if (ws && ws.readyState <= WebSocket.OPEN) return;
@@ -1786,6 +1808,9 @@
         case 'audio':
           // Discard audio chunks that arrived in-flight after an interruption
           if (state.discardingAudio) break;
+          turnCompletePending = false;
+          if (!tutorSpeakingStartedAt) tutorSpeakingStartedAt = performance.now();
+          lastTutorAudioAt = performance.now();
           if (msg.data) playAudioChunk(msg.data);
           if (!state.isSpeaking) setSpeakingState(true);
           break;
@@ -1796,13 +1821,17 @@
 
         case 'turn_complete':
           state.discardingAudio = false;
-          bargeInFrameCount = 0;
-          bargeInSentForTurn = false;
+          turnCompletePending = true;
           finishSpeakingAfterDrain();
           finishTutorCaption();
           break;
 
         case 'interrupted':
+          // Stale filter: if not speaking and no buffered audio, ignore
+          if (!state.isSpeaking && activeSources.size === 0) break;
+          clearPendingBargeIn();
+          turnCompletePending = false;
+          tutorSpeakingStartedAt = 0;
           forceClientInterruption();
           break;
 
@@ -2131,6 +2160,157 @@
     }
 
     // =========================================================================
+    // VAD — Silero voice activity detection (lazy init on first mic click)
+    // =========================================================================
+    async function ensureVAD() {
+      if (vadInitialized) return;
+      vadInitialized = true;
+
+      if (typeof vad === 'undefined') {
+        console.info('[VAD] Library not loaded from CDN — running without VAD');
+        vadReady = false;
+        return;
+      }
+
+      try {
+        console.info('[VAD] Loading Silero VAD v5 model (ONNX)...');
+        vadInstance = await vad.MicVAD.new({
+          positiveSpeechThreshold: 0.72,
+          negativeSpeechThreshold: 0.45,
+          minSpeechMs: 260,
+          redemptionMs: 700,
+          preSpeechPadMs: 0,
+          model: 'v5',
+          baseAssetPath: 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/',
+          onnxWASMBasePath: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/',
+          onSpeechStart: onVADSpeechStart,
+          onSpeechEnd: onVADSpeechEnd,
+          onVADMisfire: onVADMisfire,
+        });
+        vadReady = true;
+        console.info('[VAD] Ready (threshold=0.72, minSpeech=260ms, confirm=220ms)');
+      } catch (err) {
+        console.warn('[VAD] Init failed:', err.message);
+        vadReady = false;
+      }
+    }
+
+    function onVADSpeechStart() {
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      clearPendingBargeIn();
+
+      if (!state.micActive) return;
+
+      // Always open the audio gate so Gemini hears the student
+      vadSpeechActive = true;
+
+      if (!state.isSpeaking) {
+        console.info('[VAD] Speech START (tutor silent)');
+        return;
+      }
+
+      // Tutor IS speaking — decide if client-side barge-in is appropriate
+      const msSinceServerAudio = lastTutorAudioAt > 0 ? performance.now() - lastTutorAudioAt : 99999;
+      const serverStreaming = msSinceServerAudio < SERVER_STREAM_GAP_MS;
+      const drainingAfterTurnComplete = turnCompletePending;
+
+      if (serverStreaming && !drainingAfterTurnComplete) {
+        // During active server streaming, echo fools VAD — let Gemini handle it
+        console.info('[VAD] Speech during active stream (' + Math.round(msSinceServerAudio) + 'ms ago), deferring to Gemini');
+        return;
+      }
+
+      // Drain period: server done or silent long enough — client barge-in is valid
+      console.info('[VAD] Barge-in candidate, confirming for ' + BARGE_IN_CONFIRM_MS + 'ms');
+      bargeInConfirmTimer = setTimeout(() => {
+        bargeInConfirmTimer = null;
+        if (!state.micActive || !state.isSpeaking || !vadSpeechActive) return;
+        if (!hasStrongVoiceSignal()) {
+          console.info('[VAD] Barge-in rejected (voice too weak, mic=' + Math.round(micLevelDb) + 'dB)');
+          return;
+        }
+        triggerConfirmedBargeIn();
+      }, BARGE_IN_CONFIRM_MS);
+    }
+
+    function onVADSpeechEnd() {
+      clearPendingBargeIn();
+      if (vadGraceTimer) clearTimeout(vadGraceTimer);
+      vadGraceTimer = setTimeout(() => {
+        vadSpeechActive = false;
+        vadGraceTimer = null;
+        console.info('[VAD] Speech END (gate closed)');
+      }, VAD_GRACE_MS);
+    }
+
+    function onVADMisfire() {
+      clearPendingBargeIn();
+      console.info('[VAD] Misfire (too short)');
+    }
+
+    function clearPendingBargeIn() {
+      if (bargeInConfirmTimer) {
+        clearTimeout(bargeInConfirmTimer);
+        bargeInConfirmTimer = null;
+      }
+    }
+
+    function hasStrongVoiceSignal() {
+      const floor = hasNoiseFloor ? noiseFloorDb : -60;
+      const minRequiredDb = Math.max(MIN_VOICE_DB, floor + VOICE_DB_MARGIN);
+      return micLevelDb >= minRequiredDb;
+    }
+
+    function triggerConfirmedBargeIn() {
+      if (!state.isSpeaking && activeSources.size === 0) return;
+
+      turnCompletePending = false;
+      state.discardingAudio = true;
+      setSpeakingState(false, { hardStop: true });
+      tutorSpeakingStartedAt = 0;
+      finishTutorCaption();
+
+      console.info('[VAD] BARGE-IN confirmed — playback killed');
+      wsSend({ type: 'barge_in' });
+    }
+
+    function updateMicLevel(float32Array) {
+      let sum = 0;
+      for (let i = 0; i < float32Array.length; i++) {
+        const s = float32Array[i];
+        sum += s * s;
+      }
+      const rms = Math.sqrt(sum / float32Array.length);
+      micLevelDb = rms < 1e-8 ? -100 : 20 * Math.log(rms) / Math.LN10;
+
+      if (!state.micActive) return;
+
+      if (!hasNoiseFloor) {
+        noiseFloorDb = micLevelDb;
+        hasNoiseFloor = true;
+      } else if (noiseCalibrating) {
+        noiseFloorDb = (0.9 * noiseFloorDb) + (0.1 * micLevelDb);
+      } else if (!vadSpeechActive && !state.isSpeaking) {
+        noiseFloorDb = (0.98 * noiseFloorDb) + (0.02 * micLevelDb);
+      }
+
+      if (noiseCalibrating && performance.now() >= noiseCalibrateUntil) {
+        noiseCalibrating = false;
+        console.info('[VAD] Noise floor locked at ' + Math.round(noiseFloorDb) + 'dB');
+      }
+    }
+
+    function maybeFinalizeTurnComplete() {
+      if (!turnCompletePending) return;
+      if (activeSources.size > 0) return;
+
+      turnCompletePending = false;
+      tutorSpeakingStartedAt = 0;
+      setSpeakingState(false);
+      console.info('[VAD] Turn complete — audio fully drained');
+    }
+
+    // =========================================================================
     // AUDIO CAPTURE (mic → PCM Int16 16kHz → WebSocket)
     // =========================================================================
     let audioCtxCapture = null;
@@ -2140,6 +2320,9 @@
 
     async function startMic() {
       if (state.micActive) return;
+
+      // Init VAD on first click (needs user gesture for mic permission)
+      await ensureVAD();
 
       try {
         micStream = await navigator.mediaDevices.getUserMedia({
@@ -2170,26 +2353,57 @@
       micSourceNode = audioCtxCapture.createMediaStreamSource(micStream);
       scriptProcessor = audioCtxCapture.createScriptProcessor(SCRIPT_BUFFER_SIZE, 1, 1);
 
+      const silenceBuffer = new Int16Array(SCRIPT_BUFFER_SIZE);
+
       scriptProcessor.onaudioprocess = (e) => {
         if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
+        updateMicLevel(float32);
+
         const rms = calculateRms(float32);
         maybeSendSpeechActivity(rms);
-        maybeHandleLocalBargeIn(rms);
 
-        // Keep a continuous stream for server-side VAD. For quiet frames, send
-        // explicit silence instead of dropping chunks entirely.
-        const int16 = (rms < NOISE_GATE_RMS)
-          ? new Int16Array(float32.length)
-          : float32ToInt16(float32);
-        const b64 = arrayBufferToBase64(int16.buffer);
+        // VAD audio gate: send real audio when VAD confirms speech, silence otherwise.
+        // Gemini's LOW sensitivity won't self-interrupt from echo.
+        let shouldSendReal;
+        if (vadReady) {
+          shouldSendReal = vadSpeechActive;
+        } else {
+          // No VAD: basic echo guard using server streaming state
+          const recentServerAudio = lastTutorAudioAt > 0
+            && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
+          shouldSendReal = !recentServerAudio;
+        }
+
+        let b64;
+        if (shouldSendReal) {
+          const int16 = float32ToInt16(float32);
+          b64 = arrayBufferToBase64(int16.buffer);
+        } else {
+          b64 = arrayBufferToBase64(silenceBuffer.buffer);
+        }
 
         wsSend({ type: 'audio', data: b64 });
       };
 
       micSourceNode.connect(scriptProcessor);
       scriptProcessor.connect(audioCtxCapture.destination);
+
+      // Start VAD listening
+      if (vadReady && vadInstance) {
+        await vadInstance.start();
+        console.info('[VAD] Listening started');
+      }
+
+      // Init noise floor calibration
+      hasNoiseFloor = false;
+      noiseFloorDb = -60;
+      micLevelDb = -100;
+      noiseCalibrating = true;
+      noiseCalibrateUntil = performance.now() + NOISE_CALIBRATION_MS;
+      vadSpeechActive = false;
+      clearPendingBargeIn();
 
       // Signal mic lifecycle to backend idle orchestrator.
       wsSend({ type: 'mic_start' });
@@ -2206,10 +2420,22 @@
       if (!state.micActive) return;
       state.micActive = false;
 
+      // Pause VAD
+      if (vadInstance && vadReady) {
+        vadInstance.pause().catch(() => {});
+      }
+
       if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
       if (micSourceNode) { micSourceNode.disconnect(); micSourceNode = null; }
       if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
       if (audioCtxCapture) { audioCtxCapture.close().catch(() => { }); audioCtxCapture = null; }
+
+      // VAD state cleanup
+      vadSpeechActive = false;
+      tutorSpeakingStartedAt = 0;
+      turnCompletePending = false;
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      clearPendingBargeIn();
 
       // Signal to backend
       wsSend({ type: 'mic_stop' });
@@ -2269,7 +2495,10 @@
         source.connect(ctx.destination);
 
         activeSources.add(source);
-        source.onended = () => activeSources.delete(source);
+        source.onended = () => {
+          activeSources.delete(source);
+          maybeFinalizeTurnComplete();
+        };
 
         const now = ctx.currentTime;
         const startTime = Math.max(nextAudioTime, now + 0.02);
@@ -2284,7 +2513,6 @@
       const hardStop = !!options.hardStop;
       state.isSpeaking = active;
       if (active) {
-        bargeInFrameCount = 0;
         if (speakingStopTimer) {
           clearTimeout(speakingStopTimer);
           speakingStopTimer = null;
@@ -2921,33 +3149,15 @@
     }
 
     function forceClientInterruption() {
+      turnCompletePending = false;
+      clearPendingBargeIn();
+      tutorSpeakingStartedAt = 0;
       state.discardingAudio = true;
       setSpeakingState(false, { hardStop: true });
       nextAudioTime = 0;
       finishTutorCaption();
     }
 
-    function maybeHandleLocalBargeIn(rms) {
-      if (!state.isSpeaking || state.discardingAudio) {
-        bargeInFrameCount = 0;
-        return;
-      }
-
-      if (rms < BARGE_IN_RMS_THRESHOLD) {
-        bargeInFrameCount = 0;
-        return;
-      }
-
-      bargeInFrameCount += 1;
-      if (bargeInFrameCount < BARGE_IN_MIN_FRAMES) return;
-
-      bargeInFrameCount = 0;
-      forceClientInterruption();
-      if (!bargeInSentForTurn) {
-        bargeInSentForTurn = true;
-        wsSend({ type: 'barge_in', data: { rms: Number(rms.toFixed(4)), at: Date.now() } });
-      }
-    }
 
     function maybeSendSpeechActivity(rms) {
       const now = Date.now();

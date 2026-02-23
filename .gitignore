@@ -113,3 +113,6 @@ docs/story_workshop.md
 epics_done.md
 docs/ADK Bidi-Streaming_ A Visual Guide to Real-Time Multimodal AI Agent Development _ by Kaz Sato _ Google Cloud - Community _ Medium.pdf
 docs/session_features_2026-02-22.md
+pocs/01_interruption/logs/*
+pocs/01_interruption/logs_with_VAD/*
+pocs/01_interruption/prd.md

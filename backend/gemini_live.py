@@ -155,9 +155,10 @@ class GeminiLiveSession:
             tools=[TOOL_DECLARATIONS, GOOGLE_SEARCH_TOOL],
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
-                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
                     prefix_padding_ms=300,
-                    silence_duration_ms=500,
+                    silence_duration_ms=700,
                 ),
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),

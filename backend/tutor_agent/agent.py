@@ -19,7 +19,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash-live-001"
+#MODEL = "gemini-2.0-flash-live-001"
+MODEL = "gemini-live-2.5-flash-native-audio"
+
 STRUGGLE_CHECKPOINT_THRESHOLD = 2
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
 
@@ -344,7 +346,7 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
-def set_session_phase(phase: str, *, state: dict) -> dict:
+def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
     """Transition the tutoring session to a new phase.
 
     Call this when the session should move to a different phase (e.g. from
@@ -411,7 +413,7 @@ def set_session_phase(phase: str, *, state: dict) -> dict:
     return result
 
 
-def get_backlog_context(*, state: dict) -> dict:
+def get_backlog_context(*, state: dict, **kwargs) -> dict:
     """Return session backlog context loaded during websocket bootstrap."""
     return {
         "student_id": state.get("student_id"),
@@ -429,7 +431,7 @@ def get_backlog_context(*, state: dict) -> dict:
     }
 
 
-async def log_progress(topic: str, status: str, *, state: dict) -> dict:
+async def log_progress(topic: str, status: str, *, state: dict, **kwargs) -> dict:
     """Record a student learning milestone.
 
     Call this when the student clearly masters a concept or struggles
@@ -555,7 +557,7 @@ async def log_progress(topic: str, status: str, *, state: dict) -> dict:
         logger.info("TOOL_METRIC session=%s tool=log_progress duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def set_checkpoint_decision(decision: str, *, state: dict) -> dict:
+async def set_checkpoint_decision(decision: str, *, state: dict, **kwargs) -> dict:
     """Persist learner decision for the current topic checkpoint."""
     session_id = state.get("session_id", "unknown")
     student_id = state.get("student_id")
@@ -628,6 +630,7 @@ async def write_notes(
     status: str = "pending",
     *,
     state: dict,
+    **kwargs,
 ) -> dict:
     """Write a note to the student's whiteboard.
 
@@ -711,7 +714,7 @@ async def write_notes(
         logger.info("TOOL_METRIC session=%s tool=write_notes duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def update_note_status(note_id: str, status: str, *, state: dict) -> dict:
+async def update_note_status(note_id: str, status: str, *, state: dict, **kwargs) -> dict:
     """Update the status of an existing whiteboard note.
 
     Call this to mark checklist items as in_progress, done, mastered, or
@@ -762,7 +765,7 @@ async def update_note_status(note_id: str, status: str, *, state: dict) -> dict:
         logger.info("TOOL_METRIC session=%s tool=update_note_status duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
 
 
-async def switch_topic(topic_id: str, topic_title: str, *, state: dict) -> dict:
+async def switch_topic(topic_id: str, topic_title: str, *, state: dict, **kwargs) -> dict:
     """Switch the active topic for the current session.
 
     Call this when the student asks to change topic, or after mastering the
