@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POC 07 - Latency Instrumentation & Budget</title>
+  <!-- Silero VAD via ONNX Runtime — runs entirely in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/bundle.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c1220;
+      --bg-card: #151f34;
+      --bg-card-soft: #101a2c;
+      --border: rgba(92, 130, 189, 0.30);
+      --blue: #4f8cff;
+      --green: #45c89a;
+      --red: #ff5d73;
+      --amber: #ffb24d;
+      --text: #e9f1fb;
+      --text-dim: #95a9c4;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: radial-gradient(120% 120% at 20% 0%, #1a2a4a 0%, var(--bg) 45%);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 100vh;
+    }
+
+    /* ---------- Title ---------- */
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-size: 23px;
+      font-weight: 700;
+      color: var(--blue);
+    }
+
+    h1 span {
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
+
+    /* ---------- Status bar ---------- */
+    .status-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #657a9a;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .status-dot.listening { background: var(--green); box-shadow: 0 0 10px rgba(69, 200, 154, 0.7); }
+    .status-dot.speaking { background: var(--blue); box-shadow: 0 0 10px rgba(79, 140, 255, 0.75); animation: pulse 1s infinite; }
+    .status-dot.interrupted { background: var(--amber); box-shadow: 0 0 10px rgba(255, 178, 77, 0.75); }
+    .status-dot.vad-bargein { background: var(--red); box-shadow: 0 0 12px rgba(255, 93, 115, 0.8); }
+    .status-dot.vad-speech { background: var(--green); box-shadow: 0 0 12px rgba(255, 178, 77, 0.5); }
+    .status-dot.error { background: var(--red); box-shadow: 0 0 10px rgba(255, 93, 115, 0.75); }
+    .status-dot.alert-flash { background: var(--red); box-shadow: 0 0 18px rgba(255, 93, 115, 1); animation: alertPulse 0.5s ease-in-out 3; }
+
+    .status-label {
+      color: var(--text-dim);
+      font-size: 13px;
+      flex: 1;
+    }
+
+    .status-timer {
+      color: var(--text-dim);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+
+    @keyframes alertPulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(255, 93, 115, 0.75); }
+      50% { box-shadow: 0 0 24px rgba(255, 93, 115, 1); }
+    }
+
+    @keyframes alertFlash {
+      0% { background: rgba(255, 93, 115, 0.3); }
+      100% { background: transparent; }
+    }
+
+    /* ---------- Controls ---------- */
+    .controls-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: white;
+      transition: 0.15s ease;
+      font-family: var(--font);
+    }
+
+    button:hover { transform: translateY(-1px); opacity: 0.95; }
+
+    .btn-session {
+      background: var(--green);
+      font-size: 14px;
+      padding: 10px 20px;
+      min-width: 140px;
+    }
+
+    .btn-session.active { background: var(--red); }
+
+    .btn-secondary {
+      background: var(--bg-card-soft);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-hud {
+      background: var(--bg-card-soft);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-hud.active {
+      border-color: rgba(79, 140, 255, 0.5);
+      color: var(--blue);
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-left: 4px;
+    }
+
+    /* ---------- Metric cards ---------- */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 9px;
+      text-align: center;
+    }
+
+    .metric-value {
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 700;
+      color: var(--blue);
+    }
+
+    .metric-value.green { color: var(--green); }
+    .metric-value.amber { color: var(--amber); }
+    .metric-value.red { color: var(--red); }
+
+    .metric-label {
+      margin-top: 2px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    /* ---------- Latency HUD ---------- */
+    .latency-hud {
+      background: rgba(12, 18, 32, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: opacity 0.2s, max-height 0.3s;
+    }
+
+    .latency-hud.hidden {
+      opacity: 0;
+      max-height: 0;
+      padding: 0 16px;
+      overflow: hidden;
+      border: none;
+    }
+
+    .hud-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+
+    .hud-title .hud-alerts {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--red);
+    }
+
+    .hud-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .hud-metric {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(92, 130, 189, 0.15);
+      border-radius: 8px;
+      transition: background 0.15s;
+    }
+
+    .hud-metric.alert-flash {
+      animation: alertFlash 0.6s ease-out;
+    }
+
+    .hud-metric-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hud-metric-name {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .hud-budget-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #657a9a;
+      transition: all 0.2s;
+    }
+
+    .hud-budget-dot.green { background: var(--green); box-shadow: 0 0 6px rgba(69, 200, 154, 0.6); }
+    .hud-budget-dot.yellow { background: var(--amber); box-shadow: 0 0 6px rgba(255, 178, 77, 0.6); }
+    .hud-budget-dot.red { background: var(--red); box-shadow: 0 0 6px rgba(255, 93, 115, 0.6); }
+
+    .hud-metric-value {
+      font-size: 22px;
+      font-weight: 700;
+      font-family: var(--mono);
+      line-height: 1.1;
+    }
+
+    .hud-metric-value.green { color: var(--green); }
+    .hud-metric-value.yellow { color: var(--amber); }
+    .hud-metric-value.red { color: var(--red); }
+    .hud-metric-value.dim { color: var(--text-dim); }
+
+    .hud-metric-details {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      line-height: 1.4;
+    }
+
+    .hud-metric-bar {
+      height: 3px;
+      background: rgba(92, 130, 189, 0.2);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+
+    .hud-metric-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+
+    .hud-metric-bar-fill.green { background: var(--green); }
+    .hud-metric-bar-fill.yellow { background: var(--amber); }
+    .hud-metric-bar-fill.red { background: var(--red); }
+
+    /* ---------- Main grid ---------- */
+    .main-grid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(92, 130, 189, 0.22);
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .transcript {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .transcript::-webkit-scrollbar,
+    .event-log::-webkit-scrollbar,
+    .latency-log::-webkit-scrollbar {
+      width: 7px;
+    }
+
+    .transcript::-webkit-scrollbar-thumb,
+    .event-log::-webkit-scrollbar-thumb,
+    .latency-log::-webkit-scrollbar-thumb {
+      background: rgba(95, 136, 200, 0.45);
+      border-radius: 4px;
+    }
+
+    .t-entry { margin-bottom: 6px; }
+    .t-time { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
+    .t-label { font-weight: 650; margin-right: 5px; }
+
+    .t-entry.tutor .t-label,
+    .t-entry.tutor .t-text { color: var(--blue); }
+
+    .t-entry.student .t-label,
+    .t-entry.student .t-text { color: var(--green); }
+
+    .t-entry.event .t-label,
+    .t-entry.event .t-text { color: #d4def1; }
+
+    .t-entry.vad-event .t-label,
+    .t-entry.vad-event .t-text { color: var(--amber); font-weight: 600; }
+
+    .t-entry.latency .t-label,
+    .t-entry.latency .t-text { color: var(--amber); }
+
+    .t-entry.alert .t-label,
+    .t-entry.alert .t-text { color: var(--red); font-weight: 700; }
+
+    .t-entry.error .t-label,
+    .t-entry.error .t-text { color: var(--red); }
+
+    .event-log {
+      height: 148px;
+      overflow-y: auto;
+      border-top: 1px solid rgba(92, 130, 189, 0.22);
+      background: rgba(10, 16, 30, 0.45);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #b6c7df;
+    }
+
+    .evt { margin-bottom: 3px; }
+    .evt-latency { color: var(--blue); }
+    .evt-alert { color: var(--red); font-weight: 700; }
+    .evt-vad { color: var(--amber); }
+    .evt-int { color: var(--amber); }
+    .evt-turn { color: var(--blue); }
+
+    /* ---------- Latency timeline panel ---------- */
+    .latency-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    .lat-entry {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(92, 130, 189, 0.12);
+      animation: latIn 150ms ease-out;
+    }
+
+    @keyframes latIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .lat-entry:last-child { border-bottom: none; }
+
+    .lat-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .lat-dot.green { background: var(--green); }
+    .lat-dot.yellow { background: var(--amber); }
+    .lat-dot.red { background: var(--red); }
+
+    .lat-name {
+      color: var(--text-dim);
+      font-size: 11px;
+      flex: 1;
+    }
+
+    .lat-value {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .lat-value.green { color: var(--green); }
+    .lat-value.yellow { color: var(--amber); }
+    .lat-value.red { color: var(--red); }
+
+    .lat-alert-badge {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--red);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 4px;
+    }
+
+    .lat-empty {
+      color: var(--text-dim);
+      text-align: center;
+      padding: 40px 0;
+      font-size: 13px;
+      font-family: var(--font);
+    }
+
+    /* ---------- Summary overlay ---------- */
+    .summary-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .summary-overlay.visible {
+      display: flex;
+    }
+
+    .summary-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      max-width: 700px;
+      width: 92%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .summary-box h2 {
+      font-size: 18px;
+      color: var(--blue);
+      margin-bottom: 6px;
+    }
+
+    .summary-info {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 14px;
+    }
+
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    .summary-table th {
+      text-align: left;
+      padding: 6px 8px;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .summary-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(92, 130, 189, 0.12);
+    }
+
+    .summary-table .val-green { color: var(--green); }
+    .summary-table .val-yellow { color: var(--amber); }
+    .summary-table .val-red { color: var(--red); }
+
+    .summary-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .summary-pre {
+      display: none;
+      background: rgba(10, 16, 30, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .summary-pre.visible { display: block; }
+
+    .copy-feedback {
+      font-size: 11px;
+      color: var(--green);
+      display: none;
+    }
+
+    .copy-feedback.show { display: inline; }
+
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; min-height: auto; }
+      .hud-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="title-row">
+      <h1>POC 07 - Latency Instrumentation <span>SeeMe Tutor</span></h1>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-label" id="statusLabel">Ready - click Start Session</div>
+      <div class="status-timer" id="statusTimer">00:00</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-row">
+      <button class="btn-session" id="btnSession" onclick="toggleSession()">Start Session</button>
+      <button class="btn-hud active" id="btnHud" onclick="toggleHud()">HUD On</button>
+      <button class="btn-secondary" id="btnExport" onclick="showSummary()">Export Summary</button>
+      <button class="btn-secondary" onclick="clearAll()">Clear</button>
+      <span class="hint">Latency HUD tracks response start, interruption stop, turn gap, and first byte.</span>
+    </div>
+
+    <!-- Metric cards -->
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-value" id="mRespAvg">--</div>
+        <div class="metric-label">Resp Start Avg</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mIntAvg">--</div>
+        <div class="metric-label">Int Stop Avg</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTurnGapAvg">--</div>
+        <div class="metric-label">Turn Gap Avg</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTurns">0</div>
+        <div class="metric-label">Turns</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value red" id="mAlerts">0</div>
+        <div class="metric-label">Alerts</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mAudioOut">0</div>
+        <div class="metric-label">Audio Chunks</div>
+      </div>
+    </div>
+
+    <!-- Latency HUD -->
+    <div class="latency-hud" id="latencyHud">
+      <div class="hud-title">
+        <span>Latency Budget Monitor</span>
+        <span class="hud-alerts" id="hudAlerts"></span>
+      </div>
+      <div class="hud-grid">
+        <!-- Response Start -->
+        <div class="hud-metric" id="hudMetricResponseStart">
+          <div class="hud-metric-header">
+            <span class="hud-metric-name">Response Start</span>
+            <div class="hud-budget-dot" id="hudDotResponseStart"></div>
+          </div>
+          <div class="hud-metric-value dim" id="hudValResponseStart">--</div>
+          <div class="hud-metric-details" id="hudDetResponseStart">target &lt;500ms | alert &gt;800ms</div>
+          <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarResponseStart" style="width:0%"></div></div>
+        </div>
+        <!-- Interruption Stop -->
+        <div class="hud-metric" id="hudMetricInterruptionStop">
+          <div class="hud-metric-header">
+            <span class="hud-metric-name">Interruption Stop</span>
+            <div class="hud-budget-dot" id="hudDotInterruptionStop"></div>
+          </div>
+          <div class="hud-metric-value dim" id="hudValInterruptionStop">--</div>
+          <div class="hud-metric-details" id="hudDetInterruptionStop">target &lt;200ms | alert &gt;400ms</div>
+          <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarInterruptionStop" style="width:0%"></div></div>
+        </div>
+        <!-- Turn-to-Turn -->
+        <div class="hud-metric" id="hudMetricTurnToTurn">
+          <div class="hud-metric-header">
+            <span class="hud-metric-name">Turn-to-Turn</span>
+            <div class="hud-budget-dot" id="hudDotTurnToTurn"></div>
+          </div>
+          <div class="hud-metric-value dim" id="hudValTurnToTurn">--</div>
+          <div class="hud-metric-details" id="hudDetTurnToTurn">target &lt;1500ms | alert &gt;2500ms</div>
+          <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarTurnToTurn" style="width:0%"></div></div>
+        </div>
+        <!-- First Byte -->
+        <div class="hud-metric" id="hudMetricFirstByte">
+          <div class="hud-metric-header">
+            <span class="hud-metric-name">First Byte</span>
+            <div class="hud-budget-dot" id="hudDotFirstByte"></div>
+          </div>
+          <div class="hud-metric-value dim" id="hudValFirstByte">--</div>
+          <div class="hud-metric-details" id="hudDetFirstByte">target &lt;3000ms | alert &gt;5000ms</div>
+          <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarFirstByte" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main two-panel layout -->
+    <div class="main-grid">
+      <div class="panel">
+        <div class="panel-header">Transcript + Events</div>
+        <div class="transcript" id="transcript"></div>
+        <div class="event-log" id="eventLog"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Latency Timeline</div>
+        <div class="latency-log" id="latencyLog">
+          <div class="lat-empty" id="latencyEmpty">
+            Latency events will appear here as they are measured.<br/>
+            Start a session and speak to begin tracking.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary export overlay -->
+  <div class="summary-overlay" id="summaryOverlay" onclick="closeSummaryOuter(event)">
+    <div class="summary-box" onclick="event.stopPropagation()">
+      <h2>Session Latency Summary</h2>
+      <div class="summary-info" id="summaryInfo"></div>
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Count</th>
+            <th>Avg</th>
+            <th>P95</th>
+            <th>Min</th>
+            <th>Max</th>
+            <th>Target</th>
+            <th>Alert</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="summaryBody"></tbody>
+      </table>
+      <div class="summary-actions">
+        <button class="btn-secondary" onclick="toggleSummaryText()">Show Text</button>
+        <button class="btn-secondary" onclick="copySummary()">Copy to Clipboard</button>
+        <span class="copy-feedback" id="copyFeedback">Copied!</span>
+        <button class="btn-secondary" onclick="closeSummary()">Close</button>
+      </div>
+      <pre class="summary-pre" id="summaryPre"></pre>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // State
+    // =========================================================================
+    var ws = null;
+    var sessionActive = false;
+    var reconnectTimer = null;
+    var sessionStartTime = 0;
+    var sessionTimerInterval = null;
+
+    // Mic capture
+    var micCtx = null;
+    var micStream = null;
+    var micProcessor = null;
+
+    // VAD state
+    var vadInstance = null;
+    var vadReady = false;
+    var vadSpeechActive = false;
+    var vadInitialized = false;
+    var vadGraceTimer = null;
+    var VAD_GRACE_MS = 500;
+    var BARGE_IN_CONFIRM_MS = 220;
+    var SERVER_STREAM_GAP_MS = 800;
+    var bargeInConfirmTimer = null;
+
+    // Mic level tracking
+    var micLevelDb = -100;
+    var noiseFloorDb = -60;
+    var hasNoiseFloor = false;
+    var noiseCalibrating = false;
+    var noiseCalibrateUntil = 0;
+    var NOISE_CALIBRATION_MS = 1200;
+    var VOICE_DB_MARGIN = 10;
+    var MIN_VOICE_DB = -45;
+
+    // Playback
+    var playbackCtx = null;
+    var nextPlayTime = 0;
+    var scheduledSources = [];
+    var PLAYBACK_RATE = 24000;
+
+    // Speaking state
+    var tutorSpeaking = false;
+    var tutorSpeakingStartedAt = 0;
+    var lastTutorAudioAt = 0;
+    var turnCompletePending = false;
+    var turnHasOutputTranscript = false;
+    var tutorTranscriptBuffer = '';
+
+    // Client-side timing
+    var lastAudioSentAt = 0;
+    var lastSpeechEndAt = 0;
+    var bargeInSentAt = 0;
+    var lastTurnCompleteAt = 0;
+    var clientFirstByteRecorded = false;
+
+    // Latency data from server
+    var latencyData = {
+      response_start: null,
+      interruption_stop: null,
+      turn_to_turn: null,
+      first_byte: null
+    };
+
+    // Session counters
+    var turnCount = 0;
+    var alertCount = 0;
+    var audioChunksOut = 0;
+
+    // HUD visible
+    var hudVisible = true;
+
+    // Budget thresholds (mirror backend)
+    var BUDGETS = {
+      response_start: { target: 500, alert: 800 },
+      interruption_stop: { target: 200, alert: 400 },
+      turn_to_turn: { target: 1500, alert: 2500 },
+      first_byte: { target: 3000, alert: 5000 }
+    };
+
+    // HUD element ID mapping
+    var HUD_IDS = {
+      response_start: {
+        metric: 'hudMetricResponseStart',
+        val: 'hudValResponseStart',
+        det: 'hudDetResponseStart',
+        dot: 'hudDotResponseStart',
+        bar: 'hudBarResponseStart'
+      },
+      interruption_stop: {
+        metric: 'hudMetricInterruptionStop',
+        val: 'hudValInterruptionStop',
+        det: 'hudDetInterruptionStop',
+        dot: 'hudDotInterruptionStop',
+        bar: 'hudBarInterruptionStop'
+      },
+      turn_to_turn: {
+        metric: 'hudMetricTurnToTurn',
+        val: 'hudValTurnToTurn',
+        det: 'hudDetTurnToTurn',
+        dot: 'hudDotTurnToTurn',
+        bar: 'hudBarTurnToTurn'
+      },
+      first_byte: {
+        metric: 'hudMetricFirstByte',
+        val: 'hudValFirstByte',
+        det: 'hudDetFirstByte',
+        dot: 'hudDotFirstByte',
+        bar: 'hudBarFirstByte'
+      }
+    };
+
+    // =========================================================================
+    // VAD -- lazy init on first session start (needs user gesture)
+    // =========================================================================
+    async function ensureVAD() {
+      if (vadInitialized) return;
+      vadInitialized = true;
+
+      if (typeof vad === 'undefined') {
+        logEvent('VAD library not loaded -- running without VAD');
+        vadReady = false;
+        return;
+      }
+
+      try {
+        logEvent('Loading Silero VAD v5 model (ONNX)...');
+        vadInstance = await vad.MicVAD.new({
+          positiveSpeechThreshold: 0.72,
+          negativeSpeechThreshold: 0.45,
+          minSpeechMs: 260,
+          redemptionMs: 700,
+          preSpeechPadMs: 0,
+          model: "v5",
+          baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+          onSpeechStart: onVADSpeechStart,
+          onSpeechEnd: onVADSpeechEnd,
+          onVADMisfire: onVADMisfire,
+        });
+        vadReady = true;
+        logEvent('VAD ready (threshold=0.72, minSpeech=260ms)');
+      } catch (err) {
+        logEvent('VAD init FAILED: ' + err.message);
+        vadReady = false;
+      }
+    }
+
+    function onVADSpeechStart() {
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      clearPendingBargeIn();
+      if (!sessionActive) return;
+
+      vadSpeechActive = true;
+
+      // Send speech_start to backend for turn-to-turn measurement
+      sendWS({ type: 'speech_start' });
+
+      if (!tutorSpeaking) {
+        logEvent('VAD: speech START', 'evt-vad');
+        setStatus('vad-speech', 'Speaking...');
+        return;
+      }
+
+      // Tutor IS speaking -- decide on barge-in
+      var msSinceServerAudio = lastTutorAudioAt > 0 ? performance.now() - lastTutorAudioAt : 99999;
+      var serverStreaming = msSinceServerAudio < SERVER_STREAM_GAP_MS;
+      var drainingAfterTurnComplete = turnCompletePending;
+
+      if (serverStreaming && !drainingAfterTurnComplete) {
+        logEvent('VAD: speech during stream (' + Math.round(msSinceServerAudio) + 'ms), Gemini handles', 'evt-vad');
+        setStatus('vad-speech', 'Speaking (Gemini)...');
+        return;
+      }
+
+      // Drain period -- client barge-in valid
+      logEvent('VAD: barge-in candidate, confirming for ' + BARGE_IN_CONFIRM_MS + 'ms', 'evt-vad');
+      bargeInConfirmTimer = setTimeout(function() {
+        bargeInConfirmTimer = null;
+        if (!sessionActive || !tutorSpeaking || !vadSpeechActive) return;
+        if (!hasStrongVoiceSignal()) {
+          logEvent('VAD: barge-in rejected (voice too weak, mic=' + Math.round(micLevelDb) + 'dB)', 'evt-vad');
+          return;
+        }
+        triggerBargeIn();
+      }, BARGE_IN_CONFIRM_MS);
+    }
+
+    function onVADSpeechEnd(audio) {
+      clearPendingBargeIn();
+      if (vadGraceTimer) clearTimeout(vadGraceTimer);
+      vadGraceTimer = setTimeout(function() {
+        vadSpeechActive = false;
+        vadGraceTimer = null;
+        logEvent('VAD: speech END (gate closed)', 'evt-vad');
+        if (sessionActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, VAD_GRACE_MS);
+
+      // Send speech_end to backend for response start measurement
+      lastSpeechEndAt = performance.now();
+      sendWS({ type: 'speech_end' });
+
+      logEvent('VAD: speech END (grace ' + VAD_GRACE_MS + 'ms)', 'evt-vad');
+    }
+
+    function onVADMisfire() {
+      clearPendingBargeIn();
+      logEvent('VAD: misfire (too short)', 'evt-vad');
+    }
+
+    function clearPendingBargeIn() {
+      if (bargeInConfirmTimer) {
+        clearTimeout(bargeInConfirmTimer);
+        bargeInConfirmTimer = null;
+      }
+    }
+
+    function hasStrongVoiceSignal() {
+      var floor = hasNoiseFloor ? noiseFloorDb : -60;
+      var minRequiredDb = Math.max(MIN_VOICE_DB, floor + VOICE_DB_MARGIN);
+      return micLevelDb >= minRequiredDb;
+    }
+
+    function triggerBargeIn() {
+      if (!tutorSpeaking && scheduledSources.length === 0) return;
+
+      var spokeForMs = tutorSpeakingStartedAt > 0
+        ? Math.round(performance.now() - tutorSpeakingStartedAt) : 0;
+
+      var t0 = performance.now();
+      turnCompletePending = false;
+      cancelPlayback();
+      var cancelMs = Math.round(performance.now() - t0);
+
+      bargeInSentAt = performance.now();
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+
+      setStatus('vad-bargein', 'Barge-in! (' + cancelMs + 'ms)');
+      addTranscript('vad-event', 'BARGE-IN -- playback killed in ' + cancelMs + 'ms, tutor spoke ' + spokeForMs + 'ms');
+      logEvent('BARGE_IN cancel=' + cancelMs + 'ms spoke=' + spokeForMs + 'ms', 'evt-vad');
+
+      sendWS({
+        type: 'barge_in',
+        client_latency_ms: cancelMs,
+        spoke_for_ms: spokeForMs,
+      });
+
+      setTimeout(function() {
+        if (sessionActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, 1200);
+    }
+
+    function updateMicLevel(float32Array) {
+      var sum = 0;
+      for (var i = 0; i < float32Array.length; i++) {
+        var s = float32Array[i];
+        sum += s * s;
+      }
+      var rms = Math.sqrt(sum / float32Array.length);
+      if (rms < 1e-8) {
+        micLevelDb = -100;
+      } else {
+        micLevelDb = 20 * Math.log(rms) / Math.LN10;
+      }
+      if (!sessionActive) return;
+
+      if (!hasNoiseFloor) {
+        noiseFloorDb = micLevelDb;
+        hasNoiseFloor = true;
+      } else if (noiseCalibrating) {
+        noiseFloorDb = (0.9 * noiseFloorDb) + (0.1 * micLevelDb);
+      } else if (!vadSpeechActive && !tutorSpeaking) {
+        noiseFloorDb = (0.98 * noiseFloorDb) + (0.02 * micLevelDb);
+      }
+
+      if (noiseCalibrating && performance.now() >= noiseCalibrateUntil) {
+        noiseCalibrating = false;
+        logEvent('Noise floor locked at ' + Math.round(noiseFloorDb) + 'dB', 'evt-vad');
+      }
+    }
+
+    // =========================================================================
+    // Session controls
+    // =========================================================================
+    async function toggleSession() {
+      if (sessionActive) {
+        await stopSession();
+      } else {
+        await startSession();
+      }
+    }
+
+    async function startSession() {
+      try {
+        setStatus('', 'Starting session...');
+
+        await ensureVAD();
+        connectWS();
+        await startMic();
+
+        sessionActive = true;
+        turnCompletePending = false;
+        tutorSpeaking = false;
+        turnHasOutputTranscript = false;
+        tutorTranscriptBuffer = '';
+        vadSpeechActive = false;
+
+        sessionStartTime = Date.now();
+        sessionTimerInterval = setInterval(updateSessionTimer, 1000);
+
+        var btn = document.getElementById('btnSession');
+        btn.textContent = 'Stop Session';
+        btn.classList.add('active');
+        setStatus('listening', vadReady ? 'Listening (VAD)...' : 'Listening...');
+        logEvent('Session started (mic + VAD + websocket)');
+      } catch (err) {
+        setStatus('error', 'Start failed: ' + err.message);
+        logEvent('Session start error: ' + err.message);
+      }
+    }
+
+    async function stopSession() {
+      sessionActive = false;
+
+      await stopMic();
+      cancelPlayback();
+      clearPendingBargeIn();
+
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (sessionTimerInterval) {
+        clearInterval(sessionTimerInterval);
+        sessionTimerInterval = null;
+      }
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      turnCompletePending = false;
+      turnHasOutputTranscript = false;
+      tutorTranscriptBuffer = '';
+      vadSpeechActive = false;
+
+      var btn = document.getElementById('btnSession');
+      btn.textContent = 'Start Session';
+      btn.classList.remove('active');
+      setStatus('', 'Session stopped');
+      logEvent('Session stopped');
+    }
+
+    function updateSessionTimer() {
+      if (!sessionStartTime) return;
+      var elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      var mins = Math.floor(elapsed / 60);
+      var secs = elapsed % 60;
+      document.getElementById('statusTimer').textContent =
+        String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+    }
+
+    // =========================================================================
+    // WebSocket
+    // =========================================================================
+    function connectWS() {
+      var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host + '/ws');
+
+      ws.onopen = function() {
+        logEvent('WS connected');
+      };
+
+      ws.onclose = function() {
+        logEvent('WS disconnected');
+        if (!sessionActive) return;
+
+        setStatus('error', 'Disconnected - reconnecting...');
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(function() {
+          reconnectTimer = null;
+          if (sessionActive) connectWS();
+        }, 1500);
+      };
+
+      ws.onerror = function() {
+        setStatus('error', 'Connection error');
+      };
+
+      ws.onmessage = handleMessage;
+    }
+
+    function handleMessage(evt) {
+      var msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch (e) {
+        return;
+      }
+
+      switch (msg.type) {
+        case 'audio':
+          handleAudio(msg.data);
+          break;
+
+        case 'text':
+          if (!turnHasOutputTranscript) appendTutorChunk(msg.data || '');
+          break;
+
+        case 'output_transcript':
+          turnHasOutputTranscript = true;
+          appendTutorChunk(msg.data || '');
+          break;
+
+        case 'input_transcript':
+          addTranscript('student', msg.data || '');
+          break;
+
+        case 'turn_complete':
+          handleTurnComplete(msg.data);
+          break;
+
+        case 'interrupted':
+          handleInterrupted(msg.data);
+          break;
+
+        case 'latency_event':
+          handleLatencyEvent(msg.data);
+          break;
+
+        case 'latency_alert':
+          handleLatencyAlert(msg.data);
+          break;
+
+        case 'latency_report':
+          handleLatencyReport(msg.data);
+          break;
+
+        case 'error':
+          addTranscript('error', msg.data || 'Error');
+          setStatus('error', 'Server error');
+          break;
+      }
+    }
+
+    // =========================================================================
+    // Audio handling
+    // =========================================================================
+    function handleAudio(b64) {
+      var now = performance.now();
+      turnCompletePending = false;
+      audioChunksOut++;
+
+      if (!tutorSpeaking) {
+        tutorSpeaking = true;
+        tutorSpeakingStartedAt = now;
+
+        // Client-side response start measurement (supplementary)
+        var refTime = lastSpeechEndAt > 0 ? lastSpeechEndAt : lastAudioSentAt;
+        if (refTime > 0) {
+          var clientRespMs = Math.round(now - refTime);
+          logEvent('Client response_start: ' + clientRespMs + 'ms', 'evt-latency');
+        }
+      }
+
+      // Client-side first byte (one-time)
+      if (!clientFirstByteRecorded) {
+        clientFirstByteRecorded = true;
+      }
+
+      lastTutorAudioAt = now;
+      playAudioChunk(b64);
+      setStatus('speaking', 'Tutor speaking...');
+      updateMetricCards();
+    }
+
+    function handleTurnComplete(data) {
+      flushTutorTranscriptBuffer();
+      turnCompletePending = true;
+      turnHasOutputTranscript = false;
+      turnCount = (data && data.count) || (turnCount + 1);
+      lastTurnCompleteAt = performance.now();
+      logEvent('TURN_COMPLETE #' + turnCount + ' (stream done, draining audio)', 'evt-turn');
+      maybeFinalizeTurnComplete();
+      updateMetricCards();
+    }
+
+    function handleInterrupted(data) {
+      if (!tutorSpeaking && scheduledSources.length === 0) {
+        logEvent('Interrupted ignored (tutor silent)', 'evt-int');
+        return;
+      }
+
+      flushTutorTranscriptBuffer();
+
+      // Client-side interruption latency (supplementary)
+      if (bargeInSentAt > 0) {
+        var clientIntMs = Math.round(performance.now() - bargeInSentAt);
+        logEvent('Client interruption_stop: ' + clientIntMs + 'ms', 'evt-latency');
+        bargeInSentAt = 0;
+      }
+
+      clearPendingBargeIn();
+      turnCompletePending = false;
+      cancelPlayback();
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+
+      var spokeMs = (data && data.spoke_for_ms) || 0;
+      setStatus('interrupted', 'Interrupted (spoke ' + spokeMs + 'ms)');
+      addTranscript('event', 'INTERRUPTED (spoke ' + spokeMs + 'ms)');
+      logEvent('GEMINI_INT spoke=' + spokeMs + 'ms', 'evt-int');
+
+      setTimeout(function() {
+        if (sessionActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, 1200);
+    }
+
+    // =========================================================================
+    // Latency event handlers
+    // =========================================================================
+    function handleLatencyEvent(data) {
+      if (!data) return;
+
+      var metric = data.metric;
+      var valueMs = data.value_ms;
+      var stats = data.stats;
+      var isAlert = data.is_alert;
+
+      // Update stored stats
+      if (stats && BUDGETS[metric]) {
+        latencyData[metric] = stats;
+      }
+
+      // Update HUD
+      updateHudMetric(metric, stats, valueMs);
+
+      // Add to latency timeline
+      addLatencyEntry(metric, valueMs, stats, isAlert);
+
+      // Log
+      var cls = isAlert ? 'evt-alert' : 'evt-latency';
+      logEvent(
+        formatMetricName(metric) + ': ' + valueMs + 'ms' +
+        (stats ? ' (avg ' + stats.avg + 'ms, p95 ' + stats.p95 + 'ms)' : '') +
+        (isAlert ? ' ALERT' : ''),
+        cls
+      );
+
+      updateMetricCards();
+    }
+
+    function handleLatencyAlert(data) {
+      if (!data) return;
+
+      alertCount = data.alerts_total || (alertCount + 1);
+
+      addTranscript('alert',
+        'LATENCY ALERT: ' + formatMetricName(data.metric) +
+        ' = ' + data.value_ms + 'ms (threshold: ' + data.threshold_ms + 'ms)'
+      );
+
+      // Flash the HUD metric card
+      var ids = HUD_IDS[data.metric];
+      if (ids) {
+        var metricEl = document.getElementById(ids.metric);
+        if (metricEl) {
+          metricEl.classList.remove('alert-flash');
+          void metricEl.offsetWidth;
+          metricEl.classList.add('alert-flash');
+        }
+      }
+
+      // Flash the status dot
+      var dot = document.getElementById('statusDot');
+      dot.className = 'status-dot alert-flash';
+      setTimeout(function() {
+        if (sessionActive) {
+          if (tutorSpeaking) {
+            dot.className = 'status-dot speaking';
+          } else {
+            dot.className = 'status-dot listening';
+          }
+        }
+      }, 1500);
+
+      updateMetricCards();
+    }
+
+    function handleLatencyReport(data) {
+      if (!data || !data.metrics) return;
+
+      // Update all latency stats from the full report
+      for (var metric in data.metrics) {
+        if (data.metrics.hasOwnProperty(metric) && BUDGETS[metric]) {
+          latencyData[metric] = data.metrics[metric];
+          updateHudMetric(metric, data.metrics[metric]);
+        }
+      }
+
+      if (data.turns !== undefined) turnCount = data.turns;
+      if (data.alerts !== undefined) alertCount = data.alerts;
+
+      updateMetricCards();
+    }
+
+    // =========================================================================
+    // HUD rendering
+    // =========================================================================
+    function updateHudMetric(metric, stats, currentValue) {
+      var ids = HUD_IDS[metric];
+      if (!ids || !stats || stats.count === 0) return;
+
+      var budget = BUDGETS[metric];
+      var dispValue = currentValue !== undefined ? currentValue : stats.current;
+      var currentColor = getBudgetColor(metric, dispValue);
+      var avgColor = getBudgetColor(metric, stats.avg);
+
+      // Current value
+      var valEl = document.getElementById(ids.val);
+      valEl.textContent = dispValue + 'ms';
+      valEl.className = 'hud-metric-value ' + currentColor;
+
+      // Details line
+      var detEl = document.getElementById(ids.det);
+      detEl.textContent =
+        'avg ' + stats.avg + 'ms | p95 ' + stats.p95 + 'ms | ' +
+        'min ' + stats.min + ' | max ' + stats.max + ' | n=' + stats.count;
+
+      // Budget dot (based on average)
+      var dotEl = document.getElementById(ids.dot);
+      dotEl.className = 'hud-budget-dot ' + avgColor;
+
+      // Bar fill (based on avg relative to alert*1.5)
+      var barEl = document.getElementById(ids.bar);
+      var barMax = budget.alert * 1.5;
+      var pct = Math.min(100, (stats.avg / barMax) * 100);
+      barEl.style.width = pct + '%';
+      barEl.className = 'hud-metric-bar-fill ' + avgColor;
+
+      // Update alerts display
+      document.getElementById('hudAlerts').textContent =
+        alertCount > 0 ? (alertCount + ' alert' + (alertCount !== 1 ? 's' : '')) : '';
+    }
+
+    function getBudgetColor(metric, valueMs) {
+      var budget = BUDGETS[metric];
+      if (!budget) return 'green';
+      if (valueMs > budget.alert) return 'red';
+      if (valueMs > budget.target) return 'yellow';
+      return 'green';
+    }
+
+    function formatMetricName(metric) {
+      var names = {
+        response_start: 'Response Start',
+        interruption_stop: 'Interruption Stop',
+        turn_to_turn: 'Turn-to-Turn',
+        first_byte: 'First Byte',
+        visual_comment: 'Visual Comment'
+      };
+      return names[metric] || metric;
+    }
+
+    function toggleHud() {
+      hudVisible = !hudVisible;
+      var hud = document.getElementById('latencyHud');
+      var btn = document.getElementById('btnHud');
+
+      if (hudVisible) {
+        hud.classList.remove('hidden');
+        btn.classList.add('active');
+        btn.textContent = 'HUD On';
+      } else {
+        hud.classList.add('hidden');
+        btn.classList.remove('active');
+        btn.textContent = 'HUD Off';
+      }
+    }
+
+    // =========================================================================
+    // Latency timeline panel
+    // =========================================================================
+    function addLatencyEntry(metric, valueMs, stats, isAlert) {
+      var log = document.getElementById('latencyLog');
+
+      // Remove empty placeholder
+      var empty = document.getElementById('latencyEmpty');
+      if (empty) empty.style.display = 'none';
+
+      var color = getBudgetColor(metric, valueMs);
+
+      var entry = document.createElement('div');
+      entry.className = 'lat-entry';
+
+      var dot = document.createElement('div');
+      dot.className = 'lat-dot ' + color;
+
+      var name = document.createElement('span');
+      name.className = 'lat-name';
+      var ts = new Date().toLocaleTimeString('en-US', {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      name.textContent = ts + ' ' + formatMetricName(metric);
+
+      var value = document.createElement('span');
+      value.className = 'lat-value ' + color;
+      value.textContent = valueMs + 'ms';
+
+      entry.appendChild(dot);
+      entry.appendChild(name);
+      entry.appendChild(value);
+
+      if (isAlert) {
+        var alertBadge = document.createElement('span');
+        alertBadge.className = 'lat-alert-badge';
+        alertBadge.textContent = 'ALERT';
+        entry.appendChild(alertBadge);
+      }
+
+      log.insertBefore(entry, log.firstChild);
+
+      // Keep max entries
+      while (log.children.length > 200) {
+        log.removeChild(log.lastChild);
+      }
+    }
+
+    // =========================================================================
+    // Microphone capture with VAD audio gate
+    // =========================================================================
+    async function startMic() {
+      micCtx = new AudioContext({ sampleRate: 16000 });
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      var source = micCtx.createMediaStreamSource(micStream);
+      micProcessor = micCtx.createScriptProcessor(4096, 1, 1);
+
+      var silenceBuffer = new Int16Array(4096);
+
+      micProcessor.onaudioprocess = function(e) {
+        if (!sessionActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+        var float32 = e.inputBuffer.getChannelData(0);
+        updateMicLevel(float32);
+
+        var shouldSendReal;
+        if (vadReady) {
+          shouldSendReal = vadSpeechActive;
+        } else {
+          var recentServerAudio = lastTutorAudioAt > 0
+            && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
+          shouldSendReal = !recentServerAudio;
+        }
+
+        var b64;
+        if (shouldSendReal) {
+          var int16 = float32ToInt16(float32);
+          b64 = arrayBufferToBase64(int16.buffer);
+          lastAudioSentAt = performance.now();
+        } else {
+          b64 = arrayBufferToBase64(silenceBuffer.buffer);
+        }
+
+        ws.send(JSON.stringify({ type: 'audio', data: b64 }));
+      };
+
+      source.connect(micProcessor);
+      micProcessor.connect(micCtx.destination);
+
+      // Start VAD listening
+      if (vadReady && vadInstance) {
+        await vadInstance.start();
+        logEvent('VAD listening started');
+      }
+
+      hasNoiseFloor = false;
+      noiseFloorDb = -60;
+      micLevelDb = -100;
+      noiseCalibrating = true;
+      noiseCalibrateUntil = performance.now() + NOISE_CALIBRATION_MS;
+      clearPendingBargeIn();
+    }
+
+    async function stopMic() {
+      if (vadInstance && vadReady) {
+        try { await vadInstance.pause(); } catch (e) { /* ignore */ }
+        logEvent('VAD paused');
+      }
+      if (micProcessor) {
+        micProcessor.disconnect();
+        micProcessor = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(function(track) { track.stop(); });
+        micStream = null;
+      }
+      if (micCtx) {
+        await micCtx.close();
+        micCtx = null;
+      }
+    }
+
+    // =========================================================================
+    // Audio playback
+    // =========================================================================
+    function playAudioChunk(b64Data) {
+      if (!playbackCtx) {
+        playbackCtx = new AudioContext({ sampleRate: PLAYBACK_RATE });
+      }
+
+      var raw = base64ToArrayBuffer(b64Data);
+      var int16 = new Int16Array(raw);
+      var float32 = new Float32Array(int16.length);
+      for (var i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      var buffer = playbackCtx.createBuffer(1, float32.length, PLAYBACK_RATE);
+      buffer.getChannelData(0).set(float32);
+
+      var src = playbackCtx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(playbackCtx.destination);
+
+      var now = playbackCtx.currentTime;
+      if (nextPlayTime <= now) {
+        nextPlayTime = now + 0.005;
+      }
+
+      src.start(nextPlayTime);
+      var entry = { source: src, endTime: nextPlayTime + buffer.duration };
+      scheduledSources.push(entry);
+
+      src.onended = function() {
+        var idx = scheduledSources.indexOf(entry);
+        if (idx !== -1) scheduledSources.splice(idx, 1);
+        maybeFinalizeTurnComplete();
+      };
+
+      nextPlayTime += buffer.duration;
+    }
+
+    function cancelPlayback() {
+      for (var i = 0; i < scheduledSources.length; i++) {
+        try { scheduledSources[i].source.stop(); } catch (e) { }
+      }
+      scheduledSources = [];
+      nextPlayTime = 0;
+      maybeFinalizeTurnComplete();
+    }
+
+    function maybeFinalizeTurnComplete() {
+      if (!turnCompletePending) return;
+      if (scheduledSources.length > 0) return;
+
+      turnCompletePending = false;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+
+      setStatus('listening', 'Listening...');
+      logEvent('TURN_COMPLETE #' + turnCount + ' (audio drained)', 'evt-turn');
+    }
+
+    // =========================================================================
+    // Transcript + logs
+    // =========================================================================
+    function flushTutorTranscriptBuffer() {
+      var text = tutorTranscriptBuffer;
+      if (text) addTranscript('tutor', text);
+      tutorTranscriptBuffer = '';
+    }
+
+    function appendTutorChunk(chunk) {
+      if (!chunk) return;
+      var incoming = String(chunk);
+
+      if (!tutorTranscriptBuffer) {
+        tutorTranscriptBuffer = incoming;
+        return;
+      }
+
+      var prev = tutorTranscriptBuffer.charAt(tutorTranscriptBuffer.length - 1);
+      var next = incoming.charAt(0);
+      var prevIsWs = /\s/.test(prev);
+      var nextIsWs = /\s/.test(next);
+      var nextIsPunct = /^[.,!?;:)]/.test(next);
+
+      if (!prevIsWs && !nextIsWs && !nextIsPunct) {
+        tutorTranscriptBuffer += ' ';
+      }
+
+      tutorTranscriptBuffer += incoming;
+    }
+
+    function addTranscript(type, text) {
+      if (!text) return;
+
+      var panel = document.getElementById('transcript');
+      var entry = document.createElement('div');
+      entry.className = 't-entry ' + type;
+
+      var ts = new Date().toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      var labels = {
+        tutor: 'Tutor:',
+        student: 'Student:',
+        event: 'Event:',
+        'vad-event': 'VAD:',
+        latency: 'Latency:',
+        alert: 'Alert:',
+        error: 'Error:'
+      };
+
+      var timeNode = document.createElement('span');
+      timeNode.className = 't-time';
+      timeNode.textContent = ts;
+
+      var labelNode = document.createElement('span');
+      labelNode.className = 't-label';
+      labelNode.textContent = labels[type] || 'Log:';
+
+      var textNode = document.createElement('span');
+      textNode.className = 't-text';
+      textNode.textContent = text;
+
+      entry.appendChild(timeNode);
+      entry.appendChild(labelNode);
+      entry.appendChild(textNode);
+      panel.insertBefore(entry, panel.firstChild);
+
+      sendWS({
+        type: 'client_log',
+        event: 'transcript_' + type,
+        text: text
+      });
+    }
+
+    function logEvent(text, cls) {
+      var log = document.getElementById('eventLog');
+      var node = document.createElement('div');
+      node.className = 'evt' + (cls ? ' ' + cls : '');
+
+      var ts = new Date().toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3
+      });
+
+      node.textContent = '[' + ts + '] ' + text;
+      log.insertBefore(node, log.firstChild);
+
+      while (log.children.length > 300) {
+        log.removeChild(log.lastChild);
+      }
+
+      sendWS({
+        type: 'client_log',
+        event: cls || 'info',
+        text: text,
+        state: {
+          tutorSpeaking: tutorSpeaking,
+          vadSpeechActive: vadSpeechActive,
+          vadReady: vadReady,
+          scheduledSources: scheduledSources.length,
+          micLevelDb: Math.round(micLevelDb),
+          msSinceLastTutorAudio: lastTutorAudioAt > 0
+            ? Math.round(performance.now() - lastTutorAudioAt) : -1
+        }
+      });
+    }
+
+    // =========================================================================
+    // UI helpers
+    // =========================================================================
+    function setStatus(state, label) {
+      var dot = document.getElementById('statusDot');
+      dot.className = 'status-dot' + (state ? ' ' + state : '');
+      document.getElementById('statusLabel').textContent = label;
+    }
+
+    function updateMetricCards() {
+      // Response start avg
+      var respEl = document.getElementById('mRespAvg');
+      if (latencyData.response_start && latencyData.response_start.count > 0) {
+        var rAvg = latencyData.response_start.avg;
+        respEl.textContent = rAvg + 'ms';
+        respEl.className = 'metric-value ' + getBudgetColor('response_start', rAvg);
+      } else {
+        respEl.textContent = '--';
+        respEl.className = 'metric-value';
+      }
+
+      // Interruption stop avg
+      var intEl = document.getElementById('mIntAvg');
+      if (latencyData.interruption_stop && latencyData.interruption_stop.count > 0) {
+        var iAvg = latencyData.interruption_stop.avg;
+        intEl.textContent = iAvg + 'ms';
+        intEl.className = 'metric-value ' + getBudgetColor('interruption_stop', iAvg);
+      } else {
+        intEl.textContent = '--';
+        intEl.className = 'metric-value';
+      }
+
+      // Turn gap avg
+      var gapEl = document.getElementById('mTurnGapAvg');
+      if (latencyData.turn_to_turn && latencyData.turn_to_turn.count > 0) {
+        var tAvg = latencyData.turn_to_turn.avg;
+        gapEl.textContent = tAvg + 'ms';
+        gapEl.className = 'metric-value ' + getBudgetColor('turn_to_turn', tAvg);
+      } else {
+        gapEl.textContent = '--';
+        gapEl.className = 'metric-value';
+      }
+
+      document.getElementById('mTurns').textContent = turnCount;
+      document.getElementById('mAlerts').textContent = alertCount;
+      document.getElementById('mAudioOut').textContent = audioChunksOut;
+    }
+
+    function clearAll() {
+      var transcript = document.getElementById('transcript');
+      while (transcript.firstChild) transcript.removeChild(transcript.firstChild);
+
+      var eventLog = document.getElementById('eventLog');
+      while (eventLog.firstChild) eventLog.removeChild(eventLog.firstChild);
+
+      // Clear latency timeline but keep the empty placeholder
+      var latLog = document.getElementById('latencyLog');
+      var entries = latLog.querySelectorAll('.lat-entry');
+      for (var i = 0; i < entries.length; i++) entries[i].remove();
+      var empty = document.getElementById('latencyEmpty');
+      if (empty) empty.style.display = '';
+
+      // Reset state
+      latencyData = {
+        response_start: null,
+        interruption_stop: null,
+        turn_to_turn: null,
+        first_byte: null
+      };
+      turnCount = 0;
+      alertCount = 0;
+      audioChunksOut = 0;
+      clientFirstByteRecorded = false;
+      lastAudioSentAt = 0;
+      lastSpeechEndAt = 0;
+      bargeInSentAt = 0;
+      lastTurnCompleteAt = 0;
+
+      tutorTranscriptBuffer = '';
+      turnHasOutputTranscript = false;
+
+      // Reset HUD
+      for (var metric in HUD_IDS) {
+        if (HUD_IDS.hasOwnProperty(metric)) {
+          var ids = HUD_IDS[metric];
+          var valEl = document.getElementById(ids.val);
+          valEl.textContent = '--';
+          valEl.className = 'hud-metric-value dim';
+          document.getElementById(ids.dot).className = 'hud-budget-dot';
+          var barEl = document.getElementById(ids.bar);
+          barEl.style.width = '0%';
+          barEl.className = 'hud-metric-bar-fill';
+        }
+      }
+      document.getElementById('hudAlerts').textContent = '';
+
+      // Reset details to default
+      document.getElementById('hudDetResponseStart').textContent = 'target <500ms | alert >800ms';
+      document.getElementById('hudDetInterruptionStop').textContent = 'target <200ms | alert >400ms';
+      document.getElementById('hudDetTurnToTurn').textContent = 'target <1500ms | alert >2500ms';
+      document.getElementById('hudDetFirstByte').textContent = 'target <3000ms | alert >5000ms';
+
+      updateMetricCards();
+      logEvent('UI cleared');
+    }
+
+    // =========================================================================
+    // Summary export (safe DOM methods only)
+    // =========================================================================
+    function showSummary() {
+      var body = document.getElementById('summaryBody');
+      while (body.firstChild) body.removeChild(body.firstChild);
+
+      // Session info
+      var elapsed = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0;
+      document.getElementById('summaryInfo').textContent =
+        'Duration: ' + elapsed + 's | Turns: ' + turnCount + ' | Alerts: ' + alertCount +
+        ' | Audio chunks: ' + audioChunksOut;
+
+      var metricKeys = ['response_start', 'interruption_stop', 'turn_to_turn', 'first_byte'];
+      var textLines = [];
+      textLines.push('Session Latency Summary');
+      textLines.push('=======================');
+      textLines.push('Duration: ' + elapsed + 's | Turns: ' + turnCount + ' | Alerts: ' + alertCount);
+      textLines.push('');
+      textLines.push(
+        padRight('Metric', 20) + padRight('Count', 7) + padRight('Avg', 9) +
+        padRight('P95', 9) + padRight('Min', 9) + padRight('Max', 9) +
+        padRight('Target', 9) + padRight('Alert', 9) + 'Status'
+      );
+      textLines.push(repeatChar('-', 99));
+
+      for (var i = 0; i < metricKeys.length; i++) {
+        var m = metricKeys[i];
+        var s = latencyData[m];
+        var b = BUDGETS[m];
+
+        var tr = document.createElement('tr');
+
+        if (s && s.count > 0) {
+          var avgColor = getBudgetColor(m, s.avg);
+          var statusText = avgColor === 'green' ? 'OK' : (avgColor === 'yellow' ? 'WARN' : 'FAIL');
+
+          // Build cells with safe DOM methods
+          var tdName = document.createElement('td');
+          tdName.textContent = formatMetricName(m);
+          tr.appendChild(tdName);
+
+          var tdCount = document.createElement('td');
+          tdCount.textContent = s.count;
+          tr.appendChild(tdCount);
+
+          var tdAvg = document.createElement('td');
+          tdAvg.textContent = s.avg + 'ms';
+          tdAvg.className = 'val-' + avgColor;
+          tr.appendChild(tdAvg);
+
+          var tdP95 = document.createElement('td');
+          tdP95.textContent = s.p95 + 'ms';
+          tr.appendChild(tdP95);
+
+          var tdMin = document.createElement('td');
+          tdMin.textContent = s.min + 'ms';
+          tr.appendChild(tdMin);
+
+          var tdMax = document.createElement('td');
+          tdMax.textContent = s.max + 'ms';
+          tr.appendChild(tdMax);
+
+          var tdTarget = document.createElement('td');
+          tdTarget.textContent = b.target + 'ms';
+          tr.appendChild(tdTarget);
+
+          var tdAlert = document.createElement('td');
+          tdAlert.textContent = b.alert + 'ms';
+          tr.appendChild(tdAlert);
+
+          var tdStatus = document.createElement('td');
+          tdStatus.textContent = statusText;
+          tdStatus.className = 'val-' + avgColor;
+          tr.appendChild(tdStatus);
+
+          textLines.push(
+            padRight(formatMetricName(m), 20) +
+            padRight(String(s.count), 7) +
+            padRight(s.avg + 'ms', 9) +
+            padRight(s.p95 + 'ms', 9) +
+            padRight(s.min + 'ms', 9) +
+            padRight(s.max + 'ms', 9) +
+            padRight(b.target + 'ms', 9) +
+            padRight(b.alert + 'ms', 9) +
+            statusText
+          );
+        } else {
+          var tdNameEmpty = document.createElement('td');
+          tdNameEmpty.textContent = formatMetricName(m);
+          tr.appendChild(tdNameEmpty);
+
+          var tdNoData = document.createElement('td');
+          tdNoData.textContent = 'No data';
+          tdNoData.colSpan = 8;
+          tdNoData.style.color = 'var(--text-dim)';
+          tr.appendChild(tdNoData);
+
+          textLines.push(padRight(formatMetricName(m), 20) + '-- (no data)');
+        }
+
+        body.appendChild(tr);
+      }
+
+      document.getElementById('summaryPre').textContent = textLines.join('\n');
+      document.getElementById('summaryOverlay').classList.add('visible');
+    }
+
+    function closeSummaryOuter(evt) {
+      if (evt.target === document.getElementById('summaryOverlay')) {
+        closeSummary();
+      }
+    }
+
+    function closeSummary() {
+      document.getElementById('summaryOverlay').classList.remove('visible');
+      document.getElementById('summaryPre').classList.remove('visible');
+    }
+
+    function toggleSummaryText() {
+      document.getElementById('summaryPre').classList.toggle('visible');
+    }
+
+    function copySummary() {
+      var text = document.getElementById('summaryPre').textContent;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+          var fb = document.getElementById('copyFeedback');
+          fb.classList.add('show');
+          setTimeout(function() { fb.classList.remove('show'); }, 2000);
+          logEvent('Summary copied to clipboard');
+        });
+      }
+    }
+
+    function padRight(str, len) {
+      while (str.length < len) str += ' ';
+      return str;
+    }
+
+    function repeatChar(ch, n) {
+      var s = '';
+      for (var i = 0; i < n; i++) s += ch;
+      return s;
+    }
+
+    // =========================================================================
+    // WebSocket send helper
+    // =========================================================================
+    function sendWS(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(obj));
+      }
+    }
+
+    // =========================================================================
+    // Binary conversion utils
+    // =========================================================================
+    function float32ToInt16(float32Array) {
+      var int16 = new Int16Array(float32Array.length);
+      for (var i = 0; i < float32Array.length; i++) {
+        var s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var binary = '';
+      for (var i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      var binary = atob(base64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    // =========================================================================
+    // Periodic metric refresh
+    // =========================================================================
+    setInterval(updateMetricCards, 1000);
+  </script>
+</body>
+</html>

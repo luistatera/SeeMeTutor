@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POC 06 — Session Resilience</title>
+  <!-- Silero VAD via ONNX Runtime — runs entirely in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/bundle.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0D1B2A;
+      --bg-card: #16293D;
+      --border: rgba(66, 133, 244, 0.2);
+      --blue: #4285F4;
+      --green: #34A853;
+      --red: #EA4335;
+      --yellow: #FBBC04;
+      --orange: #FF6D00;
+      --text: #E8EFF8;
+      --text-dim: #8DA8C4;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 100vh;
+    }
+
+    h1 { font-size: 22px; font-weight: 700; color: var(--blue); }
+    h1 span { color: var(--text-dim); font-weight: 400; font-size: 14px; }
+
+    /* Connection banner — appears during reconnect */
+    .connection-banner {
+      display: none;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .connection-banner.reconnecting {
+      display: block;
+      background: rgba(251, 188, 4, 0.15);
+      border: 1px solid rgba(251, 188, 4, 0.4);
+      color: var(--yellow);
+      animation: banner-pulse 1.5s infinite;
+    }
+    .connection-banner.reconnected {
+      display: block;
+      background: rgba(52, 168, 83, 0.15);
+      border: 1px solid rgba(52, 168, 83, 0.4);
+      color: var(--green);
+    }
+    .connection-banner.failed {
+      display: block;
+      background: rgba(234, 67, 53, 0.15);
+      border: 1px solid rgba(234, 67, 53, 0.4);
+      color: var(--red);
+    }
+
+    @keyframes banner-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #4A6A88; flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .status-dot.listening { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .status-dot.speaking { background: var(--blue); box-shadow: 0 0 10px var(--blue); animation: pulse 1s infinite; }
+    .status-dot.interrupted { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); }
+    .status-dot.reconnecting { background: var(--yellow); box-shadow: 0 0 12px var(--yellow); animation: pulse 0.5s infinite; }
+    .status-dot.error { background: var(--red); }
+    .status-dot.disconnected { background: var(--red); box-shadow: 0 0 10px var(--red); }
+    .status-label { font-size: 14px; color: var(--text-dim); flex: 1; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Controls */
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    button {
+      padding: 12px 24px; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s; font-family: var(--font);
+    }
+    .btn-mic { background: var(--green); color: white; flex: 1; min-width: 120px; }
+    .btn-mic.active { background: var(--red); }
+    .btn-mic:hover { opacity: 0.9; }
+    .btn-secondary {
+      background: var(--bg-card); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #1a3149; }
+    .btn-danger {
+      background: rgba(234, 67, 53, 0.15); color: var(--red);
+      border: 1px solid rgba(234, 67, 53, 0.3);
+    }
+    .btn-danger:hover { background: rgba(234, 67, 53, 0.25); }
+
+    /* Metrics */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+    .metric-value { font-size: 24px; font-weight: 700; color: var(--blue); line-height: 1.2; }
+    .metric-value.reconnect { color: var(--yellow); }
+    .metric-value.success { color: var(--green); }
+    .metric-value.fail { color: var(--red); }
+    .metric-label {
+      font-size: 10px; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px;
+    }
+
+    /* Transcript */
+    .transcript-panel {
+      flex: 1; min-height: 180px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px;
+      overflow-y: auto; font-size: 13px; line-height: 1.6;
+    }
+    .transcript-panel::-webkit-scrollbar { width: 6px; }
+    .transcript-panel::-webkit-scrollbar-thumb { background: rgba(66,133,244,0.3); border-radius: 3px; }
+
+    .t-entry { margin-bottom: 6px; }
+    .t-time { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
+    .t-label { font-weight: 600; margin-right: 4px; }
+    .t-entry.tutor .t-label, .t-entry.tutor .t-text { color: var(--blue); }
+    .t-entry.student .t-label, .t-entry.student .t-text { color: var(--green); }
+    .t-entry.event .t-label, .t-entry.event .t-text { color: var(--yellow); font-weight: 600; }
+    .t-entry.reconnect .t-label, .t-entry.reconnect .t-text { color: var(--orange); font-weight: 600; }
+    .t-entry.error .t-label, .t-entry.error .t-text { color: var(--red); }
+
+    /* Event log */
+    .event-log {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; max-height: 150px;
+      overflow-y: auto; font-size: 12px;
+      font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+      color: var(--text-dim);
+    }
+    .event-log::-webkit-scrollbar { width: 6px; }
+    .event-log::-webkit-scrollbar-thumb { background: rgba(66,133,244,0.3); border-radius: 3px; }
+    .evt { margin-bottom: 3px; }
+    .evt-reconnect { color: var(--orange); }
+    .evt-int { color: var(--yellow); }
+    .evt-tc { color: var(--blue); }
+    .evt-error { color: var(--red); }
+    .evt-success { color: var(--green); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>POC 06 — Session Resilience <span>SeeMe Tutor</span></h1>
+
+    <!-- Connection state banner -->
+    <div class="connection-banner" id="connectionBanner"></div>
+
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-label" id="statusLabel">Ready — click Start Mic to begin</div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-mic" id="btnMic" onclick="toggleMic()">Start Mic</button>
+      <button class="btn-danger" id="btnSimDisconnect" onclick="simulateDisconnect('gemini')">Simulate Gemini Drop</button>
+      <button class="btn-danger" onclick="simulateDisconnect('websocket')">Simulate WS Drop</button>
+      <button class="btn-secondary" onclick="clearAll()">Clear</button>
+    </div>
+
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-value reconnect" id="mReconnects">0</div>
+        <div class="metric-label">Reconnects</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value success" id="mSuccesses">0</div>
+        <div class="metric-label">Recovered</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value fail" id="mFailures">0</div>
+        <div class="metric-label">Failed</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTurns">0</div>
+        <div class="metric-label">Turns</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mUptime">0s</div>
+        <div class="metric-label">Uptime</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mLatency">&mdash;</div>
+        <div class="metric-label">Last Reconnect</div>
+      </div>
+    </div>
+
+    <div class="transcript-panel" id="transcript"></div>
+    <div class="event-log" id="eventLog"></div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // State
+    // =========================================================================
+    var ws = null;
+    var micActive = false;
+    var audioCtx = null;
+    var micStream = null;
+    var processorNode = null;
+
+    // VAD state
+    var vadInstance = null;
+    var vadEnabled = true;
+    var vadReady = false;
+    var vadSpeechActive = false;
+    var vadInitialized = false;
+    var vadGraceTimer = null;
+    var VAD_GRACE_MS = 500;
+
+    // Tutor speaking state
+    var tutorSpeaking = false;
+    var tutorSpeakingStartedAt = 0;
+    var lastTutorAudioAt = 0;
+    var turnCompletePending = false;
+
+    // Audio playback
+    var playbackCtx = null;
+    var nextPlayTime = 0;
+    var scheduledSources = [];
+    var PLAYBACK_RATE = 24000;
+
+    // Session state (preserved across reconnects)
+    var sessionTranscript = [];  // [{role: "tutor"|"student", text: "..."}]
+    var sessionStartedAt = Date.now();
+
+    // Reconnect state
+    var reconnectCount = 0;
+    var reconnectSuccesses = 0;
+    var reconnectFailures = 0;
+    var turnCount = 0;
+    var lastReconnectLatencyMs = 0;
+    var wsReconnectAttempt = 0;
+    var wsReconnectTimer = null;
+    var wsDisconnectedAt = 0;
+    var intentionalClose = false;
+
+    // Reconnect parameters (browser-side)
+    var WS_MAX_RECONNECT_ATTEMPTS = 3;
+    var WS_INITIAL_BACKOFF_MS = 500;
+    var WS_BACKOFF_MULTIPLIER = 2;
+    var WS_MAX_BACKOFF_MS = 4000;
+
+    // Uptime tracker
+    var uptimeInterval = null;
+
+    // =========================================================================
+    // VAD — lazy init on first mic click
+    // =========================================================================
+    async function ensureVAD() {
+      if (vadInitialized) return;
+      vadInitialized = true;
+
+      if (typeof vad === 'undefined') {
+        logEvent('VAD library not loaded — running without VAD');
+        vadReady = false;
+        return;
+      }
+
+      try {
+        logEvent('Loading Silero VAD v5 model...');
+        vadInstance = await vad.MicVAD.new({
+          positiveSpeechThreshold: 0.72,
+          negativeSpeechThreshold: 0.45,
+          minSpeechMs: 260,
+          redemptionMs: 700,
+          preSpeechPadMs: 0,
+          model: "v5",
+          baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+          onSpeechStart: onVADSpeechStart,
+          onSpeechEnd: onVADSpeechEnd,
+          onVADMisfire: function() { logEvent('VAD: misfire'); },
+        });
+        vadReady = true;
+        logEvent('VAD ready');
+      } catch (err) {
+        logEvent('VAD init FAILED: ' + err.message);
+        vadReady = false;
+      }
+    }
+
+    function onVADSpeechStart() {
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      if (!micActive) return;
+      vadSpeechActive = true;
+      setStatus('listening', 'Speaking...');
+    }
+
+    function onVADSpeechEnd() {
+      if (vadGraceTimer) clearTimeout(vadGraceTimer);
+      vadGraceTimer = setTimeout(function() {
+        vadSpeechActive = false;
+        vadGraceTimer = null;
+        if (micActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, VAD_GRACE_MS);
+    }
+
+    // =========================================================================
+    // WebSocket with reconnect logic
+    // =========================================================================
+    function connectWS() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;  // Already connected or connecting
+      }
+
+      var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      var url = proto + '://' + location.host + '/ws';
+
+      logEvent('WS connecting... (attempt ' + (wsReconnectAttempt + 1) + ')', 'evt-reconnect');
+      ws = new WebSocket(url);
+
+      ws.onopen = function() {
+        logEvent('WS connected', 'evt-success');
+        wsReconnectAttempt = 0;
+
+        // If this was a reconnect, send session state
+        if (wsDisconnectedAt > 0) {
+          var latencyMs = Date.now() - wsDisconnectedAt;
+          lastReconnectLatencyMs = latencyMs;
+          reconnectSuccesses++;
+          wsDisconnectedAt = 0;
+
+          logEvent('WS reconnected in ' + latencyMs + 'ms', 'evt-success');
+          addTranscript('reconnect', 'Connection restored (' + latencyMs + 'ms)');
+
+          // Send stored transcript to backend for context injection
+          sendResumeContext();
+          showBanner('reconnected', 'Reconnected! Session continues...');
+          setTimeout(function() { hideBanner(); }, 3000);
+          updateMetrics();
+        }
+
+        if (micActive) {
+          setStatus('listening', 'Listening...');
+        }
+      };
+
+      ws.onclose = function(event) {
+        var reason = event.reason || 'unknown';
+        var code = event.code;
+
+        logEvent('WS closed (code=' + code + ', reason=' + reason + ')', 'evt-reconnect');
+
+        // If this was intentional (e.g., simulated disconnect), still reconnect
+        if (intentionalClose) {
+          intentionalClose = false;
+        }
+
+        // Record disconnect time for latency measurement
+        if (wsDisconnectedAt === 0) {
+          wsDisconnectedAt = Date.now();
+          reconnectCount++;
+        }
+
+        // Attempt reconnect with exponential backoff
+        attemptReconnect();
+      };
+
+      ws.onerror = function(event) {
+        logEvent('WS error', 'evt-error');
+      };
+
+      ws.onmessage = handleMessage;
+    }
+
+    function attemptReconnect() {
+      if (wsReconnectAttempt >= WS_MAX_RECONNECT_ATTEMPTS) {
+        // All retries exhausted
+        reconnectFailures++;
+        logEvent('All ' + WS_MAX_RECONNECT_ATTEMPTS + ' reconnect attempts failed', 'evt-error');
+        addTranscript('error', 'Connection lost. Please restart the session.');
+        showBanner('failed', 'Session ended — connection lost after ' + WS_MAX_RECONNECT_ATTEMPTS + ' attempts. Please reload the page.');
+        setStatus('disconnected', 'Disconnected — session ended');
+        updateMetrics();
+        return;
+      }
+
+      var backoffMs = Math.min(
+        WS_INITIAL_BACKOFF_MS * Math.pow(WS_BACKOFF_MULTIPLIER, wsReconnectAttempt),
+        WS_MAX_BACKOFF_MS
+      );
+
+      wsReconnectAttempt++;
+      var attemptNum = wsReconnectAttempt;
+
+      logEvent(
+        'Reconnecting in ' + backoffMs + 'ms (attempt ' + attemptNum + '/' + WS_MAX_RECONNECT_ATTEMPTS + ')',
+        'evt-reconnect'
+      );
+      showBanner(
+        'reconnecting',
+        'Reconnecting... (attempt ' + attemptNum + '/' + WS_MAX_RECONNECT_ATTEMPTS + ')'
+      );
+      setStatus('reconnecting', 'Reconnecting (attempt ' + attemptNum + ')...');
+
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = setTimeout(function() {
+        wsReconnectTimer = null;
+        connectWS();
+      }, backoffMs);
+    }
+
+    function sendResumeContext() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (sessionTranscript.length === 0) return;
+
+      // Send the last N transcript entries to backend
+      var historyToSend = sessionTranscript.slice(-20);
+      ws.send(JSON.stringify({
+        type: 'resume_context',
+        history: historyToSend,
+      }));
+      logEvent('Sent resume context (' + historyToSend.length + ' entries)', 'evt-reconnect');
+    }
+
+    function simulateDisconnect(target) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        logEvent('Cannot simulate disconnect — not connected', 'evt-error');
+        return;
+      }
+
+      logEvent('SIMULATING ' + target.toUpperCase() + ' DISCONNECT', 'evt-reconnect');
+      addTranscript('reconnect', 'Simulating ' + target + ' disconnect...');
+
+      if (target === 'gemini') {
+        // Tell backend to kill its Gemini session
+        ws.send(JSON.stringify({ type: 'simulate_disconnect', target: 'gemini' }));
+      } else if (target === 'websocket') {
+        // Tell backend to close our WS — triggers browser reconnect
+        intentionalClose = true;
+        ws.send(JSON.stringify({ type: 'simulate_disconnect', target: 'websocket' }));
+      }
+    }
+
+    // =========================================================================
+    // Message handler
+    // =========================================================================
+    function handleMessage(evt) {
+      var msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch (e) {
+        return;
+      }
+
+      switch (msg.type) {
+        case 'audio':
+          turnCompletePending = false;
+          if (!tutorSpeaking) {
+            tutorSpeaking = true;
+            tutorSpeakingStartedAt = performance.now();
+          }
+          lastTutorAudioAt = performance.now();
+          playAudioChunk(msg.data);
+          setStatus('speaking', 'Tutor speaking...');
+          break;
+
+        case 'text':
+        case 'output_transcript':
+          addTranscript('tutor', msg.data);
+          // Store in session transcript for reconnect context
+          sessionTranscript.push({ role: 'tutor', text: msg.data });
+          if (sessionTranscript.length > 50) sessionTranscript = sessionTranscript.slice(-50);
+          break;
+
+        case 'input_transcript':
+          addTranscript('student', msg.data);
+          sessionTranscript.push({ role: 'student', text: msg.data });
+          if (sessionTranscript.length > 50) sessionTranscript = sessionTranscript.slice(-50);
+          break;
+
+        case 'interrupted':
+          handleInterruption(msg.data);
+          break;
+
+        case 'turn_complete':
+          turnCount = (msg.data && msg.data.count) || turnCount + 1;
+          turnCompletePending = true;
+          logEvent('TURN_COMPLETE #' + turnCount, 'evt-tc');
+          maybeFinalizeTurnComplete();
+          break;
+
+        // -- Reconnect-specific messages --
+        case 'reconnecting':
+          var attempt = msg.data.attempt || 0;
+          var maxAttempts = msg.data.max_attempts || 3;
+          logEvent(
+            'Backend reconnecting to Gemini (attempt ' + attempt + '/' + maxAttempts + ')',
+            'evt-reconnect'
+          );
+          showBanner(
+            'reconnecting',
+            'Reconnecting to AI... (attempt ' + attempt + '/' + maxAttempts + ')'
+          );
+          setStatus('reconnecting', 'Gemini reconnecting...');
+          break;
+
+        case 'reconnected':
+          var rc = msg.data.reconnect_count || 0;
+          reconnectSuccesses++;
+          logEvent(
+            'Backend reconnected to Gemini (total reconnects: ' + rc + ')',
+            'evt-success'
+          );
+          addTranscript('reconnect', 'AI connection restored. Session continues.');
+          showBanner('reconnected', 'Reconnected! Resuming session...');
+          setTimeout(function() { hideBanner(); }, 3000);
+          if (micActive) setStatus('listening', 'Listening...');
+          updateMetrics();
+          break;
+
+        case 'session_limit':
+          addTranscript('event', msg.data.message || 'Session limit reached.');
+          showBanner('failed', msg.data.message || 'Session ended — context limit reached.');
+          setStatus('error', 'Session limit');
+          logEvent('SESSION LIMIT: ' + (msg.data.reason || 'unknown'), 'evt-error');
+          break;
+
+        case 'session_ended':
+          addTranscript('error', msg.data.message || 'Session ended.');
+          showBanner('failed', msg.data.message || 'Session ended. Please restart.');
+          setStatus('disconnected', 'Session ended');
+          logEvent('SESSION ENDED: ' + (msg.data.reason || 'unknown'), 'evt-error');
+          reconnectFailures++;
+          updateMetrics();
+          break;
+
+        case 'error':
+          addTranscript('error', msg.data);
+          setStatus('error', 'Error');
+          logEvent('ERROR: ' + msg.data, 'evt-error');
+          break;
+      }
+    }
+
+    function handleInterruption(data) {
+      if (!tutorSpeaking && scheduledSources.length === 0) return;
+      turnCompletePending = false;
+      cancelPlayback();
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      setStatus('interrupted', 'Interrupted');
+      addTranscript('event', 'INTERRUPTED');
+      logEvent('GEMINI INTERRUPTED', 'evt-int');
+      setTimeout(function() {
+        if (micActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, 1200);
+    }
+
+    // =========================================================================
+    // Connection banner
+    // =========================================================================
+    function showBanner(state, message) {
+      var banner = document.getElementById('connectionBanner');
+      banner.className = 'connection-banner ' + state;
+      banner.textContent = message;
+    }
+
+    function hideBanner() {
+      var banner = document.getElementById('connectionBanner');
+      banner.className = 'connection-banner';
+      banner.style.display = 'none';
+      // Reset display for next use
+      setTimeout(function() { banner.style.display = ''; }, 100);
+    }
+
+    // =========================================================================
+    // Microphone capture
+    // =========================================================================
+    async function toggleMic() {
+      if (micActive) {
+        await stopMic();
+      } else {
+        await startMic();
+      }
+    }
+
+    async function startMic() {
+      try {
+        setStatus('', 'Starting...');
+        await ensureVAD();
+
+        audioCtx = new AudioContext({ sampleRate: 16000 });
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+
+        var source = audioCtx.createMediaStreamSource(micStream);
+        processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+
+        var silenceBuffer = new Int16Array(4096);
+
+        processorNode.onaudioprocess = function(e) {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+          var float32 = e.inputBuffer.getChannelData(0);
+          var shouldSendReal = vadReady ? vadSpeechActive : true;
+
+          var b64;
+          if (shouldSendReal) {
+            var int16 = float32ToInt16(float32);
+            b64 = arrayBufferToBase64(int16.buffer);
+          } else {
+            b64 = arrayBufferToBase64(silenceBuffer.buffer);
+          }
+
+          ws.send(JSON.stringify({ type: 'audio', data: b64 }));
+        };
+
+        source.connect(processorNode);
+        processorNode.connect(audioCtx.destination);
+
+        if (vadReady && vadInstance) {
+          await vadInstance.start();
+          logEvent('VAD listening started');
+        }
+
+        micActive = true;
+        vadSpeechActive = false;
+        document.getElementById('btnMic').textContent = 'Stop Mic';
+        document.getElementById('btnMic').classList.add('active');
+        setStatus('listening', vadReady ? 'Listening (VAD)...' : 'Listening...');
+        logEvent('Mic started');
+      } catch (err) {
+        setStatus('error', 'Mic error: ' + err.message);
+        logEvent('Mic error: ' + err.message, 'evt-error');
+      }
+    }
+
+    async function stopMic() {
+      if (vadInstance && vadReady) {
+        try { await vadInstance.pause(); } catch (e) { /* ignore */ }
+      }
+      if (processorNode) { processorNode.disconnect(); processorNode = null; }
+      if (micStream) { micStream.getTracks().forEach(function(t) { t.stop(); }); micStream = null; }
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+      micActive = false;
+      vadSpeechActive = false;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      turnCompletePending = false;
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      document.getElementById('btnMic').textContent = 'Start Mic';
+      document.getElementById('btnMic').classList.remove('active');
+      setStatus('', 'Mic off');
+      logEvent('Mic stopped');
+    }
+
+    // =========================================================================
+    // Audio playback with instant cancellation
+    // =========================================================================
+    function playAudioChunk(b64Data) {
+      if (!playbackCtx) {
+        playbackCtx = new AudioContext({ sampleRate: PLAYBACK_RATE });
+      }
+
+      var raw = base64ToArrayBuffer(b64Data);
+      var int16 = new Int16Array(raw);
+      var float32 = new Float32Array(int16.length);
+      for (var i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      var buffer = playbackCtx.createBuffer(1, float32.length, PLAYBACK_RATE);
+      buffer.getChannelData(0).set(float32);
+
+      var src = playbackCtx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(playbackCtx.destination);
+
+      var now = playbackCtx.currentTime;
+      if (nextPlayTime <= now) {
+        nextPlayTime = now + 0.005;
+      }
+      src.start(nextPlayTime);
+
+      var entry = { source: src, endTime: nextPlayTime + buffer.duration };
+      scheduledSources.push(entry);
+      src.onended = function() {
+        var idx = scheduledSources.indexOf(entry);
+        if (idx !== -1) scheduledSources.splice(idx, 1);
+        maybeFinalizeTurnComplete();
+      };
+
+      nextPlayTime += buffer.duration;
+    }
+
+    function cancelPlayback() {
+      for (var i = 0; i < scheduledSources.length; i++) {
+        try { scheduledSources[i].source.stop(); } catch (e) { /* already stopped */ }
+      }
+      scheduledSources = [];
+      nextPlayTime = 0;
+      maybeFinalizeTurnComplete();
+    }
+
+    function maybeFinalizeTurnComplete() {
+      if (!turnCompletePending) return;
+      if (scheduledSources.length > 0) return;
+
+      turnCompletePending = false;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      setStatus('listening', 'Listening...');
+      logEvent('TURN_COMPLETE #' + turnCount + ' (audio drained)', 'evt-tc');
+      updateMetrics();
+    }
+
+    // =========================================================================
+    // Metrics
+    // =========================================================================
+    function updateMetrics() {
+      document.getElementById('mReconnects').textContent = reconnectCount;
+      document.getElementById('mSuccesses').textContent = reconnectSuccesses;
+      document.getElementById('mFailures').textContent = reconnectFailures;
+      document.getElementById('mTurns').textContent = turnCount;
+      document.getElementById('mLatency').textContent =
+        lastReconnectLatencyMs > 0 ? lastReconnectLatencyMs + 'ms' : '\u2014';
+    }
+
+    function updateUptime() {
+      var s = Math.round((Date.now() - sessionStartedAt) / 1000);
+      var m = Math.floor(s / 60);
+      var sec = s % 60;
+      document.getElementById('mUptime').textContent =
+        m > 0 ? m + 'm ' + sec + 's' : sec + 's';
+    }
+
+    // =========================================================================
+    // UI helpers
+    // =========================================================================
+    function setStatus(state, label) {
+      document.getElementById('statusDot').className = 'status-dot' + (state ? ' ' + state : '');
+      document.getElementById('statusLabel').textContent = label;
+    }
+
+    function addTranscript(type, text) {
+      var panel = document.getElementById('transcript');
+      var entry = document.createElement('div');
+      entry.className = 't-entry ' + type;
+
+      var timeStr = new Date().toLocaleTimeString('en-US', {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+
+      var timeSpan = document.createElement('span');
+      timeSpan.className = 't-time';
+      timeSpan.textContent = timeStr;
+
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 't-label';
+      if (type === 'tutor') labelSpan.textContent = 'Tutor: ';
+      else if (type === 'student') labelSpan.textContent = 'Student: ';
+      else if (type === 'event') labelSpan.textContent = 'GEMINI: ';
+      else if (type === 'reconnect') labelSpan.textContent = 'RECONNECT: ';
+      else if (type === 'error') labelSpan.textContent = 'ERROR: ';
+
+      var textSpan = document.createElement('span');
+      textSpan.className = 't-text';
+      textSpan.textContent = text;
+
+      entry.appendChild(timeSpan);
+      entry.appendChild(labelSpan);
+      entry.appendChild(textSpan);
+      panel.insertBefore(entry, panel.firstChild);
+
+      // Forward transcript entries to backend log
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: 'transcript_' + type,
+          text: text,
+        }));
+      }
+    }
+
+    function logEvent(text, cls) {
+      var log = document.getElementById('eventLog');
+      var entry = document.createElement('div');
+      entry.className = 'evt' + (cls ? ' ' + cls : '');
+      var timeStr = new Date().toLocaleTimeString('en-US', {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+        fractionalSecondDigits: 3
+      });
+      entry.textContent = '[' + timeStr + '] ' + text;
+      log.insertBefore(entry, log.firstChild);
+
+      // Forward to backend for file logging
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: cls || 'info',
+          text: text,
+        }));
+      }
+    }
+
+    function clearAll() {
+      var transcript = document.getElementById('transcript');
+      while (transcript.firstChild) transcript.removeChild(transcript.firstChild);
+      var eventLog = document.getElementById('eventLog');
+      while (eventLog.firstChild) eventLog.removeChild(eventLog.firstChild);
+      reconnectCount = 0; reconnectSuccesses = 0; reconnectFailures = 0;
+      turnCount = 0; lastReconnectLatencyMs = 0;
+      sessionTranscript = [];
+      updateMetrics();
+    }
+
+    // =========================================================================
+    // Conversion utilities
+    // =========================================================================
+    function float32ToInt16(float32Array) {
+      var int16 = new Int16Array(float32Array.length);
+      for (var i = 0; i < float32Array.length; i++) {
+        var s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var binary = '';
+      for (var i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      var binary = atob(base64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    // =========================================================================
+    // Init
+    // =========================================================================
+    connectWS();
+    uptimeInterval = setInterval(updateUptime, 1000);
+  </script>
+</body>
+</html>

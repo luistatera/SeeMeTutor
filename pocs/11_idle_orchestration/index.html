@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POC 11 — Idle Orchestration</title>
+  <!-- Silero VAD via ONNX Runtime — runs entirely in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/bundle.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0D1B2A;
+      --bg-card: #16293D;
+      --border: rgba(66, 133, 244, 0.2);
+      --blue: #4285F4;
+      --green: #34A853;
+      --red: #EA4335;
+      --yellow: #FBBC04;
+      --orange: #FF6D00;
+      --gray: #6B7B8D;
+      --text: #E8EFF8;
+      --text-dim: #8DA8C4;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 100vh;
+    }
+
+    h1 { font-size: 22px; font-weight: 700; color: var(--blue); }
+    h1 span { color: var(--text-dim); font-weight: 400; font-size: 14px; }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #4A6A88; flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .status-dot.listening { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .status-dot.speaking { background: var(--blue); box-shadow: 0 0 10px var(--blue); animation: pulse 1s infinite; }
+    .status-dot.interrupted { background: var(--yellow); box-shadow: 0 0 10px var(--yellow); }
+    .status-dot.vad-bargein { background: var(--orange); box-shadow: 0 0 12px var(--orange); }
+    .status-dot.vad-speech { background: var(--green); box-shadow: 0 0 12px var(--orange); }
+    .status-dot.error { background: var(--red); }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Idle state indicator */
+    .idle-state-panel {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      transition: border-color 0.3s, background 0.3s;
+    }
+    .idle-state-panel.state-active {
+      border-color: var(--green);
+    }
+    .idle-state-panel.state-waiting {
+      border-color: var(--yellow);
+    }
+    .idle-state-panel.state-away {
+      border-color: var(--gray);
+      background: rgba(107, 123, 141, 0.1);
+    }
+    .idle-state-panel.state-resuming {
+      border-color: var(--blue);
+    }
+
+    .idle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      white-space: nowrap;
+    }
+    .idle-badge-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .idle-badge.active { background: rgba(52, 168, 83, 0.15); color: var(--green); }
+    .idle-badge.active .idle-badge-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .idle-badge.waiting { background: rgba(251, 188, 4, 0.15); color: var(--yellow); }
+    .idle-badge.waiting .idle-badge-dot { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1.5s infinite; }
+    .idle-badge.away { background: rgba(107, 123, 141, 0.15); color: var(--gray); }
+    .idle-badge.away .idle-badge-dot { background: var(--gray); }
+    .idle-badge.resuming { background: rgba(66, 133, 244, 0.15); color: var(--blue); }
+    .idle-badge.resuming .idle-badge-dot { background: var(--blue); box-shadow: 0 0 6px var(--blue); animation: pulse 0.8s infinite; }
+
+    .idle-timer {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+    }
+    .idle-detail {
+      font-size: 12px;
+      color: var(--text-dim);
+      flex: 1;
+    }
+
+    /* Controls */
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    button {
+      padding: 12px 24px; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s; font-family: var(--font);
+    }
+    .btn-mic { background: var(--green); color: white; flex: 1; min-width: 120px; }
+    .btn-mic.active { background: var(--red); }
+    .btn-mic:hover { opacity: 0.9; }
+    .btn-secondary {
+      background: var(--bg-card); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #1a3149; }
+    .btn-break {
+      background: var(--bg-card); color: var(--yellow);
+      border: 1px solid rgba(251, 188, 4, 0.3);
+    }
+    .btn-break:hover { background: rgba(251, 188, 4, 0.1); }
+    .btn-resume {
+      background: var(--bg-card); color: var(--blue);
+      border: 1px solid rgba(66, 133, 244, 0.3);
+    }
+    .btn-resume:hover { background: rgba(66, 133, 244, 0.1); }
+
+    .vad-toggle {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 10px;
+      font-size: 13px; color: var(--text-dim); cursor: pointer;
+    }
+    .vad-toggle input { accent-color: var(--orange); width: 16px; height: 16px; }
+    .vad-toggle.active { color: var(--orange); border-color: rgba(255,109,0,0.4); }
+
+    /* Metrics */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+    .metric-value { font-size: 24px; font-weight: 700; color: var(--blue); line-height: 1.2; }
+    .metric-value.idle-metric { color: var(--yellow); }
+    .metric-value.away-metric { color: var(--gray); }
+    .metric-value.resume-metric { color: var(--green); }
+    .metric-label {
+      font-size: 10px; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px;
+    }
+
+    /* Transcript */
+    .transcript-panel {
+      flex: 1; min-height: 180px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px;
+      overflow-y: auto; font-size: 13px; line-height: 1.6;
+    }
+    .transcript-panel::-webkit-scrollbar { width: 6px; }
+    .transcript-panel::-webkit-scrollbar-thumb { background: rgba(66,133,244,0.3); border-radius: 3px; }
+
+    .t-entry { margin-bottom: 6px; }
+    .t-time { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
+    .t-label { font-weight: 600; margin-right: 4px; }
+    .t-entry.tutor .t-label, .t-entry.tutor .t-text { color: var(--blue); }
+    .t-entry.student .t-label, .t-entry.student .t-text { color: var(--green); }
+    .t-entry.event .t-label, .t-entry.event .t-text { color: var(--yellow); font-weight: 600; }
+    .t-entry.vad-event .t-label, .t-entry.vad-event .t-text { color: var(--orange); font-weight: 600; }
+    .t-entry.idle .t-label, .t-entry.idle .t-text { color: var(--yellow); }
+    .t-entry.error .t-label, .t-entry.error .t-text { color: var(--red); }
+
+    /* Event log */
+    .event-log {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; max-height: 180px;
+      overflow-y: auto; font-size: 12px;
+      font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+      color: var(--text-dim);
+    }
+    .event-log::-webkit-scrollbar { width: 6px; }
+    .event-log::-webkit-scrollbar-thumb { background: rgba(66,133,244,0.3); border-radius: 3px; }
+    .evt { margin-bottom: 3px; }
+    .evt-vad { color: var(--orange); }
+    .evt-int { color: var(--yellow); }
+    .evt-tc { color: var(--blue); }
+    .evt-idle { color: var(--yellow); }
+    .evt-away { color: var(--gray); }
+    .evt-resume { color: var(--green); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>POC 11 — Idle Orchestration <span>SeeMe Tutor</span></h1>
+
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <div class="status-label" id="statusLabel">Ready — click Start Mic to begin</div>
+    </div>
+
+    <!-- Idle State Indicator -->
+    <div class="idle-state-panel state-active" id="idlePanel">
+      <div class="idle-badge active" id="idleBadge">
+        <div class="idle-badge-dot"></div>
+        <span id="idleBadgeLabel">Active</span>
+      </div>
+      <div class="idle-timer" id="idleTimer">0s</div>
+      <div class="idle-detail" id="idleDetail">Listening for student</div>
+    </div>
+
+    <div class="controls">
+      <button class="btn-mic" id="btnMic" onclick="toggleMic()">Start Mic</button>
+      <button class="btn-break" id="btnBreak" onclick="takeBreak()">Take a Break</button>
+      <button class="btn-resume" id="btnResume" onclick="imBack()">I'm Back</button>
+      <label class="vad-toggle active" id="vadToggle">
+        <input type="checkbox" id="vadCheckbox" checked onchange="onVadToggle(this.checked)" />
+        VAD Gate
+      </label>
+      <button class="btn-secondary" onclick="clearAll()">Clear</button>
+    </div>
+
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-value idle-metric" id="mGentleChecks">0</div>
+        <div class="metric-label">Gentle Checks</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value idle-metric" id="mOfferOptions">0</div>
+        <div class="metric-label">Offer Options</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value away-metric" id="mAwayEntries">0</div>
+        <div class="metric-label">Away Entries</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value resume-metric" id="mResumes">0</div>
+        <div class="metric-label">Resumes</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTurns">0</div>
+        <div class="metric-label">Turns</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mTransitions">0</div>
+        <div class="metric-label">Transitions</div>
+      </div>
+    </div>
+
+    <div class="transcript-panel" id="transcript"></div>
+    <div class="event-log" id="eventLog"></div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // State
+    // =========================================================================
+    var ws = null;
+    var micActive = false;
+    var audioCtx = null;
+    var micStream = null;
+    var processorNode = null;
+
+    // VAD state
+    var vadInstance = null;
+    var vadEnabled = true;
+    var vadReady = false;
+    var vadSpeechActive = false;
+    var vadInitialized = false;
+    var bargeInConfirmTimer = null;
+
+    // Grace period
+    var vadGraceTimer = null;
+    var VAD_GRACE_MS = 500;
+    var BARGE_IN_CONFIRM_MS = 220;
+    var MIN_TUTOR_SPOKE_FOR_BARGEIN_MS = 900;
+    var SERVER_STREAM_GAP_MS = 800;
+
+    // Tutor speaking state
+    var tutorSpeaking = false;
+    var tutorSpeakingStartedAt = 0;
+    var lastTutorAudioAt = 0;
+
+    // Mic level tracking
+    var micLevelDb = -100;
+    var noiseFloorDb = -60;
+    var hasNoiseFloor = false;
+    var noiseCalibrating = false;
+    var noiseCalibrateUntil = 0;
+    var NOISE_CALIBRATION_MS = 1200;
+    var VOICE_DB_MARGIN = 10;
+    var MIN_VOICE_DB = -45;
+
+    // Audio playback
+    var playbackCtx = null;
+    var nextPlayTime = 0;
+    var scheduledSources = [];
+    var PLAYBACK_RATE = 24000;
+
+    // Idle state tracking
+    var currentIdleState = 'active';
+    var silenceStartedAt = 0;
+    var silenceTimerInterval = null;
+    var transitionCount = 0;
+    var gentleCheckCount = 0;
+    var offerOptionsCount = 0;
+    var awayEntryCount = 0;
+    var resumeCount = 0;
+
+    // General metrics
+    var vadBargeinCount = 0;
+    var turnCount = 0;
+    var turnCompletePending = false;
+
+    // =========================================================================
+    // VAD — lazy init on first mic click
+    // =========================================================================
+    async function ensureVAD() {
+      if (vadInitialized) return;
+      vadInitialized = true;
+
+      if (typeof vad === 'undefined') {
+        logEvent('VAD library not loaded from CDN — running without VAD');
+        vadReady = false;
+        return;
+      }
+
+      try {
+        logEvent('Loading Silero VAD v5 model (ONNX)...');
+        vadInstance = await vad.MicVAD.new({
+          positiveSpeechThreshold: 0.72,
+          negativeSpeechThreshold: 0.45,
+          minSpeechMs: 260,
+          redemptionMs: 700,
+          preSpeechPadMs: 0,
+          model: "v5",
+          baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+          onSpeechStart: onVADSpeechStart,
+          onSpeechEnd: onVADSpeechEnd,
+          onVADMisfire: onVADMisfire,
+        });
+        vadReady = true;
+        logEvent('VAD ready (threshold=0.72, minSpeech=260ms)');
+      } catch (err) {
+        logEvent('VAD init FAILED: ' + err.message);
+        vadReady = false;
+      }
+    }
+
+    // -- VAD callbacks --
+    function onVADSpeechStart() {
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      clearPendingBargeIn();
+      if (!micActive) return;
+
+      vadSpeechActive = true;
+
+      // Notify backend of speech start for idle timer reset
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'speech_start' }));
+      }
+
+      // Reset local silence timer
+      silenceStartedAt = 0;
+      updateSilenceTimer();
+
+      if (!tutorSpeaking) {
+        logEvent('VAD: speech START', 'evt-vad');
+        setStatus('vad-speech', 'Speaking...');
+        return;
+      }
+
+      // Tutor IS speaking — decide client barge-in
+      var msSinceServerAudio = lastTutorAudioAt > 0 ? performance.now() - lastTutorAudioAt : 99999;
+      var serverStreaming = msSinceServerAudio < SERVER_STREAM_GAP_MS;
+      var drainingAfterTurnComplete = turnCompletePending;
+
+      if (serverStreaming && !drainingAfterTurnComplete) {
+        logEvent('VAD: speech during stream (' + Math.round(msSinceServerAudio) + 'ms), Gemini handles', 'evt-vad');
+        setStatus('vad-speech', 'Speaking (Gemini)...');
+        return;
+      }
+
+      logEvent('VAD: barge-in candidate, confirming for ' + BARGE_IN_CONFIRM_MS + 'ms', 'evt-vad');
+      bargeInConfirmTimer = setTimeout(function() {
+        bargeInConfirmTimer = null;
+        if (!micActive || !tutorSpeaking || !vadSpeechActive) return;
+        if (!hasStrongVoiceSignal()) {
+          logEvent('VAD: barge-in rejected (voice too weak)', 'evt-vad');
+          return;
+        }
+        triggerConfirmedBargeIn();
+      }, BARGE_IN_CONFIRM_MS);
+    }
+
+    function onVADSpeechEnd(audio) {
+      clearPendingBargeIn();
+      if (vadGraceTimer) clearTimeout(vadGraceTimer);
+      vadGraceTimer = setTimeout(function() {
+        vadSpeechActive = false;
+        vadGraceTimer = null;
+        logEvent('VAD: speech END (gate closed)', 'evt-vad');
+        if (micActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+
+        // Notify backend of speech end — starts silence timer
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'speech_end' }));
+        }
+
+        // Start local silence timer
+        silenceStartedAt = performance.now();
+      }, VAD_GRACE_MS);
+
+      logEvent('VAD: speech END (grace ' + VAD_GRACE_MS + 'ms)', 'evt-vad');
+    }
+
+    function onVADMisfire() {
+      clearPendingBargeIn();
+      logEvent('VAD: misfire (too short)', 'evt-vad');
+    }
+
+    function clearPendingBargeIn() {
+      if (bargeInConfirmTimer) {
+        clearTimeout(bargeInConfirmTimer);
+        bargeInConfirmTimer = null;
+      }
+    }
+
+    function hasStrongVoiceSignal() {
+      var floor = hasNoiseFloor ? noiseFloorDb : -60;
+      var minRequiredDb = Math.max(MIN_VOICE_DB, floor + VOICE_DB_MARGIN);
+      return micLevelDb >= minRequiredDb;
+    }
+
+    function triggerConfirmedBargeIn() {
+      if (!tutorSpeaking && scheduledSources.length === 0) return;
+
+      var spokeForMs = tutorSpeakingStartedAt > 0
+        ? Math.round(performance.now() - tutorSpeakingStartedAt) : 0;
+
+      var t0 = performance.now();
+      turnCompletePending = false;
+      cancelPlayback();
+      var cancelMs = Math.round(performance.now() - t0);
+
+      vadBargeinCount++;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+
+      setStatus('vad-bargein', 'VAD Barge-in! (' + cancelMs + 'ms)');
+      addTranscript('vad-event', 'VAD BARGE-IN — playback killed in ' + cancelMs + 'ms');
+      logEvent('VAD_BARGEIN #' + vadBargeinCount + ' cancel=' + cancelMs + 'ms', 'evt-vad');
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'barge_in',
+          client_latency_ms: cancelMs,
+          spoke_for_ms: spokeForMs,
+        }));
+      }
+
+      setTimeout(function() {
+        if (micActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, 1200);
+    }
+
+    function onVadToggle(checked) {
+      vadEnabled = checked;
+      var label = document.getElementById('vadToggle');
+      if (checked) {
+        label.classList.add('active');
+        vadSpeechActive = false;
+      } else {
+        label.classList.remove('active');
+        vadSpeechActive = true;
+      }
+      clearPendingBargeIn();
+      logEvent('VAD gate ' + (checked ? 'ON' : 'OFF'));
+    }
+
+    // =========================================================================
+    // Idle State UI
+    // =========================================================================
+    function updateIdleState(state, detail) {
+      currentIdleState = state;
+      var panel = document.getElementById('idlePanel');
+      var badge = document.getElementById('idleBadge');
+      var badgeLabel = document.getElementById('idleBadgeLabel');
+      var idleDetail = document.getElementById('idleDetail');
+
+      // Remove all state classes
+      panel.className = 'idle-state-panel';
+      badge.className = 'idle-badge';
+
+      var labelText = 'Active';
+      var detailText = 'Listening for student';
+
+      switch (state) {
+        case 'active':
+          panel.classList.add('state-active');
+          badge.classList.add('active');
+          labelText = 'Active';
+          detailText = 'Listening for student';
+          break;
+        case 'waiting':
+          panel.classList.add('state-waiting');
+          badge.classList.add('waiting');
+          labelText = 'Waiting';
+          detailText = detail || 'Student is silent — check-in sent';
+          break;
+        case 'away':
+          panel.classList.add('state-away');
+          badge.classList.add('away');
+          labelText = 'Away';
+          detailText = 'Student on break — tutor is silent';
+          break;
+        case 'resuming':
+          panel.classList.add('state-resuming');
+          badge.classList.add('resuming');
+          labelText = 'Resuming';
+          detailText = 'Welcoming student back...';
+          break;
+      }
+
+      badgeLabel.textContent = labelText;
+      idleDetail.textContent = detailText;
+    }
+
+    function updateSilenceTimer() {
+      var timerEl = document.getElementById('idleTimer');
+      if (silenceStartedAt <= 0 || currentIdleState === 'active') {
+        timerEl.textContent = '0s';
+        return;
+      }
+      var elapsed = Math.round((performance.now() - silenceStartedAt) / 1000);
+      timerEl.textContent = elapsed + 's';
+    }
+
+    // Start periodic timer update
+    silenceTimerInterval = setInterval(updateSilenceTimer, 250);
+
+    // =========================================================================
+    // Manual idle controls
+    // =========================================================================
+    function takeBreak() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'take_break' }));
+      }
+      updateIdleState('away');
+      addTranscript('idle', 'BREAK MODE — tutor will stay silent');
+      logEvent('Manual break triggered', 'evt-away');
+    }
+
+    function imBack() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'im_back' }));
+      }
+      silenceStartedAt = 0;
+      updateSilenceTimer();
+      resumeCount++;
+      updateIdleState('resuming');
+      addTranscript('idle', 'RESUMING — tutor will recap');
+      logEvent('Manual resume triggered', 'evt-resume');
+      updateMetrics();
+    }
+
+    // =========================================================================
+    // WebSocket
+    // =========================================================================
+    function connectWS() {
+      var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(proto + '://' + location.host + '/ws');
+      ws.onopen = function() { logEvent('WS connected'); };
+      ws.onclose = function() {
+        setStatus('error', 'Disconnected');
+        logEvent('WS disconnected');
+        setTimeout(connectWS, 2000);
+      };
+      ws.onerror = function() { setStatus('error', 'Connection error'); };
+      ws.onmessage = handleMessage;
+    }
+
+    function handleMessage(evt) {
+      var msg = JSON.parse(evt.data);
+
+      switch (msg.type) {
+        case 'audio':
+          turnCompletePending = false;
+          if (!tutorSpeaking) {
+            tutorSpeaking = true;
+            tutorSpeakingStartedAt = performance.now();
+          }
+          lastTutorAudioAt = performance.now();
+          playAudioChunk(msg.data);
+          setStatus('speaking', 'Tutor speaking...');
+          // Reset silence timer when tutor starts speaking
+          silenceStartedAt = 0;
+          updateSilenceTimer();
+
+          // Notify backend of playback start (first chunk)
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'tutor_playback_start' }));
+          }
+          break;
+
+        case 'text':
+        case 'output_transcript':
+          addTranscript('tutor', msg.data);
+          break;
+
+        case 'input_transcript':
+          addTranscript('student', msg.data);
+          // Reset local silence timer on student speech
+          silenceStartedAt = 0;
+          updateSilenceTimer();
+          break;
+
+        case 'interrupted':
+          handleGeminiInterruption(msg.data);
+          break;
+
+        case 'turn_complete':
+          turnCount = (msg.data && msg.data.count) || turnCount + 1;
+          turnCompletePending = true;
+          logEvent('TURN_COMPLETE #' + turnCount + ' (draining audio)', 'evt-tc');
+          maybeFinalizeTurnComplete();
+          break;
+
+        // -- Idle state messages from backend --
+        case 'idle_state':
+          var idleState = msg.state || 'active';
+          transitionCount++;
+          updateIdleState(idleState, msg.detail);
+          logEvent('IDLE STATE -> ' + idleState + ' (detail: ' + (msg.detail || '') + ')', 'evt-idle');
+
+          // Update metric counters based on detail
+          if (msg.detail === 'gentle_check') {
+            gentleCheckCount++;
+          } else if (msg.detail === 'offer_options') {
+            offerOptionsCount++;
+          } else if (idleState === 'away') {
+            awayEntryCount++;
+          } else if (idleState === 'resuming') {
+            resumeCount++;
+          }
+          updateMetrics();
+          break;
+
+        case 'silence_tick':
+          // Server-sent silence duration — sync local timer
+          var serverSilence = msg.silence_s || 0;
+          document.getElementById('idleTimer').textContent = Math.round(serverSilence) + 's';
+          break;
+
+        case 'error':
+          addTranscript('error', msg.data);
+          setStatus('error', 'Error');
+          break;
+      }
+    }
+
+    function handleGeminiInterruption(data) {
+      if (!tutorSpeaking && scheduledSources.length === 0) {
+        logEvent('GEMINI_INT ignored (tutor already silent)', 'evt-int');
+        return;
+      }
+
+      clearPendingBargeIn();
+      turnCompletePending = false;
+      cancelPlayback();
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+
+      setStatus('interrupted', 'Gemini interrupted');
+      addTranscript('event', 'GEMINI INTERRUPTED');
+      logEvent('GEMINI_INT', 'evt-int');
+      updateMetrics();
+
+      setTimeout(function() {
+        if (micActive && !tutorSpeaking) setStatus('listening', 'Listening...');
+      }, 1200);
+    }
+
+    // =========================================================================
+    // Microphone capture with VAD audio gate
+    // =========================================================================
+    async function toggleMic() {
+      if (micActive) {
+        await stopMic();
+      } else {
+        await startMic();
+      }
+    }
+
+    async function startMic() {
+      try {
+        setStatus('', 'Starting...');
+        await ensureVAD();
+
+        audioCtx = new AudioContext({ sampleRate: 16000 });
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+
+        var source = audioCtx.createMediaStreamSource(micStream);
+        processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+
+        var silenceBuffer = new Int16Array(4096);
+
+        processorNode.onaudioprocess = function(e) {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+          var float32 = e.inputBuffer.getChannelData(0);
+          updateMicLevel(float32);
+
+          var shouldSendReal;
+          if (vadEnabled && vadReady) {
+            shouldSendReal = vadSpeechActive;
+          } else {
+            var recentServerAudio = lastTutorAudioAt > 0
+              && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
+            shouldSendReal = !recentServerAudio;
+          }
+
+          var b64;
+          if (shouldSendReal) {
+            var int16 = float32ToInt16(float32);
+            b64 = arrayBufferToBase64(int16.buffer);
+          } else {
+            b64 = arrayBufferToBase64(silenceBuffer.buffer);
+          }
+
+          ws.send(JSON.stringify({ type: 'audio', data: b64 }));
+        };
+
+        source.connect(processorNode);
+        processorNode.connect(audioCtx.destination);
+
+        if (vadReady && vadInstance) {
+          await vadInstance.start();
+          logEvent('VAD listening started');
+        }
+
+        hasNoiseFloor = false;
+        noiseFloorDb = -60;
+        micLevelDb = -100;
+        noiseCalibrating = true;
+        noiseCalibrateUntil = performance.now() + NOISE_CALIBRATION_MS;
+        clearPendingBargeIn();
+
+        micActive = true;
+        vadSpeechActive = false;
+        document.getElementById('btnMic').textContent = 'Stop Mic';
+        document.getElementById('btnMic').classList.add('active');
+        setStatus('listening', vadReady ? 'Listening (VAD gated)...' : 'Listening (no VAD)...');
+        logEvent('Mic started' + (vadReady ? ' + VAD gate active' : ' (VAD unavailable)'));
+      } catch (err) {
+        setStatus('error', 'Mic error: ' + err.message);
+        logEvent('Mic error: ' + err.message);
+      }
+    }
+
+    async function stopMic() {
+      if (vadInstance && vadReady) {
+        try { await vadInstance.pause(); } catch (e) { /* ignore */ }
+        logEvent('VAD paused');
+      }
+
+      if (processorNode) { processorNode.disconnect(); processorNode = null; }
+      if (micStream) { micStream.getTracks().forEach(function(t) { t.stop(); }); micStream = null; }
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+      micActive = false;
+      vadSpeechActive = false;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      turnCompletePending = false;
+      silenceStartedAt = 0;
+      if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
+      clearPendingBargeIn();
+      document.getElementById('btnMic').textContent = 'Start Mic';
+      document.getElementById('btnMic').classList.remove('active');
+      setStatus('', 'Mic off');
+      logEvent('Mic stopped');
+    }
+
+    // =========================================================================
+    // Audio playback with instant cancellation
+    // =========================================================================
+    function playAudioChunk(b64Data) {
+      if (!playbackCtx) {
+        playbackCtx = new AudioContext({ sampleRate: PLAYBACK_RATE });
+      }
+
+      var raw = base64ToArrayBuffer(b64Data);
+      var int16 = new Int16Array(raw);
+      var float32 = new Float32Array(int16.length);
+      for (var i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      var buffer = playbackCtx.createBuffer(1, float32.length, PLAYBACK_RATE);
+      buffer.getChannelData(0).set(float32);
+
+      var src = playbackCtx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(playbackCtx.destination);
+
+      var now = playbackCtx.currentTime;
+      if (nextPlayTime <= now) {
+        nextPlayTime = now + 0.005;
+      }
+      src.start(nextPlayTime);
+
+      var entry = { source: src, endTime: nextPlayTime + buffer.duration };
+      scheduledSources.push(entry);
+      src.onended = function() {
+        var idx = scheduledSources.indexOf(entry);
+        if (idx !== -1) scheduledSources.splice(idx, 1);
+        maybeFinalizeTurnComplete();
+      };
+
+      nextPlayTime += buffer.duration;
+    }
+
+    function cancelPlayback() {
+      for (var i = 0; i < scheduledSources.length; i++) {
+        try { scheduledSources[i].source.stop(); } catch (e) { /* already stopped */ }
+      }
+      scheduledSources = [];
+      nextPlayTime = 0;
+      maybeFinalizeTurnComplete();
+    }
+
+    function maybeFinalizeTurnComplete() {
+      if (!turnCompletePending) return;
+      if (scheduledSources.length > 0) return;
+
+      turnCompletePending = false;
+      tutorSpeaking = false;
+      tutorSpeakingStartedAt = 0;
+      setStatus('listening', 'Listening...');
+      logEvent('TURN_COMPLETE #' + turnCount + ' (audio drained)', 'evt-tc');
+      updateMetrics();
+
+      // Notify backend that tutor playback finished
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'tutor_playback_end' }));
+      }
+
+      // Start local silence timer
+      silenceStartedAt = performance.now();
+    }
+
+    function updateMicLevel(float32Array) {
+      var sum = 0;
+      for (var i = 0; i < float32Array.length; i++) {
+        var s = float32Array[i];
+        sum += s * s;
+      }
+
+      var rms = Math.sqrt(sum / float32Array.length);
+      if (rms < 1e-8) {
+        micLevelDb = -100;
+      } else {
+        micLevelDb = 20 * Math.log(rms) / Math.LN10;
+      }
+
+      if (!micActive) return;
+
+      if (!hasNoiseFloor) {
+        noiseFloorDb = micLevelDb;
+        hasNoiseFloor = true;
+      } else if (noiseCalibrating) {
+        noiseFloorDb = (0.9 * noiseFloorDb) + (0.1 * micLevelDb);
+      } else if (!vadSpeechActive && !tutorSpeaking) {
+        noiseFloorDb = (0.98 * noiseFloorDb) + (0.02 * micLevelDb);
+      }
+
+      if (noiseCalibrating && performance.now() >= noiseCalibrateUntil) {
+        noiseCalibrating = false;
+        logEvent('Noise floor locked at ' + Math.round(noiseFloorDb) + 'dB', 'evt-vad');
+      }
+    }
+
+    // =========================================================================
+    // Metrics
+    // =========================================================================
+    function updateMetrics() {
+      document.getElementById('mGentleChecks').textContent = gentleCheckCount;
+      document.getElementById('mOfferOptions').textContent = offerOptionsCount;
+      document.getElementById('mAwayEntries').textContent = awayEntryCount;
+      document.getElementById('mResumes').textContent = resumeCount;
+      document.getElementById('mTurns').textContent = turnCount;
+      document.getElementById('mTransitions').textContent = transitionCount;
+    }
+
+    // =========================================================================
+    // UI helpers
+    // =========================================================================
+    function setStatus(state, label) {
+      document.getElementById('statusDot').className = 'status-dot' + (state ? ' ' + state : '');
+      document.getElementById('statusLabel').textContent = label;
+    }
+
+    function addTranscript(type, text) {
+      var panel = document.getElementById('transcript');
+      var entry = document.createElement('div');
+      entry.className = 't-entry ' + type;
+
+      var timeStr = new Date().toLocaleTimeString('en-US', {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+
+      var timeSpan = document.createElement('span');
+      timeSpan.className = 't-time';
+      timeSpan.textContent = timeStr;
+
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 't-label';
+      if (type === 'tutor') labelSpan.textContent = 'Tutor: ';
+      else if (type === 'student') labelSpan.textContent = 'Student: ';
+      else if (type === 'event') labelSpan.textContent = 'GEMINI: ';
+      else if (type === 'vad-event') labelSpan.textContent = 'VAD: ';
+      else if (type === 'idle') labelSpan.textContent = 'IDLE: ';
+      else if (type === 'error') labelSpan.textContent = 'ERROR: ';
+
+      var textSpan = document.createElement('span');
+      textSpan.className = 't-text';
+      textSpan.textContent = text;
+
+      entry.appendChild(timeSpan);
+      entry.appendChild(labelSpan);
+      entry.appendChild(textSpan);
+      panel.insertBefore(entry, panel.firstChild);
+
+      // Forward transcript entries to backend log
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: 'transcript_' + type,
+          text: text,
+        }));
+      }
+    }
+
+    function logEvent(text, cls) {
+      var log = document.getElementById('eventLog');
+      var entry = document.createElement('div');
+      entry.className = 'evt' + (cls ? ' ' + cls : '');
+      var timeStr = new Date().toLocaleTimeString('en-US', {
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+        fractionalSecondDigits: 3
+      });
+      entry.textContent = '[' + timeStr + '] ' + text;
+      log.insertBefore(entry, log.firstChild);
+
+      // Forward to backend for file logging
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'client_log',
+          event: cls || 'info',
+          text: text,
+          state: {
+            tutorSpeaking: tutorSpeaking,
+            vadSpeechActive: vadSpeechActive,
+            vadEnabled: vadEnabled,
+            micActive: micActive,
+            idleState: currentIdleState,
+            silenceS: silenceStartedAt > 0
+              ? Math.round((performance.now() - silenceStartedAt) / 1000) : 0,
+          }
+        }));
+      }
+    }
+
+    function clearAll() {
+      var transcript = document.getElementById('transcript');
+      while (transcript.firstChild) transcript.removeChild(transcript.firstChild);
+      var eventLog = document.getElementById('eventLog');
+      while (eventLog.firstChild) eventLog.removeChild(eventLog.firstChild);
+      vadBargeinCount = 0; turnCount = 0;
+      gentleCheckCount = 0; offerOptionsCount = 0;
+      awayEntryCount = 0; resumeCount = 0; transitionCount = 0;
+      updateMetrics();
+      updateIdleState('active');
+      silenceStartedAt = 0;
+      updateSilenceTimer();
+    }
+
+    // =========================================================================
+    // Conversion utilities
+    // =========================================================================
+    function float32ToInt16(float32Array) {
+      var int16 = new Int16Array(float32Array.length);
+      for (var i = 0; i < float32Array.length; i++) {
+        var s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var binary = '';
+      for (var i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      var binary = atob(base64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    // =========================================================================
+    // Init
+    // =========================================================================
+    connectWS();
+  </script>
+</body>
+</html>
