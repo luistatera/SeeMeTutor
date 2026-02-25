@@ -605,6 +605,7 @@
     // Toast management
     var currentToast = null;
     var toastDismissTimer = null;
+    var groundingRevealTimer = null;
 
     // =========================================================================
     // Session controls
@@ -657,6 +658,11 @@
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      if (groundingRevealTimer) {
+        clearTimeout(groundingRevealTimer);
+        groundingRevealTimer = null;
+      }
+      hideVerifying();
 
       tutorSpeaking = false;
       turnCompletePending = false;
@@ -724,8 +730,6 @@
 
         case 'input_transcript':
           addTranscript('student', msg.data || '');
-          showVerifying();
-          setStatus('verifying', 'Verifying...');
           break;
 
         case 'grounding':
@@ -794,20 +798,34 @@
       localMetrics.citationsSent++;
       updateMetrics();
 
-      hideVerifying();
+      showVerifying();
+      setStatus('verifying', 'Verifying...');
 
-      // Add to citations list
-      addCitationCard(data);
+      if (groundingRevealTimer) {
+        clearTimeout(groundingRevealTimer);
+        groundingRevealTimer = null;
+      }
 
-      // Show floating toast
-      showCitationToast(data);
-
-      // Transcript entry
       var source = data.source || 'Unknown';
       var snippet = data.snippet || '';
-      addTranscript('grounding', 'Verified: ' + snippet.substring(0, 80) + (snippet.length > 80 ? '...' : '') + ' - ' + source);
+      var transcriptLine = 'Verified: ' + snippet.substring(0, 80) + (snippet.length > 80 ? '...' : '') + ' - ' + source;
+      var eventLine = 'GROUNDING #' + localMetrics.citationsSent + ': ' + source + ' - ' + snippet.substring(0, 60);
 
-      logEvent('GROUNDING #' + localMetrics.citationsSent + ': ' + source + ' - ' + snippet.substring(0, 60));
+      // Keep the spinner briefly visible before showing the citation card.
+      groundingRevealTimer = setTimeout(function() {
+        groundingRevealTimer = null;
+        hideVerifying();
+
+        // Add to citations list
+        addCitationCard(data);
+
+        // Show floating toast
+        showCitationToast(data);
+
+        // Transcript entry
+        addTranscript('grounding', transcriptLine);
+        logEvent(eventLine);
+      }, 320);
     }
 
     // =========================================================================
@@ -1259,6 +1277,11 @@
         clearTimeout(toastDismissTimer);
         toastDismissTimer = null;
       }
+      if (groundingRevealTimer) {
+        clearTimeout(groundingRevealTimer);
+        groundingRevealTimer = null;
+      }
+      hideVerifying();
 
       localMetrics = {
         groundingEvents: 0,

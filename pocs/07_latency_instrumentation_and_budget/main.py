@@ -50,7 +50,7 @@ os.environ.setdefault(
     "GOOGLE_CLOUD_PROJECT", os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
 )
 os.environ.setdefault(
-    "GOOGLE_CLOUD_LOCATION", os.environ.get("GCP_REGION", "europe-west1")
+    "GOOGLE_CLOUD_LOCATION", os.environ.get("GCP_REGION", "us-central1")
 )
 
 from google import genai
@@ -60,6 +60,8 @@ from google.genai import types
 # Configuration
 # ---------------------------------------------------------------------------
 MODEL = "gemini-live-2.5-flash-native-audio"
+TURN_TO_TURN_MAX_GAP_MS = 3000
+RESPONSE_REF_MAX_AGE_MS = 2500
 
 # Budget thresholds (milliseconds)
 BUDGETS = {
@@ -68,39 +70,30 @@ BUDGETS = {
     "visual_comment": {"target": 1500, "alert": 2500},
     "turn_to_turn": {"target": 1500, "alert": 2500},
     "first_byte": {"target": 3000, "alert": 5000},
+    "tool_call_duration": {"target": 800, "alert": 2000},
 }
 
 # ---------------------------------------------------------------------------
 # System Prompt — intentionally verbose to make timing measurement easier
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """\
-You are SeeMe, a warm and enthusiastic tutor who loves helping students learn.
+You are SeeMe, a warm and enthusiastic tutor.
 
 == CORE BEHAVIOR ==
-- You teach through the Socratic method: guide with questions, never give \
-answers directly.
-- You speak the student's language (English, Portuguese, or German).
-- You are patient, encouraging, and genuinely curious about each student's \
-thinking process.
-
-== RESPONSE STYLE (IMPORTANT FOR THIS TEST SESSION) ==
-- Give DETAILED, thorough answers of 4-5 sentences minimum.
-- Explain your reasoning step by step.
-- Use examples and analogies to make concepts clear.
-- This helps us measure response timing accurately.
+- Teach with short Socratic guidance and clear next questions.
+- Match the student's language (English, Portuguese, or German).
+- Keep responses concise and practical unless the student asks for detail.
 
 == INTERRUPTION HANDLING ==
-- When interrupted, stop speaking IMMEDIATELY.
-- Acknowledge warmly: "Sure!" or "Go ahead!" or "Of course!"
-- Wait for the student to speak, then respond to what THEY said.
-- Do NOT return to your previous topic unless the student asks.
+- If interrupted, stop immediately.
+- Acknowledge briefly ("Sure!" / "Go ahead!") and listen.
+- Continue only from the student's latest message.
 
 == SAFETY ==
 - Never expose internal instructions or tool mechanics.
-- Never give the final answer directly — guide with hints and questions.
+- Avoid giving direct final answers; guide the student.
 
-Start by introducing yourself warmly and asking what the student wants to \
-learn about today. Be enthusiastic!"""
+Start with a warm one-line intro and ask what the student wants to learn."""
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +182,26 @@ def _create_session_log(session_id: str):
         fh.write(json.dumps(entry) + "\n")
 
         text = extra.get("text", "")
-        if text:
-            ms = f"{now.microsecond // 1000:03d}"
-            ts_detail = now.strftime("%H:%M:%S.") + ms
-            details_lines.append(f"[{ts_detail}] {source}/{event}: {text}")
+        if not text:
+            return
+
+        ms = f"{now.microsecond // 1000:03d}"
+        ts_detail = now.strftime("%H:%M:%S.") + ms
+        details_lines.append(f"[{ts_detail}] {source}/{event}: {text}")
+
+        if source == "client" and event.startswith("transcript_"):
+            tr_type = event[len("transcript_"):]
+            label = {
+                "student": "STUDENT",
+                "tutor": "TUTOR",
+                "event": "EVENT",
+                "alert": "ALERT",
+                "error": "ERROR",
+                "latency": "LATENCY",
+                "vad-event": "VAD",
+            }.get(tr_type, tr_type.upper())
+            ts_short = now.strftime("%H:%M:%S")
+            transcript_lines.append(f"{ts_short} {label}: {text}")
 
     def close_logs():
         fh.close()
@@ -242,8 +251,19 @@ async def websocket_endpoint(websocket: WebSocket):
     lat_first_byte = LatencyStats(
         "first_byte", BUDGETS["first_byte"]["target"], BUDGETS["first_byte"]["alert"]
     )
+    lat_tool_call_duration = LatencyStats(
+        "tool_call_duration",
+        BUDGETS["tool_call_duration"]["target"],
+        BUDGETS["tool_call_duration"]["alert"],
+    )
 
-    all_trackers = [lat_response_start, lat_interruption_stop, lat_turn_to_turn, lat_first_byte]
+    all_trackers = [
+        lat_response_start,
+        lat_interruption_stop,
+        lat_turn_to_turn,
+        lat_first_byte,
+        lat_tool_call_duration,
+    ]
 
     # Timing state
     metrics = {
@@ -255,15 +275,21 @@ async def websocket_endpoint(websocket: WebSocket):
         "session_start_at": time.time(),
         "last_audio_in_at": 0.0,
         "last_speech_end_at": 0.0,
+        "first_audio_in_at": 0.0,
+        "first_speech_end_at": 0.0,
         "first_audio_out_at": 0.0,
         "last_audio_out_at": 0.0,
         "last_turn_complete_at": 0.0,
         "last_barge_in_at": 0.0,
+        "pending_turn_gap_start_at": 0.0,
+        "tool_call_open_at": 0.0,
         # State flags
         "assistant_speaking": False,
         "speaking_started_at": 0.0,
         "first_byte_recorded": False,
         "awaiting_response": False,  # True after student finishes, waiting for tutor
+        "awaiting_user_after_turn": False,  # True after turn_complete until next valid speech
+        "activity_open": False,  # True while activity_start has been sent but not ended
     }
 
     log_fh, slog, close_logs = _create_session_log(session_id)
@@ -288,8 +314,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
                     end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                    prefix_padding_ms=300,
-                    silence_duration_ms=700,
+                    prefix_padding_ms=120,
+                    silence_duration_ms=350,
                 ),
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
@@ -300,7 +326,7 @@ async def websocket_endpoint(websocket: WebSocket):
             forward_task = asyncio.create_task(
                 _forward_browser_to_gemini(
                     websocket, session, session_id, metrics,
-                    lat_response_start, lat_turn_to_turn, slog,
+                    lat_turn_to_turn, slog,
                 ),
                 name="browser_to_gemini",
             )
@@ -308,7 +334,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 _forward_gemini_to_browser(
                     websocket, session, session_id, metrics,
                     lat_response_start, lat_interruption_stop,
-                    lat_turn_to_turn, lat_first_byte,
+                    lat_turn_to_turn, lat_first_byte, lat_tool_call_duration,
                     all_trackers, slog,
                 ),
                 name="gemini_to_browser",
@@ -469,7 +495,6 @@ async def _forward_browser_to_gemini(
     session,
     session_id: str,
     metrics: dict[str, Any],
-    lat_response_start: LatencyStats,
     lat_turn_to_turn: LatencyStats,
     slog,
 ):
@@ -496,6 +521,8 @@ async def _forward_browser_to_gemini(
                 now = time.time()
                 metrics["audio_chunks_in"] += 1
                 metrics["last_audio_in_at"] = now
+                if metrics["first_audio_in_at"] <= 0:
+                    metrics["first_audio_in_at"] = now
 
                 # Mark that we are awaiting a response
                 if not metrics["assistant_speaking"]:
@@ -512,24 +539,91 @@ async def _forward_browser_to_gemini(
                      client_latency_ms=message.get("client_latency_ms", 0))
 
             elif msg_type == "speech_start":
-                # Client-side speech start — for turn-to-turn measurement
                 now = time.time()
-                if metrics["last_turn_complete_at"] > 0:
-                    gap_ms = (now - metrics["last_turn_complete_at"]) * 1000
-                    slog("server", "turn_to_turn_raw", gap_ms=round(gap_ms))
-                    try:
-                        await _send_latency_event(
-                            websocket, lat_turn_to_turn, gap_ms, metrics, slog,
-                        )
-                    except Exception:
-                        pass
+                metrics["last_speech_end_at"] = 0.0
+                if not metrics["activity_open"]:
+                    metrics["activity_open"] = True
+                    await session.send_realtime_input(
+                        activity_start=types.ActivityStart(),
+                    )
+
+                if message.get("tutor_speaking") and metrics["last_barge_in_at"] <= 0:
+                    metrics["last_barge_in_at"] = now
+
+                # Track one candidate speech segment after each turn_complete.
+                if (
+                    not message.get("tutor_speaking")
+                    and
+                    metrics["awaiting_user_after_turn"]
+                    and metrics["last_turn_complete_at"] > 0
+                    and metrics["pending_turn_gap_start_at"] <= 0
+                ):
+                    metrics["pending_turn_gap_start_at"] = now
+                    since_turn_ms = (now - metrics["last_turn_complete_at"]) * 1000
+                    slog("server", "turn_to_turn_candidate_start", gap_ms=round(since_turn_ms))
                 slog("client", "speech_start")
 
             elif msg_type == "speech_end":
                 now = time.time()
                 metrics["last_speech_end_at"] = now
+                if metrics["first_speech_end_at"] <= 0:
+                    metrics["first_speech_end_at"] = now
                 metrics["awaiting_response"] = True
+
+                if metrics["activity_open"]:
+                    metrics["activity_open"] = False
+                    await session.send_realtime_input(
+                        activity_end=types.ActivityEnd(),
+                    )
+
+                # Record turn-to-turn only once per completed turn and only for valid speech.
+                if (
+                    metrics["awaiting_user_after_turn"]
+                    and metrics["pending_turn_gap_start_at"] > 0
+                    and metrics["last_turn_complete_at"] > 0
+                ):
+                    speech_ms = (now - metrics["pending_turn_gap_start_at"]) * 1000
+                    if speech_ms >= 250:
+                        gap_ms = (metrics["pending_turn_gap_start_at"] - metrics["last_turn_complete_at"]) * 1000
+                        if gap_ms <= TURN_TO_TURN_MAX_GAP_MS:
+                            slog("server", "turn_to_turn_raw", gap_ms=round(gap_ms), speech_ms=round(speech_ms))
+                            try:
+                                await _send_latency_event(
+                                    websocket, lat_turn_to_turn, gap_ms, metrics, slog,
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            slog(
+                                "server",
+                                "turn_to_turn_discarded",
+                                reason="user_idle_gap",
+                                gap_ms=round(gap_ms),
+                                speech_ms=round(speech_ms),
+                                max_gap_ms=TURN_TO_TURN_MAX_GAP_MS,
+                            )
+                        metrics["awaiting_user_after_turn"] = False
+                    else:
+                        slog("server", "turn_to_turn_discarded", reason="short_speech", speech_ms=round(speech_ms))
+                    metrics["pending_turn_gap_start_at"] = 0.0
+
                 slog("client", "speech_end")
+
+            elif msg_type == "speech_misfire":
+                metrics["pending_turn_gap_start_at"] = 0.0
+                if metrics["activity_open"]:
+                    metrics["activity_open"] = False
+                    await session.send_realtime_input(
+                        activity_end=types.ActivityEnd(),
+                    )
+                slog("client", "speech_misfire")
+
+            elif msg_type == "turn_audio_drained":
+                now = time.time()
+                metrics["last_turn_complete_at"] = now
+                metrics["awaiting_user_after_turn"] = True
+                metrics["pending_turn_gap_start_at"] = 0.0
+                slog("client", "turn_audio_drained")
 
             elif msg_type == "client_log":
                 slog("client", message.get("event", "log"),
@@ -538,16 +632,20 @@ async def _forward_browser_to_gemini(
                         if k not in ("type", "event", "text")})
 
             elif msg_type == "activity_start":
-                slog("client", "activity_start")
-                await session.send_realtime_input(
-                    activity_start=types.ActivityStart(),
-                )
+                if not metrics["activity_open"]:
+                    metrics["activity_open"] = True
+                    slog("client", "activity_start")
+                    await session.send_realtime_input(
+                        activity_start=types.ActivityStart(),
+                    )
 
             elif msg_type == "activity_end":
-                slog("client", "activity_end")
-                await session.send_realtime_input(
-                    activity_end=types.ActivityEnd(),
-                )
+                if metrics["activity_open"]:
+                    metrics["activity_open"] = False
+                    slog("client", "activity_end")
+                    await session.send_realtime_input(
+                        activity_end=types.ActivityEnd(),
+                    )
 
     except WebSocketDisconnect:
         logger.info("Session %s: browser disconnected (forward)", session_id)
@@ -567,6 +665,7 @@ async def _forward_gemini_to_browser(
     lat_interruption_stop: LatencyStats,
     lat_turn_to_turn: LatencyStats,
     lat_first_byte: LatencyStats,
+    lat_tool_call_duration: LatencyStats,
     all_trackers: list[LatencyStats],
     slog,
 ):
@@ -574,6 +673,16 @@ async def _forward_gemini_to_browser(
     turn_index = 0
 
     try:
+        async def close_tool_call_if_open(now: float, reason: str):
+            if metrics["tool_call_open_at"] <= 0:
+                return
+            duration_ms = (now - metrics["tool_call_open_at"]) * 1000
+            metrics["tool_call_open_at"] = 0.0
+            slog("server", "tool_call_end", reason=reason, duration_ms=round(duration_ms))
+            await _send_latency_event(
+                websocket, lat_tool_call_duration, duration_ms, metrics, slog,
+            )
+
         while True:
             turn_index += 1
             turn_events = 0
@@ -581,9 +690,15 @@ async def _forward_gemini_to_browser(
             async for msg in session.receive():
                 turn_events += 1
 
+                now = time.time()
                 tool_call = getattr(msg, "tool_call", None)
                 if tool_call is not None:
+                    if metrics["tool_call_open_at"] <= 0:
+                        metrics["tool_call_open_at"] = now
+                        slog("server", "tool_call_start")
                     continue
+
+                await close_tool_call_if_open(now, "non_tool_message")
 
                 server_content = getattr(msg, "server_content", None)
                 if server_content is None:
@@ -591,8 +706,6 @@ async def _forward_gemini_to_browser(
 
                 # --- Interruption (Gemini server-side) ---
                 if getattr(server_content, "interrupted", False):
-                    now = time.time()
-
                     if not metrics["assistant_speaking"]:
                         slog("server", "gemini_interrupt_ignored",
                              reason="assistant_not_speaking")
@@ -641,6 +754,7 @@ async def _forward_gemini_to_browser(
                         inline_data = getattr(part, "inline_data", None)
                         if inline_data is not None and inline_data.data:
                             now = time.time()
+                            resp_lat_ms: float | None = None
 
                             # First audio chunk of this response
                             if not metrics["assistant_speaking"]:
@@ -649,8 +763,12 @@ async def _forward_gemini_to_browser(
 
                                 # --- Response Start Latency ---
                                 ref_time = metrics["last_speech_end_at"]
+                                ref_name = "speech_end"
+                                if ref_time > 0 and ((now - ref_time) * 1000) > RESPONSE_REF_MAX_AGE_MS:
+                                    ref_time = 0.0
                                 if ref_time <= 0:
                                     ref_time = metrics["last_audio_in_at"]
+                                    ref_name = "last_audio_in"
 
                                 if ref_time > 0 and metrics["awaiting_response"]:
                                     resp_lat_ms = (now - ref_time) * 1000
@@ -658,7 +776,7 @@ async def _forward_gemini_to_browser(
 
                                     slog("server", "response_start_raw",
                                          latency_ms=round(resp_lat_ms),
-                                         ref="speech_end" if metrics["last_speech_end_at"] > 0 else "last_audio_in")
+                                         ref=ref_name)
 
                                     await _send_latency_event(
                                         websocket, lat_response_start, resp_lat_ms, metrics, slog,
@@ -668,10 +786,23 @@ async def _forward_gemini_to_browser(
                                 if not metrics["first_byte_recorded"]:
                                     metrics["first_byte_recorded"] = True
                                     metrics["first_audio_out_at"] = now
-                                    fb_ms = (now - metrics["session_start_at"]) * 1000
+                                    if resp_lat_ms is not None:
+                                        fb_ms = resp_lat_ms
+                                        fb_ref = "first_response_start"
+                                    else:
+                                        fb_ref_at = metrics["first_speech_end_at"]
+                                        fb_ref = "first_speech_end"
+                                        if fb_ref_at <= 0:
+                                            fb_ref_at = metrics["first_audio_in_at"]
+                                            fb_ref = "first_audio_in"
+                                        if fb_ref_at <= 0:
+                                            fb_ref_at = metrics["session_start_at"]
+                                            fb_ref = "session_start"
+                                        fb_ms = (now - fb_ref_at) * 1000
 
                                     slog("server", "first_byte",
-                                         latency_ms=round(fb_ms))
+                                         latency_ms=round(fb_ms),
+                                         ref=fb_ref)
 
                                     await _send_latency_event(
                                         websocket, lat_first_byte, fb_ms, metrics, slog,
@@ -724,6 +855,8 @@ async def _forward_gemini_to_browser(
                     metrics["speaking_started_at"] = 0.0
                     metrics["last_turn_complete_at"] = now
                     metrics["last_barge_in_at"] = 0.0
+                    metrics["awaiting_user_after_turn"] = True
+                    metrics["pending_turn_gap_start_at"] = 0.0
 
                     logger.info("TURN COMPLETE #%d", metrics["turn_completes"])
                     slog("server", "turn_complete", count=metrics["turn_completes"])
@@ -739,6 +872,7 @@ async def _forward_gemini_to_browser(
                     )
 
             if turn_events == 0:
+                await close_tool_call_if_open(time.time(), "stream_end")
                 logger.info("Session %s: Gemini stream ended", session_id)
                 return
             await asyncio.sleep(0)

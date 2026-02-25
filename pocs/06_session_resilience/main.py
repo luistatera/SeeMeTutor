@@ -73,6 +73,8 @@ RECONNECT_TIMEOUT_S = 10.0       # Give up connecting after 10s per attempt
 # Context management
 RESUME_CONTEXT_MAX_CHARS = 6000  # Max chars for context injection prompt
 TRANSCRIPT_HISTORY_MAX = 20      # Keep last N transcript entries for context
+RESUME_CONTEXT_MAX_STUDENT_TURNS = 3
+RESUME_CONTEXT_MAX_ENTRIES = 12
 
 # Gemini close codes
 GEMINI_CONTEXT_OVERFLOW_CODE = 1011
@@ -109,6 +111,9 @@ RESUME_CONTEXT_PROMPT = (
     "INTERNAL CONTROL: Session resumed after a network reconnect. Continue the "
     "same tutoring session without restarting. Do not greet as a new session. "
     "Do not re-introduce yourself. Do not ask what we are working on. "
+    "Do not introduce a new subject/topic that is not explicitly present in the "
+    "recent context below. If context is ambiguous, ask one short clarification "
+    "question about the current topic before teaching. "
     "Briefly acknowledge you are back if appropriate (e.g., 'Alright, I am back! "
     "Where were we?') and then continue naturally. Recent context:\n"
     "{history}\n"
@@ -148,6 +153,8 @@ def _create_session_log(session_id: str):
     """
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = LOGS_DIR / f"{ts}_{session_id}.jsonl"
+    details_path = LOGS_DIR / f"{ts}_{session_id}_details.log"
+    transcript_path = LOGS_DIR / f"{ts}_{session_id}_transcript.log"
     fh = open(path, "a", buffering=1)  # line-buffered
 
     details_lines: list[str] = []
@@ -180,12 +187,15 @@ def _create_session_log(session_id: str):
 
     def close_logs():
         fh.close()
-        (LOGS_DIR / "details.log").write_text(
-            "\n".join(reversed(details_lines)) + ("\n" if details_lines else "")
-        )
-        (LOGS_DIR / "transcript.log").write_text(
-            "\n".join(reversed(transcript_lines)) + ("\n" if transcript_lines else "")
-        )
+        details_text = "\n".join(reversed(details_lines)) + ("\n" if details_lines else "")
+        transcript_text = "\n".join(reversed(transcript_lines)) + ("\n" if transcript_lines else "")
+
+        details_path.write_text(details_text)
+        transcript_path.write_text(transcript_text)
+
+        # Backward-compatible "latest" files used by existing test docs.
+        (LOGS_DIR / "details.log").write_text(details_text)
+        (LOGS_DIR / "transcript.log").write_text(transcript_text)
 
     logger.info("Session log: %s", path)
     return fh, write, close_logs
@@ -203,11 +213,15 @@ class SessionState:
         self.topic: str = ""
         self.language: str = "en"
         self.transcript: list[dict] = []  # [{role: "tutor"|"student", text: "..."}]
+        self.whiteboard_notes: list[dict] = []
         self.reconnect_count: int = 0
         self.session_start_time: float = time.time()
         self.last_reconnect_at: float = 0.0
         self.gemini_session_active: bool = False
         self.turn_completes: int = 0
+        self.resume_context_pending: bool = False
+        self.resume_generation: int = 0
+        self.last_injected_resume_generation: int = 0
 
     def add_transcript(self, role: str, text: str):
         """Add a transcript entry, keeping only the last N."""
@@ -218,6 +232,78 @@ class SessionState:
         })
         if len(self.transcript) > TRANSCRIPT_HISTORY_MAX:
             self.transcript = self.transcript[-TRANSCRIPT_HISTORY_MAX:]
+
+    def add_resume_history(self, entries: list[dict]) -> int:
+        """Merge client resume history using a strict recent-window policy."""
+        if not isinstance(entries, list) or not entries:
+            return 0
+
+        normalized: list[dict] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            role = entry.get("role", "student")
+            if role not in ("student", "tutor"):
+                role = "student"
+            text = str(entry.get("text", "")).strip()
+            if not text:
+                continue
+            normalized.append({"role": role, "text": text})
+
+        if not normalized:
+            return 0
+
+        # Keep only the segment covering the most recent N student turns.
+        student_seen = 0
+        start_idx = 0
+        for i in range(len(normalized) - 1, -1, -1):
+            if normalized[i]["role"] == "student":
+                student_seen += 1
+                if student_seen >= RESUME_CONTEXT_MAX_STUDENT_TURNS:
+                    start_idx = i
+                    break
+
+        # Never resume from tutor-only fragments; require at least one student turn.
+        if student_seen == 0:
+            return 0
+
+        clipped = normalized[start_idx:]
+        if len(clipped) > RESUME_CONTEXT_MAX_ENTRIES:
+            clipped = clipped[-RESUME_CONTEXT_MAX_ENTRIES:]
+
+        for entry in clipped:
+            self.add_transcript(entry["role"], entry["text"])
+        return len(clipped)
+
+    def add_whiteboard_note(self, note: dict):
+        if not isinstance(note, dict):
+            return
+        title = str(note.get("title", "")).strip()
+        content = str(note.get("content", "")).strip()
+        if not title and not content:
+            return
+        self.whiteboard_notes.append({
+            "title": title,
+            "content": content[:600],
+            "t": time.time(),
+        })
+        if len(self.whiteboard_notes) > 10:
+            self.whiteboard_notes = self.whiteboard_notes[-10:]
+
+    def apply_session_state_payload(self, payload: dict):
+        if not isinstance(payload, dict):
+            return
+        if payload.get("student_name"):
+            self.student_name = str(payload["student_name"]).strip()
+        if payload.get("topic"):
+            self.topic = str(payload["topic"]).strip()
+        if payload.get("language"):
+            self.language = str(payload["language"]).strip().lower()
+
+        notes = payload.get("whiteboard_notes")
+        if isinstance(notes, list):
+            for note in notes:
+                self.add_whiteboard_note(note)
 
     def build_resume_context(self) -> str:
         """Build the context injection prompt for Gemini after reconnect."""
@@ -236,6 +322,13 @@ class SessionState:
                 text = entry["text"][:300]  # truncate long entries
                 parts.append(f"  {role_label}: {text}")
 
+        if self.whiteboard_notes:
+            parts.append("Recent whiteboard notes:")
+            for note in self.whiteboard_notes[-3:]:
+                title = note.get("title") or "Untitled"
+                content = note.get("content") or ""
+                parts.append(f"  - {title}: {content[:240]}")
+
         history = "\n".join(parts)
         if len(history) > RESUME_CONTEXT_MAX_CHARS:
             history = history[:RESUME_CONTEXT_MAX_CHARS]
@@ -252,6 +345,8 @@ class SessionState:
             "reconnect_count": self.reconnect_count,
             "turn_completes": self.turn_completes,
             "transcript_count": len(self.transcript),
+            "whiteboard_count": len(self.whiteboard_notes),
+            "resume_generation": self.resume_generation,
             "uptime_s": round(time.time() - self.session_start_time, 1),
         }
 
@@ -281,6 +376,51 @@ async def _send_hidden_turn(session, text: str):
         ),
         turn_complete=True,
     )
+
+
+async def _inject_resume_context(
+    session,
+    state: SessionState,
+    metrics: dict,
+    slog,
+    *,
+    source: str,
+    force: bool = False,
+) -> bool:
+    """Inject hidden continuity context into Gemini.
+
+    Returns True when context was sent, False when skipped or failed.
+    """
+    should_inject = force or state.resume_context_pending
+    if not should_inject:
+        return False
+
+    # Avoid duplicate injection for the same browser resume payload generation.
+    if (
+        not force
+        and state.resume_generation > 0
+        and state.last_injected_resume_generation >= state.resume_generation
+    ):
+        return False
+
+    context_prompt = state.build_resume_context()
+    try:
+        await _send_hidden_turn(session, context_prompt)
+        metrics["context_injections"] += 1
+        state.last_injected_resume_generation = state.resume_generation
+        state.resume_context_pending = False
+        slog(
+            "server",
+            "context_injected",
+            chars=len(context_prompt),
+            count=metrics["context_injections"],
+            inject_source=source,
+            force=force,
+        )
+        return True
+    except Exception as exc:
+        slog("server", "context_injection_failed", error=str(exc), inject_source=source)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +485,7 @@ async def websocket_endpoint(websocket: WebSocket):
         "session": None,
         "connected": False,
         "shutting_down": False,
+        "last_receive_error": None,
     }
 
     # Queue for audio from browser that needs to be forwarded to Gemini
@@ -458,35 +599,72 @@ async def _receive_from_browser(
             # -- Session state update from browser --
             elif msg_type == "session_state":
                 data = message.get("data", {})
-                if data.get("student_name"):
-                    state.student_name = data["student_name"]
-                if data.get("topic"):
-                    state.topic = data["topic"]
-                if data.get("language"):
-                    state.language = data["language"]
+                state.apply_session_state_payload(data)
                 slog("client", "session_state_update",
                      student_name=state.student_name,
                      topic=state.topic,
-                     language=state.language)
+                     language=state.language,
+                     whiteboard_count=len(state.whiteboard_notes))
 
             # -- Resume context from browser (after browser-side reconnect) --
             elif msg_type == "resume_context":
                 # Browser reconnected and is sending its stored transcript
                 history = message.get("history", "")
+                session_state = message.get("session_state", {})
+                whiteboard_notes = message.get("whiteboard_notes", [])
+                entries_added = 0
                 if isinstance(history, list):
-                    # Browser sends transcript as list of {role, text}
-                    for entry in history:
-                        if isinstance(entry, dict):
-                            role = entry.get("role", "student")
-                            text = entry.get("text", "")
-                            if text:
-                                state.add_transcript(role, text)
-                slog("server", "browser_resume_context_received",
-                     entries=len(history) if isinstance(history, list) else 0)
+                    entries_added = state.add_resume_history(history)
+
+                if isinstance(whiteboard_notes, list):
+                    for note in whiteboard_notes:
+                        state.add_whiteboard_note(note)
+
+                state.apply_session_state_payload(session_state)
+
+                if entries_added > 0 or session_state or whiteboard_notes:
+                    state.resume_generation += 1
+                    state.resume_context_pending = True
+
+                slog(
+                    "server",
+                    "browser_resume_context_received",
+                    history_received=len(history) if isinstance(history, list) else 0,
+                    entries=entries_added,
+                    whiteboard_count=len(state.whiteboard_notes),
+                    resume_generation=state.resume_generation,
+                    student_name=state.student_name,
+                    topic=state.topic,
+                    language=state.language,
+                )
+
+                # If Gemini is already connected, inject resume context immediately.
+                session = gemini_holder.get("session")
+                if session and gemini_holder.get("connected"):
+                    injected = await _inject_resume_context(
+                        session,
+                        state,
+                        metrics,
+                        slog,
+                        source="browser_resume",
+                        force=False,
+                    )
+                    if injected:
+                        try:
+                            await websocket.send_text(json.dumps({
+                                "type": "reconnected",
+                                "data": {
+                                    "reconnect_count": state.reconnect_count,
+                                    "state": state.to_dict(),
+                                    "source": "browser_resume",
+                                },
+                            }))
+                        except Exception:
+                            return
 
             # -- Simulate disconnect (test button) --
             elif msg_type == "simulate_disconnect":
-                target = message.get("target", "gemini")  # "gemini" or "websocket"
+                target = message.get("target", "gemini")  # "gemini" | "websocket" | "context_overflow"
                 slog("server", "simulate_disconnect", target=target)
 
                 if target == "gemini":
@@ -499,6 +677,21 @@ async def _receive_from_browser(
                             await session.close()
                         except Exception:
                             pass
+                elif target == "context_overflow":
+                    # Simulate Gemini 1011 handling path for deterministic testing.
+                    slog("server", "context_overflow_session_end", simulated=True)
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "session_limit",
+                            "data": {
+                                "reason": "context_overflow_simulated",
+                                "message": "Session reached its context limit. Please start a new session.",
+                            },
+                        }))
+                    except Exception:
+                        pass
+                    shutdown_event.set()
+                    return
                 elif target == "websocket":
                     # Close the browser WS — browser reconnect logic handles this
                     logger.info("Session %s: SIMULATED WebSocket disconnect", state.session_id)
@@ -565,56 +758,69 @@ async def _gemini_session_lifecycle(
     4. If all retries fail, signal session end to browser
     """
     is_first_connect = True
-    consecutive_failures = 0
+    reconnect_attempt = 0
+    reconnect_reason = "initial"
 
     while not shutdown_event.is_set():
-        try:
-            # -- Attempt connection --
-            if not is_first_connect:
-                metrics["reconnect_attempts"] += 1
-                state.reconnect_count += 1
-                backoff_s = min(
-                    INITIAL_BACKOFF_S * (BACKOFF_MULTIPLIER ** consecutive_failures),
-                    MAX_BACKOFF_S,
-                )
-                logger.info(
-                    "Session %s: reconnect attempt %d/%d (backoff %.1fs)",
-                    state.session_id,
-                    consecutive_failures + 1,
-                    MAX_RECONNECT_ATTEMPTS,
-                    backoff_s,
-                )
-                slog("server", "reconnect_attempt",
-                     attempt=consecutive_failures + 1,
-                     max_attempts=MAX_RECONNECT_ATTEMPTS,
-                     backoff_s=round(backoff_s, 1),
-                     reconnect_count=state.reconnect_count)
-
-                # Notify browser of reconnect attempt
+        # -- Reconnect pacing + attempt accounting --
+        if not is_first_connect:
+            if reconnect_attempt >= MAX_RECONNECT_ATTEMPTS:
+                metrics["reconnect_failures"] += 1
+                slog("server", "reconnect_exhausted", attempts=reconnect_attempt)
                 try:
                     await websocket.send_text(json.dumps({
-                        "type": "reconnecting",
+                        "type": "session_ended",
                         "data": {
-                            "attempt": consecutive_failures + 1,
-                            "max_attempts": MAX_RECONNECT_ATTEMPTS,
-                            "backoff_s": round(backoff_s, 1),
+                            "reason": "reconnect_failed",
+                            "attempts": reconnect_attempt,
+                            "message": "Connection lost. Please restart the session.",
                         },
                     }))
                 except Exception:
-                    return  # Browser gone — exit lifecycle
+                    pass
+                return
 
-                await asyncio.sleep(backoff_s)
+            reconnect_attempt += 1
+            metrics["reconnect_attempts"] += 1
+            state.reconnect_count += 1
+            backoff_s = min(
+                INITIAL_BACKOFF_S * (BACKOFF_MULTIPLIER ** (reconnect_attempt - 1)),
+                MAX_BACKOFF_S,
+            )
 
-                if shutdown_event.is_set():
-                    return
+            slog(
+                "server",
+                "reconnect_attempt",
+                attempt=reconnect_attempt,
+                max_attempts=MAX_RECONNECT_ATTEMPTS,
+                backoff_s=round(backoff_s, 1),
+                reconnect_count=state.reconnect_count,
+                reason=reconnect_reason,
+            )
 
-            # -- Connect to Gemini --
+            try:
+                await websocket.send_text(json.dumps({
+                    "type": "reconnecting",
+                    "data": {
+                        "attempt": reconnect_attempt,
+                        "max_attempts": MAX_RECONNECT_ATTEMPTS,
+                        "backoff_s": round(backoff_s, 1),
+                        "reason": reconnect_reason,
+                    },
+                }))
+            except Exception:
+                return
+
+            await asyncio.sleep(backoff_s)
+            if shutdown_event.is_set():
+                return
+
+        try:
             client = genai.Client()
             config = _build_gemini_config()
+            gemini_holder["last_receive_error"] = None
 
-            logger.info("Session %s: connecting to Gemini...", state.session_id)
-            slog("server", "gemini_connecting",
-                 is_reconnect=not is_first_connect)
+            slog("server", "gemini_connecting", is_reconnect=not is_first_connect)
 
             async with client.aio.live.connect(
                 model=MODEL,
@@ -623,39 +829,40 @@ async def _gemini_session_lifecycle(
                 gemini_holder["session"] = session
                 gemini_holder["connected"] = True
                 gemini_ready_event.set()
-                consecutive_failures = 0  # Reset on successful connect
 
-                logger.info("Session %s: Gemini connected (reconnect=%s)",
-                            state.session_id, not is_first_connect)
-                slog("server", "gemini_connected",
-                     is_reconnect=not is_first_connect,
-                     reconnect_count=state.reconnect_count)
+                slog(
+                    "server",
+                    "gemini_connected",
+                    is_reconnect=not is_first_connect,
+                    reconnect_count=state.reconnect_count,
+                )
 
-                # -- Inject context on reconnect --
-                if not is_first_connect:
+                # On reconnect OR browser-resume bootstrap, inject hidden context before forwarding.
+                injected = await _inject_resume_context(
+                    session,
+                    state,
+                    metrics,
+                    slog,
+                    source="gemini_reconnect" if not is_first_connect else "browser_resume_bootstrap",
+                    force=not is_first_connect,
+                )
+                if injected:
+                    if not is_first_connect:
+                        metrics["reconnect_successes"] += 1
+                        state.last_reconnect_at = time.time()
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "reconnected",
+                            "data": {
+                                "reconnect_count": state.reconnect_count,
+                                "state": state.to_dict(),
+                            },
+                        }))
+                    except Exception:
+                        return
+                elif not is_first_connect:
                     metrics["reconnect_successes"] += 1
                     state.last_reconnect_at = time.time()
-
-                    # Inject session context so Gemini knows where we left off
-                    context_prompt = state.build_resume_context()
-                    try:
-                        await _send_hidden_turn(session, context_prompt)
-                        metrics["context_injections"] += 1
-                        logger.info(
-                            "Session %s: context injected (%d chars)",
-                            state.session_id, len(context_prompt),
-                        )
-                        slog("server", "context_injected",
-                             chars=len(context_prompt),
-                             count=metrics["context_injections"])
-                    except Exception as exc:
-                        logger.warning(
-                            "Session %s: context injection failed: %s",
-                            state.session_id, exc,
-                        )
-                        slog("server", "context_injection_failed", error=str(exc))
-
-                    # Notify browser of successful reconnect
                     try:
                         await websocket.send_text(json.dumps({
                             "type": "reconnected",
@@ -667,9 +874,10 @@ async def _gemini_session_lifecycle(
                     except Exception:
                         return
 
+                # Successful connect resets retry staircase.
+                reconnect_attempt = 0
                 is_first_connect = False
 
-                # -- Run the Gemini <-> Browser forwarding --
                 receive_task = asyncio.create_task(
                     _forward_gemini_to_browser(
                         websocket, session, state, metrics, slog,
@@ -678,7 +886,6 @@ async def _gemini_session_lifecycle(
                     name="gemini_to_browser",
                 )
 
-                # Wait for the receive task or shutdown
                 shutdown_waiter = asyncio.create_task(shutdown_event.wait())
                 done, pending = await asyncio.wait(
                     {receive_task, shutdown_waiter},
@@ -691,53 +898,50 @@ async def _gemini_session_lifecycle(
                     except asyncio.CancelledError:
                         pass
 
-                # Check if shutdown was triggered
                 if shutdown_event.is_set():
                     return
 
-                # If we get here, Gemini stream ended — attempt reconnect
                 gemini_holder["connected"] = False
                 gemini_holder["session"] = None
                 gemini_ready_event.clear()
 
-                logger.info(
-                    "Session %s: Gemini session ended, will attempt reconnect",
-                    state.session_id,
-                )
-                slog("server", "gemini_session_ended",
-                     reason="stream_ended")
+                last_receive_error = gemini_holder.get("last_receive_error")
+                if last_receive_error and last_receive_error.get("is_context_overflow"):
+                    slog("server", "context_overflow_session_end")
+                    try:
+                        await websocket.send_text(json.dumps({
+                            "type": "session_limit",
+                            "data": {
+                                "reason": "context_overflow",
+                                "message": "Session reached its context limit. Please start a new session.",
+                            },
+                        }))
+                    except Exception:
+                        pass
+                    return
+
+                reconnect_reason = "stream_ended"
+                slog("server", "gemini_session_ended", reason=reconnect_reason)
 
         except Exception as exc:
-            # Gemini connection failed
             gemini_holder["connected"] = False
             gemini_holder["session"] = None
             gemini_ready_event.clear()
-
-            consecutive_failures += 1
             metrics["gemini_errors"] += 1
             is_first_connect = False
+            reconnect_reason = "connect_error"
 
             error_str = str(exc)
             is_context_overflow = "1011" in error_str
-
-            logger.warning(
-                "Session %s: Gemini error (attempt %d/%d): %s",
-                state.session_id,
-                consecutive_failures,
-                MAX_RECONNECT_ATTEMPTS,
-                exc,
+            slog(
+                "server",
+                "gemini_error",
+                error=error_str[:500],
+                attempt=reconnect_attempt,
+                is_context_overflow=is_context_overflow,
             )
-            slog("server", "gemini_error",
-                 error=error_str[:500],
-                 attempt=consecutive_failures,
-                 is_context_overflow=is_context_overflow)
 
-            # -- Gemini 1011 (context overflow) — graceful session end --
             if is_context_overflow:
-                logger.info(
-                    "Session %s: context overflow (1011) — ending session gracefully",
-                    state.session_id,
-                )
                 slog("server", "context_overflow_session_end")
                 try:
                     await websocket.send_text(json.dumps({
@@ -750,43 +954,6 @@ async def _gemini_session_lifecycle(
                 except Exception:
                     pass
                 return
-
-            # -- Check retry limit --
-            if consecutive_failures >= MAX_RECONNECT_ATTEMPTS:
-                metrics["reconnect_failures"] += 1
-                logger.error(
-                    "Session %s: all %d reconnect attempts exhausted — giving up",
-                    state.session_id,
-                    MAX_RECONNECT_ATTEMPTS,
-                )
-                slog("server", "reconnect_exhausted",
-                     attempts=consecutive_failures)
-
-                try:
-                    await websocket.send_text(json.dumps({
-                        "type": "session_ended",
-                        "data": {
-                            "reason": "reconnect_failed",
-                            "attempts": consecutive_failures,
-                            "message": "Connection lost. Please restart the session.",
-                        },
-                    }))
-                except Exception:
-                    pass
-                return
-
-            # Notify browser of reconnect attempt (error path)
-            try:
-                await websocket.send_text(json.dumps({
-                    "type": "reconnecting",
-                    "data": {
-                        "attempt": consecutive_failures,
-                        "max_attempts": MAX_RECONNECT_ATTEMPTS,
-                        "error": error_str[:200],
-                    },
-                }))
-            except Exception:
-                return  # Browser gone
 
 
 # ---------------------------------------------------------------------------
@@ -803,6 +970,7 @@ async def _forward_gemini_to_browser(
 ):
     """Receive responses from Gemini and forward to the browser."""
     turn_index = 0
+    gemini_holder["last_receive_error"] = None
 
     try:
         while not shutdown_event.is_set():
@@ -951,6 +1119,10 @@ async def _forward_gemini_to_browser(
         slog("server", "gemini_receive_error",
              error=error_str[:500],
              is_context_overflow=is_context_overflow)
+        gemini_holder["last_receive_error"] = {
+            "error": error_str[:500],
+            "is_context_overflow": is_context_overflow,
+        }
         # Return and let lifecycle manager handle reconnect
         return
 

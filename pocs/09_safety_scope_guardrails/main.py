@@ -249,7 +249,9 @@ CHEAT_PATTERNS = re.compile(
 
 # Patterns suggesting inappropriate content
 INAPPROPRIATE_PATTERNS = re.compile(
-    r"(?:how to (make|build) a (bomb|weapon|gun)|"
+    r"(?:how to (make|build) (?:a )?(bomb|weapon|gun)|"
+    r"how (?:do i|can i) (make|build) (?:a )?(bomb|weapon|gun)|"
+    r"(?:make|build) (?:a )?(bomb|weapon|gun) at home|"
     r"how to (hurt|harm|kill)|drugs|"
     r"explicit|pornograph|sexu|"
     r"hack into|break into|steal|"
@@ -322,30 +324,34 @@ def _create_session_log(session_id: str):
     details_lines: list[str] = []
     transcript_lines: list[str] = []
 
-    def write(source: str, event: str, **extra):
+    def write(src: str, event: str, **extra):
         now = datetime.datetime.now()
         entry = {
             "ts": now.isoformat(timespec="milliseconds"),
             "t": round(time.time() * 1000),
-            "src": source,
+            "src": src,
             "event": event,
             **extra,
         }
         fh.write(json.dumps(entry) + "\n")
 
         text = extra.get("text", "")
-        if source != "client" or not text:
+        if event.startswith("transcript_"):
+            if text:
+                tr_type = event[len("transcript_"):]
+                label = _TRANSCRIPT_LABELS.get(tr_type, tr_type.upper())
+                ts_short = now.strftime("%H:%M:%S")
+                transcript_lines.append(f"{ts_short} {label}: {text}")
             return
 
-        if event.startswith("transcript_"):
-            tr_type = event[len("transcript_"):]
-            label = _TRANSCRIPT_LABELS.get(tr_type, tr_type.upper())
-            ts_short = now.strftime("%H:%M:%S")
-            transcript_lines.append(f"{ts_short} {label}: {text}")
+        ms = f"{now.microsecond // 1000:03d}"
+        ts_detail = now.strftime("%H:%M:%S.") + ms
+        if text:
+            body = text
         else:
-            ms = f"{now.microsecond // 1000:03d}"
-            ts_detail = now.strftime("%H:%M:%S.") + ms
-            details_lines.append(f"[{ts_detail}] {text}")
+            non_text_fields = [f"{k}={extra[k]}" for k in sorted(extra) if k != "text"]
+            body = ", ".join(non_text_fields) if non_text_fields else "(no details)"
+        details_lines.append(f"[{ts_detail}] {src}:{event} {body}")
 
     def close_logs():
         fh.close()

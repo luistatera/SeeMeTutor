@@ -609,7 +609,7 @@
       <button class="btn-hud active" id="btnHud" onclick="toggleHud()">HUD On</button>
       <button class="btn-secondary" id="btnExport" onclick="showSummary()">Export Summary</button>
       <button class="btn-secondary" onclick="clearAll()">Clear</button>
-      <span class="hint">Latency HUD tracks response start, interruption stop, turn gap, and first byte.</span>
+      <span class="hint">Latency HUD tracks response start, interruption stop, turn gap, first byte, and tool-call duration.</span>
     </div>
 
     <!-- Metric cards -->
@@ -625,6 +625,10 @@
       <div class="metric-card">
         <div class="metric-value" id="mTurnGapAvg">--</div>
         <div class="metric-label">Turn Gap Avg</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value" id="mToolAvg">--</div>
+        <div class="metric-label">Tool Avg</div>
       </div>
       <div class="metric-card">
         <div class="metric-value" id="mTurns">0</div>
@@ -686,6 +690,16 @@
           <div class="hud-metric-value dim" id="hudValFirstByte">--</div>
           <div class="hud-metric-details" id="hudDetFirstByte">target &lt;3000ms | alert &gt;5000ms</div>
           <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarFirstByte" style="width:0%"></div></div>
+        </div>
+        <!-- Tool Call Duration -->
+        <div class="hud-metric" id="hudMetricToolCallDuration">
+          <div class="hud-metric-header">
+            <span class="hud-metric-name">Tool Call Duration</span>
+            <div class="hud-budget-dot" id="hudDotToolCallDuration"></div>
+          </div>
+          <div class="hud-metric-value dim" id="hudValToolCallDuration">--</div>
+          <div class="hud-metric-details" id="hudDetToolCallDuration">target &lt;800ms | alert &gt;2000ms</div>
+          <div class="hud-metric-bar"><div class="hud-metric-bar-fill" id="hudBarToolCallDuration" style="width:0%"></div></div>
         </div>
       </div>
     </div>
@@ -762,10 +776,11 @@
     var vadSpeechActive = false;
     var vadInitialized = false;
     var vadGraceTimer = null;
-    var VAD_GRACE_MS = 500;
-    var BARGE_IN_CONFIRM_MS = 220;
-    var SERVER_STREAM_GAP_MS = 800;
+    var VAD_GRACE_MS = 250;
+    var BARGE_IN_CONFIRM_MS = 120;
+    var SERVER_STREAM_GAP_MS = 450;
     var bargeInConfirmTimer = null;
+    var activityOpen = false;
 
     // Mic level tracking
     var micLevelDb = -100;
@@ -774,8 +789,9 @@
     var noiseCalibrating = false;
     var noiseCalibrateUntil = 0;
     var NOISE_CALIBRATION_MS = 1200;
-    var VOICE_DB_MARGIN = 10;
-    var MIN_VOICE_DB = -45;
+    var VOICE_DB_MARGIN = 8;
+    var MIN_VOICE_DB = -55;
+    var RESPONSE_REF_MAX_AGE_MS = 2500;
 
     // Playback
     var playbackCtx = null;
@@ -803,7 +819,8 @@
       response_start: null,
       interruption_stop: null,
       turn_to_turn: null,
-      first_byte: null
+      first_byte: null,
+      tool_call_duration: null
     };
 
     // Session counters
@@ -819,7 +836,8 @@
       response_start: { target: 500, alert: 800 },
       interruption_stop: { target: 200, alert: 400 },
       turn_to_turn: { target: 1500, alert: 2500 },
-      first_byte: { target: 3000, alert: 5000 }
+      first_byte: { target: 3000, alert: 5000 },
+      tool_call_duration: { target: 800, alert: 2000 }
     };
 
     // HUD element ID mapping
@@ -851,6 +869,13 @@
         det: 'hudDetFirstByte',
         dot: 'hudDotFirstByte',
         bar: 'hudBarFirstByte'
+      },
+      tool_call_duration: {
+        metric: 'hudMetricToolCallDuration',
+        val: 'hudValToolCallDuration',
+        det: 'hudDetToolCallDuration',
+        dot: 'hudDotToolCallDuration',
+        bar: 'hudBarToolCallDuration'
       }
     };
 
@@ -870,10 +895,10 @@
       try {
         logEvent('Loading Silero VAD v5 model (ONNX)...');
         vadInstance = await vad.MicVAD.new({
-          positiveSpeechThreshold: 0.72,
-          negativeSpeechThreshold: 0.45,
-          minSpeechMs: 260,
-          redemptionMs: 700,
+          positiveSpeechThreshold: 0.68,
+          negativeSpeechThreshold: 0.40,
+          minSpeechMs: 180,
+          redemptionMs: 500,
           preSpeechPadMs: 0,
           model: "v5",
           baseAssetPath: "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/",
@@ -883,7 +908,7 @@
           onVADMisfire: onVADMisfire,
         });
         vadReady = true;
-        logEvent('VAD ready (threshold=0.72, minSpeech=260ms)');
+        logEvent('VAD ready (threshold=0.68, minSpeech=180ms)');
       } catch (err) {
         logEvent('VAD init FAILED: ' + err.message);
         vadReady = false;
@@ -896,9 +921,18 @@
       if (!sessionActive) return;
 
       vadSpeechActive = true;
+      lastSpeechEndAt = 0;
 
       // Send speech_start to backend for turn-to-turn measurement
-      sendWS({ type: 'speech_start' });
+      sendWS({
+        type: 'speech_start',
+        tutor_speaking: tutorSpeaking,
+        turn_complete_pending: turnCompletePending
+      });
+      if (!activityOpen) {
+        activityOpen = true;
+        sendWS({ type: 'activity_start' });
+      }
 
       if (!tutorSpeaking) {
         logEvent('VAD: speech START', 'evt-vad');
@@ -906,19 +940,16 @@
         return;
       }
 
-      // Tutor IS speaking -- decide on barge-in
+      // Tutor IS speaking -- only allow barge-in while server is actively streaming.
       var msSinceServerAudio = lastTutorAudioAt > 0 ? performance.now() - lastTutorAudioAt : 99999;
       var serverStreaming = msSinceServerAudio < SERVER_STREAM_GAP_MS;
-      var drainingAfterTurnComplete = turnCompletePending;
-
-      if (serverStreaming && !drainingAfterTurnComplete) {
-        logEvent('VAD: speech during stream (' + Math.round(msSinceServerAudio) + 'ms), Gemini handles', 'evt-vad');
-        setStatus('vad-speech', 'Speaking (Gemini)...');
+      if (!serverStreaming) {
+        logEvent('VAD: speech during drain (' + Math.round(msSinceServerAudio) + 'ms), waiting', 'evt-vad');
+        setStatus('vad-speech', 'Speaking (drain)...');
         return;
       }
 
-      // Drain period -- client barge-in valid
-      logEvent('VAD: barge-in candidate, confirming for ' + BARGE_IN_CONFIRM_MS + 'ms', 'evt-vad');
+      logEvent('VAD: barge-in candidate (stream), confirming for ' + BARGE_IN_CONFIRM_MS + 'ms', 'evt-vad');
       bargeInConfirmTimer = setTimeout(function() {
         bargeInConfirmTimer = null;
         if (!sessionActive || !tutorSpeaking || !vadSpeechActive) return;
@@ -943,13 +974,25 @@
       // Send speech_end to backend for response start measurement
       lastSpeechEndAt = performance.now();
       sendWS({ type: 'speech_end' });
+      if (activityOpen) {
+        activityOpen = false;
+        sendWS({ type: 'activity_end' });
+      }
 
       logEvent('VAD: speech END (grace ' + VAD_GRACE_MS + 'ms)', 'evt-vad');
     }
 
     function onVADMisfire() {
       clearPendingBargeIn();
+      vadSpeechActive = false;
+      lastSpeechEndAt = 0;
+      if (activityOpen) {
+        activityOpen = false;
+        sendWS({ type: 'activity_end' });
+      }
+      sendWS({ type: 'speech_misfire' });
       logEvent('VAD: misfire (too short)', 'evt-vad');
+      if (sessionActive && !tutorSpeaking) setStatus('listening', 'Listening...');
     }
 
     function clearPendingBargeIn() {
@@ -1010,16 +1053,26 @@
       if (!sessionActive) return;
 
       if (!hasNoiseFloor) {
-        noiseFloorDb = micLevelDb;
-        hasNoiseFloor = true;
+        if (!vadSpeechActive && !tutorSpeaking) {
+          noiseFloorDb = micLevelDb;
+          hasNoiseFloor = true;
+        } else {
+          noiseFloorDb = -60;
+        }
       } else if (noiseCalibrating) {
-        noiseFloorDb = (0.9 * noiseFloorDb) + (0.1 * micLevelDb);
+        if (!vadSpeechActive && !tutorSpeaking) {
+          noiseFloorDb = (0.9 * noiseFloorDb) + (0.1 * micLevelDb);
+        }
       } else if (!vadSpeechActive && !tutorSpeaking) {
         noiseFloorDb = (0.98 * noiseFloorDb) + (0.02 * micLevelDb);
       }
 
       if (noiseCalibrating && performance.now() >= noiseCalibrateUntil) {
         noiseCalibrating = false;
+        if (noiseFloorDb > -45) {
+          noiseFloorDb = -55;
+          logEvent('Noise floor reset to -55dB (calibration contaminated by speech)', 'evt-vad');
+        }
         logEvent('Noise floor locked at ' + Math.round(noiseFloorDb) + 'dB', 'evt-vad');
       }
     }
@@ -1049,6 +1102,7 @@
         turnHasOutputTranscript = false;
         tutorTranscriptBuffer = '';
         vadSpeechActive = false;
+        activityOpen = false;
 
         sessionStartTime = Date.now();
         sessionTimerInterval = setInterval(updateSessionTimer, 1000);
@@ -1091,6 +1145,7 @@
       turnHasOutputTranscript = false;
       tutorTranscriptBuffer = '';
       vadSpeechActive = false;
+      activityOpen = false;
 
       var btn = document.getElementById('btnSession');
       btn.textContent = 'Start Session';
@@ -1204,10 +1259,18 @@
         tutorSpeakingStartedAt = now;
 
         // Client-side response start measurement (supplementary)
-        var refTime = lastSpeechEndAt > 0 ? lastSpeechEndAt : lastAudioSentAt;
+        var refTime = 0;
+        var refLabel = '';
+        if (lastSpeechEndAt > 0 && (now - lastSpeechEndAt) <= RESPONSE_REF_MAX_AGE_MS) {
+          refTime = lastSpeechEndAt;
+          refLabel = 'speech_end';
+        } else if (lastAudioSentAt > 0) {
+          refTime = lastAudioSentAt;
+          refLabel = 'last_audio_in';
+        }
         if (refTime > 0) {
           var clientRespMs = Math.round(now - refTime);
-          logEvent('Client response_start: ' + clientRespMs + 'ms', 'evt-latency');
+          logEvent('Client response_start: ' + clientRespMs + 'ms (ref ' + refLabel + ')', 'evt-latency');
         }
       }
 
@@ -1405,6 +1468,7 @@
         interruption_stop: 'Interruption Stop',
         turn_to_turn: 'Turn-to-Turn',
         first_byte: 'First Byte',
+        tool_call_duration: 'Tool Call Duration',
         visual_comment: 'Visual Comment'
       };
       return names[metric] || metric;
@@ -1492,8 +1556,6 @@
       var source = micCtx.createMediaStreamSource(micStream);
       micProcessor = micCtx.createScriptProcessor(4096, 1, 1);
 
-      var silenceBuffer = new Int16Array(4096);
-
       micProcessor.onaudioprocess = function(e) {
         if (!sessionActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
@@ -1509,15 +1571,11 @@
           shouldSendReal = !recentServerAudio;
         }
 
-        var b64;
-        if (shouldSendReal) {
-          var int16 = float32ToInt16(float32);
-          b64 = arrayBufferToBase64(int16.buffer);
-          lastAudioSentAt = performance.now();
-        } else {
-          b64 = arrayBufferToBase64(silenceBuffer.buffer);
-        }
+        if (!shouldSendReal) return;
 
+        var int16 = float32ToInt16(float32);
+        var b64 = arrayBufferToBase64(int16.buffer);
+        lastAudioSentAt = performance.now();
         ws.send(JSON.stringify({ type: 'audio', data: b64 }));
       };
 
@@ -1616,6 +1674,7 @@
 
       setStatus('listening', 'Listening...');
       logEvent('TURN_COMPLETE #' + turnCount + ' (audio drained)', 'evt-turn');
+      sendWS({ type: 'turn_audio_drained' });
     }
 
     // =========================================================================
@@ -1776,6 +1835,17 @@
         gapEl.className = 'metric-value';
       }
 
+      // Tool call avg
+      var toolEl = document.getElementById('mToolAvg');
+      if (latencyData.tool_call_duration && latencyData.tool_call_duration.count > 0) {
+        var tcAvg = latencyData.tool_call_duration.avg;
+        toolEl.textContent = tcAvg + 'ms';
+        toolEl.className = 'metric-value ' + getBudgetColor('tool_call_duration', tcAvg);
+      } else {
+        toolEl.textContent = '--';
+        toolEl.className = 'metric-value';
+      }
+
       document.getElementById('mTurns').textContent = turnCount;
       document.getElementById('mAlerts').textContent = alertCount;
       document.getElementById('mAudioOut').textContent = audioChunksOut;
@@ -1800,7 +1870,8 @@
         response_start: null,
         interruption_stop: null,
         turn_to_turn: null,
-        first_byte: null
+        first_byte: null,
+        tool_call_duration: null
       };
       turnCount = 0;
       alertCount = 0;
@@ -1810,6 +1881,7 @@
       lastSpeechEndAt = 0;
       bargeInSentAt = 0;
       lastTurnCompleteAt = 0;
+      activityOpen = false;
 
       tutorTranscriptBuffer = '';
       turnHasOutputTranscript = false;
@@ -1834,6 +1906,7 @@
       document.getElementById('hudDetInterruptionStop').textContent = 'target <200ms | alert >400ms';
       document.getElementById('hudDetTurnToTurn').textContent = 'target <1500ms | alert >2500ms';
       document.getElementById('hudDetFirstByte').textContent = 'target <3000ms | alert >5000ms';
+      document.getElementById('hudDetToolCallDuration').textContent = 'target <800ms | alert >2000ms';
 
       updateMetricCards();
       logEvent('UI cleared');
@@ -1852,7 +1925,7 @@
         'Duration: ' + elapsed + 's | Turns: ' + turnCount + ' | Alerts: ' + alertCount +
         ' | Audio chunks: ' + audioChunksOut;
 
-      var metricKeys = ['response_start', 'interruption_stop', 'turn_to_turn', 'first_byte'];
+      var metricKeys = ['response_start', 'interruption_stop', 'turn_to_turn', 'first_byte', 'tool_call_duration'];
       var textLines = [];
       textLines.push('Session Latency Summary');
       textLines.push('=======================');

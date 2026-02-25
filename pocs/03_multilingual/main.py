@@ -147,8 +147,10 @@ ask what they want to practice.
 
 CONFUSION_PATTERNS = [
     re.compile(
-        r"\b(i\s*(?:do\s*not|don't)\s*(?:get|understand)|i\s*(?:am|'m)\s*confused|"
-        r"i\s*(?:am|'m)\s*lost|not\s*sure|can\s*you\s*explain|what\s*does\s*that\s*mean)\b",
+        r"\b(i\s*(?:do\s*not|don't)\s*(?:get|understand)|"
+        r"i\s*(?:am|'m)\s*(?:still\s*)?confused|"
+        r"i\s*(?:am|'m)\s*(?:still\s*)?lost|"
+        r"not\s*sure|can\s*you\s*explain|what\s*does\s*that\s*mean)\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -409,7 +411,7 @@ def _build_language_contract(language_policy: dict[str, Any]) -> str:
         contract_parts.extend(
             [
                 f"Default output is {l2_label}.",
-                f"Use {l1_label} only for fallback or explicit learner request.",
+                f"Use {l1_label} only when fallback is active.",
                 f"After {max_l2} consecutive L2 turns, produce one short L1 recap.",
             ]
         )
@@ -490,16 +492,34 @@ def _analyze_turn_language(text: str) -> dict[str, Any]:
 
     lang_votes = {"en": 0, "pt": 0, "de": 0}
     word_counts = {"en": 0, "pt": 0, "de": 0}
+    has_piece_level_mixing = False
 
     for piece in pieces:
+        piece_tokens = _tokens(piece)
+        piece_words = len(piece_tokens)
+        if piece_words == 0:
+            continue
+
         lang = _detect_language(piece)
-        piece_words = len(_tokens(piece))
         if lang in _SUPPORTED_LANGS:
-            lang_votes[lang] += 1
-            word_counts[lang] += piece_words
+            candidate_langs = {lang}
+        else:
+            marker_scores = _lang_score_from_tokens(piece_tokens, piece)
+            candidate_langs = {code for code, score in marker_scores.items() if score >= 1.0}
+
+        if len(candidate_langs) > 1:
+            has_piece_level_mixing = True
+            for candidate in candidate_langs:
+                lang_votes[candidate] += 1
+            continue
+
+        if len(candidate_langs) == 1:
+            only_lang = next(iter(candidate_langs))
+            lang_votes[only_lang] += 1
+            word_counts[only_lang] += piece_words
 
     lang_set = [lang for lang, count in lang_votes.items() if count > 0]
-    mixed = len(lang_set) > 1
+    mixed = has_piece_level_mixing or len(lang_set) > 1
 
     primary = "unknown"
     if lang_set:

@@ -105,6 +105,28 @@
 
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
+    /* Session state controls used for reconnect resume payload */
+    .session-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr 130px;
+      gap: 8px;
+    }
+    .session-meta input,
+    .session-meta select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+    .session-meta input:focus,
+    .session-meta select:focus {
+      border-color: rgba(66, 133, 244, 0.7);
+    }
+
     /* Controls */
     .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
@@ -198,9 +220,20 @@
       <div class="status-label" id="statusLabel">Ready — click Start Mic to begin</div>
     </div>
 
+    <div class="session-meta">
+      <input id="studentName" type="text" placeholder="Student name" />
+      <input id="topicInput" type="text" placeholder="Current topic" />
+      <select id="languageSelect">
+        <option value="en">English</option>
+        <option value="pt">Portuguese</option>
+        <option value="de">German</option>
+      </select>
+    </div>
+
     <div class="controls">
       <button class="btn-mic" id="btnMic" onclick="toggleMic()">Start Mic</button>
       <button class="btn-danger" id="btnSimDisconnect" onclick="simulateDisconnect('gemini')">Simulate Gemini Drop</button>
+      <button class="btn-danger" onclick="simulateDisconnect('context_overflow')">Simulate 1011</button>
       <button class="btn-danger" onclick="simulateDisconnect('websocket')">Simulate WS Drop</button>
       <button class="btn-secondary" onclick="clearAll()">Clear</button>
     </div>
@@ -269,7 +302,16 @@
 
     // Session state (preserved across reconnects)
     var sessionTranscript = [];  // [{role: "tutor"|"student", text: "..."}]
+    var sessionWhiteboardNotes = []; // [{title, content}]
     var sessionStartedAt = Date.now();
+    var SESSION_STATE_KEY = 'poc06_session_state_v1';
+    var RESUME_MAX_STUDENT_TURNS = 3;
+    var RESUME_MAX_HISTORY_ENTRIES = 12;
+    var sessionState = {
+      student_name: 'Student',
+      topic: 'Current homework',
+      language: 'en',
+    };
 
     // Reconnect state
     var reconnectCount = 0;
@@ -344,6 +386,71 @@
     }
 
     // =========================================================================
+    // Session metadata persistence + sync
+    // =========================================================================
+    function loadSessionState() {
+      try {
+        var raw = localStorage.getItem(SESSION_STATE_KEY);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.student_name) sessionState.student_name = String(parsed.student_name);
+            if (parsed.topic) sessionState.topic = String(parsed.topic);
+            if (parsed.language) sessionState.language = String(parsed.language);
+          }
+        }
+      } catch (e) {
+        // Ignore malformed local storage.
+      }
+
+      document.getElementById('studentName').value = sessionState.student_name;
+      document.getElementById('topicInput').value = sessionState.topic;
+      document.getElementById('languageSelect').value = sessionState.language;
+    }
+
+    function persistSessionState() {
+      localStorage.setItem(SESSION_STATE_KEY, JSON.stringify(sessionState));
+    }
+
+    function bindSessionStateInputs() {
+      var studentInput = document.getElementById('studentName');
+      var topicInput = document.getElementById('topicInput');
+      var languageInput = document.getElementById('languageSelect');
+
+      studentInput.addEventListener('change', function() {
+        sessionState.student_name = studentInput.value.trim() || 'Student';
+        persistSessionState();
+        sendSessionState();
+      });
+
+      topicInput.addEventListener('change', function() {
+        sessionState.topic = topicInput.value.trim() || 'Current homework';
+        persistSessionState();
+        sendSessionState();
+      });
+
+      languageInput.addEventListener('change', function() {
+        sessionState.language = languageInput.value || 'en';
+        persistSessionState();
+        sendSessionState();
+      });
+    }
+
+    function sendSessionState() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({
+        type: 'session_state',
+        data: {
+          student_name: sessionState.student_name,
+          topic: sessionState.topic,
+          language: sessionState.language,
+          whiteboard_notes: sessionWhiteboardNotes.slice(-5),
+        },
+      }));
+      logEvent('Session state synced (' + sessionState.student_name + ' / ' + sessionState.topic + ')');
+    }
+
+    // =========================================================================
     // WebSocket with reconnect logic
     // =========================================================================
     function connectWS() {
@@ -360,9 +467,13 @@
       ws.onopen = function() {
         logEvent('WS connected', 'evt-success');
         wsReconnectAttempt = 0;
+        var wasReconnect = wsDisconnectedAt > 0;
+
+        // Always sync structured session state first.
+        sendSessionState();
 
         // If this was a reconnect, send session state
-        if (wsDisconnectedAt > 0) {
+        if (wasReconnect) {
           var latencyMs = Date.now() - wsDisconnectedAt;
           lastReconnectLatencyMs = latencyMs;
           reconnectSuccesses++;
@@ -380,6 +491,8 @@
 
         if (micActive) {
           setStatus('listening', 'Listening...');
+        } else if (wasReconnect) {
+          setStatus('', 'Connected, ready');
         }
       };
 
@@ -450,15 +563,53 @@
 
     function sendResumeContext() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      if (sessionTranscript.length === 0) return;
+      if (sessionTranscript.length === 0 && sessionWhiteboardNotes.length === 0) return;
 
-      // Send the last N transcript entries to backend
-      var historyToSend = sessionTranscript.slice(-20);
+      // Resume with only very recent context to avoid topic leakage.
+      var historyToSend = buildRecentResumeHistory();
       ws.send(JSON.stringify({
         type: 'resume_context',
         history: historyToSend,
+        session_state: {
+          student_name: sessionState.student_name,
+          topic: sessionState.topic,
+          language: sessionState.language,
+        },
+        whiteboard_notes: sessionWhiteboardNotes.slice(-5),
       }));
-      logEvent('Sent resume context (' + historyToSend.length + ' entries)', 'evt-reconnect');
+      logEvent(
+        'Sent resume context (' +
+        historyToSend.length +
+        ' transcript, ' +
+        sessionWhiteboardNotes.slice(-5).length +
+        ' notes)',
+        'evt-reconnect'
+      );
+    }
+
+    function buildRecentResumeHistory() {
+      if (sessionTranscript.length === 0) return [];
+
+      var studentSeen = 0;
+      var startIdx = 0;
+      for (var i = sessionTranscript.length - 1; i >= 0; i--) {
+        if (sessionTranscript[i].role === 'student') {
+          studentSeen++;
+          if (studentSeen >= RESUME_MAX_STUDENT_TURNS) {
+            startIdx = i;
+            break;
+          }
+        }
+      }
+
+      // Never resume from tutor-only fragments; require at least one student turn.
+      if (studentSeen === 0) return [];
+
+      var sliced = sessionTranscript.slice(startIdx);
+      if (sliced.length > RESUME_MAX_HISTORY_ENTRIES) {
+        sliced = sliced.slice(-RESUME_MAX_HISTORY_ENTRIES);
+      }
+      return sliced;
     }
 
     function simulateDisconnect(target) {
@@ -473,6 +624,8 @@
       if (target === 'gemini') {
         // Tell backend to kill its Gemini session
         ws.send(JSON.stringify({ type: 'simulate_disconnect', target: 'gemini' }));
+      } else if (target === 'context_overflow') {
+        ws.send(JSON.stringify({ type: 'simulate_disconnect', target: 'context_overflow' }));
       } else if (target === 'websocket') {
         // Tell backend to close our WS — triggers browser reconnect
         intentionalClose = true;
@@ -517,6 +670,19 @@
           if (sessionTranscript.length > 50) sessionTranscript = sessionTranscript.slice(-50);
           break;
 
+        case 'whiteboard':
+          if (msg.data && typeof msg.data === 'object') {
+            sessionWhiteboardNotes.push({
+              title: msg.data.title || '',
+              content: msg.data.content || '',
+            });
+            if (sessionWhiteboardNotes.length > 20) {
+              sessionWhiteboardNotes = sessionWhiteboardNotes.slice(-20);
+            }
+            logEvent('Whiteboard note captured for resume context');
+          }
+          break;
+
         case 'interrupted':
           handleInterruption(msg.data);
           break;
@@ -545,15 +711,17 @@
 
         case 'reconnected':
           var rc = msg.data.reconnect_count || 0;
+          var source = (msg.data && msg.data.source) || 'gemini';
           reconnectSuccesses++;
           logEvent(
-            'Backend reconnected to Gemini (total reconnects: ' + rc + ')',
+            'Backend reconnected (' + source + ', total reconnects: ' + rc + ')',
             'evt-success'
           );
           addTranscript('reconnect', 'AI connection restored. Session continues.');
           showBanner('reconnected', 'Reconnected! Resuming session...');
           setTimeout(function() { hideBanner(); }, 3000);
           if (micActive) setStatus('listening', 'Listening...');
+          else setStatus('', 'Connected, ready');
           updateMetrics();
           break;
 
@@ -858,6 +1026,7 @@
       reconnectCount = 0; reconnectSuccesses = 0; reconnectFailures = 0;
       turnCount = 0; lastReconnectLatencyMs = 0;
       sessionTranscript = [];
+      sessionWhiteboardNotes = [];
       updateMetrics();
     }
 
@@ -894,6 +1063,9 @@
     // =========================================================================
     // Init
     // =========================================================================
+    loadSessionState();
+    bindSessionStateInputs();
+    persistSessionState();
     connectWS();
     uptimeInterval = setInterval(updateUptime, 1000);
   </script>

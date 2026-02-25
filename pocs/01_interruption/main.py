@@ -104,7 +104,7 @@ def _create_session_log(session_id: str):
     Writes three log files per session:
       - {ts}_{session_id}.jsonl  — raw JSONL (all events with state snapshots)
       - details.log              — human-readable event log, newest-first
-      - trasncript.log           — conversation transcript, newest-first
+      - transcript.log           — conversation transcript, newest-first
     """
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = LOGS_DIR / f"{ts}_{session_id}.jsonl"
@@ -134,7 +134,7 @@ def _create_session_log(session_id: str):
             tr_type = event[len("transcript_"):]
             label = _TRANSCRIPT_LABELS.get(tr_type, tr_type.upper())
             ts_short = now.strftime("%H:%M:%S")
-            transcript_lines.append(f"{ts_short}{label}: {text}")
+            transcript_lines.append(f"{ts_short} {label}: {text}")
         else:
             # All other client events → details log
             ms = f"{now.microsecond // 1000:03d}"
@@ -147,7 +147,7 @@ def _create_session_log(session_id: str):
         (LOGS_DIR / "details.log").write_text(
             "\n".join(reversed(details_lines)) + ("\n" if details_lines else "")
         )
-        (LOGS_DIR / "trasncript.log").write_text(
+        (LOGS_DIR / "transcript.log").write_text(
             "\n".join(reversed(transcript_lines)) + ("\n" if transcript_lines else "")
         )
 
