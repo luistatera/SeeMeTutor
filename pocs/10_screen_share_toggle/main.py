@@ -889,6 +889,10 @@ async def _check_proactive_trigger(
     if silence_s < PROACTIVE_SILENCE_MIN_S:
         return
 
+    # Suppress proactive triggers during source switch cooldown
+    if metrics["last_switch_at"] > 0 and (now - metrics["last_switch_at"]) < SOURCE_SWITCH_COOLDOWN_S:
+        return
+
     # Is visual source active? (camera or screen)
     visual_active = _is_visual_active(now, metrics)
 
@@ -963,6 +967,10 @@ async def _idle_orchestrator(
             await asyncio.sleep(CHECK_INTERVAL_S)
 
             now = time.time()
+
+            # Suppress idle/proactive during source switch cooldown
+            if metrics["last_switch_at"] > 0 and (now - metrics["last_switch_at"]) < SOURCE_SWITCH_COOLDOWN_S:
+                continue
 
             if metrics["tutor_speaking"] or metrics["client_tutor_playing"]:
                 continue

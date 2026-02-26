@@ -27,6 +27,11 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 1. Frontend: Extract VAD + audio gate + barge-in into a clearly marked `// === INTERRUPTION MODULE ===` section in the JS with documented entry points
 2. Backend: The changes are config-level. No refactoring needed — just port the config values and the stale-interrupt guard
 
+**Hook points needed:**
+- `on_interrupted` — ignore stale interrupted events when `assistant_speaking == False`
+- `gemini_config` — VAD sensitivity values (`START_SENSITIVITY_LOW`, `END_SENSITIVITY_LOW`, `silence_duration_ms: 700`)
+- Frontend: audio playback pipeline (drain-aware turn_complete, barge-in confirmation gate)
+
 **Transfer difficulty: MEDIUM** (frontend extraction is the work; backend is trivial)
 
 ---
@@ -54,6 +59,14 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 2. `_check_proactive_trigger` is clean — already takes explicit parameters
 3. The config constants at the top of the file are already well-organized
 
+**Hook points needed:**
+- `on_video_frame` — update `last_video_frame_at`, `camera_active` flags
+- `on_student_speech_start` / `on_student_speech_end` — track silence duration
+- `on_tutor_audio_chunk` — update `assistant_speaking`, `last_tutor_audio_at`
+- `on_turn_complete` — reset poke/nudge state
+- `async_task` — idle orchestrator runs as a standalone `asyncio.create_task` alongside forwarders
+- `on_tutor_text` — sanitize output (strip internal control markers)
+
 **Transfer difficulty: MEDIUM** (functions exist but depend on shared state that must match the main app's state model)
 
 ---
@@ -80,6 +93,11 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 **Refactoring needed:**
 1. These functions are ALREADY almost ready to be a standalone module. Just group them into a `language.py` file
 2. The two async handlers (`_handle_student_transcript`, `_finalize_tutor_turn`) need their callback signatures documented
+
+**Hook points needed:**
+- `on_student_transcript` — detect language, track confusion count, send internal control if wrong language
+- `on_turn_complete` — finalize tutor turn (check tutor language compliance, send correction hidden turn if needed)
+- `on_session_start` — build language contract from student profile, inject into system prompt context
 
 **Transfer difficulty: LOW** — cleanest PoC, most modular code
 
@@ -110,6 +128,12 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 2. `_whiteboard_dispatcher` needs its dependencies made explicit (what queues, what state flags)
 3. Note normalization functions are already pure — ready to move
 
+**Hook points needed:**
+- `on_tool_call("write_notes")` — normalize note fields before queueing (title, content, type, dedup)
+- `on_tutor_audio_chunk` — dispatcher checks if tutor is speaking to time note delivery
+- `on_turn_complete` — dispatcher flushes any queued notes
+- `async_task` — whiteboard dispatcher runs as a standalone `asyncio.create_task`
+
 **Transfer difficulty: MEDIUM** (normalization is easy, dispatcher coupling is the work)
 
 ---
@@ -133,6 +157,10 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 **Refactoring needed:**
 - Almost none. `_extract_grounding` is already a pure function. Just needs to be importable.
 - The citation card frontend code needs to be identified and marked in the HTML
+
+**Hook points needed:**
+- `on_gemini_message` — extract grounding metadata from Gemini response, forward citations to frontend
+- `gemini_config` — add `google_search` to tools list
 
 **Transfer difficulty: LOW** — cleanest extraction of all PoCs
 
@@ -164,6 +192,12 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 2. The `_gemini_session_lifecycle` loop pattern needs to REPLACE the current main app's Gemini session pattern
 3. Frontend reconnect logic needs clear `// === RECONNECT MODULE ===` markers
 
+**Hook points needed:**
+- `on_gemini_disconnect` — trigger reconnect with backoff, inject resume context into new session
+- `on_session_start` — initialize `SessionState`, load resume context if reconnecting
+- `on_session_end` — persist session state for potential future reconnect
+- `gemini_lifecycle` — wraps the entire Gemini session in a retry loop (structural, not a simple hook)
+
 **Transfer difficulty: HIGH** — requires restructuring the main app's session flow, not just adding functions
 
 ---
@@ -193,6 +227,12 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 2. The timestamp injection points in `_forward_browser_to_gemini` and `_forward_gemini_to_browser` need to be documented as hooks
 3. Frontend HUD is self-contained but large (2106 lines total HTML) — need to identify the HUD-specific portion
 
+**Hook points needed:**
+- `on_student_speech_end` — record timestamp (start of latency measurement)
+- `on_tutor_audio_chunk` (first chunk) — record timestamp (end of latency measurement), compute delta
+- `on_turn_complete` — send aggregated latency report to frontend
+- `on_interrupted` — record interruption-to-silence latency
+
 **Transfer difficulty: LOW-MEDIUM** (class is clean; challenge is adding timestamp hooks in the right places)
 
 ---
@@ -221,22 +261,54 @@ This means you can't just `from poc_01 import interruption_handler` — you have
 2. `_record_guardrail_event` takes too many params (metrics, slog, websocket, event, source) — could use a GuardrailContext object
 3. Reinforcement prompts should be grouped with the functions, not scattered in constants
 
+**Hook points needed:**
+- `on_student_transcript` — check input guardrails (off-topic, cheat, inappropriate), send reinforcement hidden turn if triggered
+- `on_tutor_text` — check output guardrails (answer leak detection), sanitize internal control text
+- `on_tutor_text` — strip internal markers before sending to frontend
+
 **Transfer difficulty: LOW-MEDIUM** (functions are clean; integration is about inserting checks at the right hook points)
 
 ---
 
 ## Summary Table
 
-| PoC | Core Lines | Unique Functions | Isolation | Transfer Difficulty | Refactoring Needed |
+| PoC | Core Lines | Unique Functions | Isolation | Transfer Difficulty | Primary Hook Points |
 |-----|-----------|-----------------|-----------|--------------------|--------------------|
-| 01 Interruption | ~200 | 0 (inline logic) | ❌ Not isolated | Medium | Extract frontend VAD module |
-| 02 Proactive Vision | ~350 | 5 named | ⚠️ Partial | Medium | Document state dependencies |
-| 03 Multilingual | ~500 | 20+ pure functions | ✅ Best | Low | Almost ready as-is |
-| 04 Whiteboard | ~350 | 8 named | ⚠️ Partial | Medium | Split tool dispatch |
-| 05 Search Grounding | ~100 | 1 core function | ✅ Well isolated | Low | Nearly drop-in |
-| 06 Session Resilience | ~400 | 4 + SessionState class | ⚠️ Partial | HIGH | Restructures session flow |
-| 07 Latency | ~200 | 4 + LatencyStats class | ✅ Well isolated | Low-Medium | Add timestamp hooks |
-| 09 Safety Guardrails | ~250 | 5 named | ⚠️ Partial | Low-Medium | Group with prompts |
+| 01 Interruption | ~200 | 0 (inline logic) | ❌ Not isolated | Medium | `on_interrupted`, `gemini_config`, frontend audio pipeline |
+| 02 Proactive Vision | ~350 | 5 named | ⚠️ Partial | Medium | `on_video_frame`, `on_student_speech_*`, `on_turn_complete`, `async_task` |
+| 03 Multilingual | ~500 | 20+ pure functions | ✅ Best | Low | `on_student_transcript`, `on_turn_complete`, `on_session_start` |
+| 04 Whiteboard | ~350 | 8 named | ⚠️ Partial | Medium | `on_tool_call("write_notes")`, `on_tutor_audio_chunk`, `async_task` |
+| 05 Search Grounding | ~100 | 1 core function | ✅ Well isolated | Low | `on_gemini_message`, `gemini_config` |
+| 06 Session Resilience | ~400 | 4 + SessionState class | ⚠️ Partial | HIGH | `on_gemini_disconnect`, `gemini_lifecycle` (structural) |
+| 07 Latency | ~200 | 4 + LatencyStats class | ✅ Well isolated | Low-Medium | `on_student_speech_end`, `on_tutor_audio_chunk`, `on_turn_complete` |
+| 09 Safety Guardrails | ~250 | 5 named | ⚠️ Partial | Low-Medium | `on_student_transcript`, `on_tutor_text` |
+
+---
+
+## Hook Point Reference — Which PoCs Fire Where
+
+This table is architecture-agnostic: it shows *when* each capability's logic must run, regardless of whether the main app uses raw `google-genai`, ADK, or any other plumbing.
+
+| Hook Point | When it fires | PoCs that use it |
+|---|---|---|
+| `gemini_config` | Session config before Gemini connect | 01 (VAD sensitivity), 05 (search tool) |
+| `on_session_start` | After WebSocket accepted, before first audio | 03 (build language contract), 06 (init SessionState) |
+| `on_student_audio` | Each audio chunk from browser | 07 (timestamp for latency start) |
+| `on_student_speech_start` | VAD detects speech begin | 02 (reset silence timer) |
+| `on_student_speech_end` | VAD detects speech end | 02 (start silence timer), 07 (record latency start) |
+| `on_student_transcript` | Student speech-to-text arrives | 03 (detect language), 09 (input guardrails) |
+| `on_video_frame` | Camera or screen JPEG arrives | 02 (update camera_active, last_frame_at) |
+| `on_tutor_audio_chunk` | Each audio chunk from Gemini | 04 (dispatcher timing), 07 (first chunk = latency end) |
+| `on_tutor_text` | Tutor transcript text arrives | 02 (sanitize), 09 (output guardrails + sanitize) |
+| `on_turn_complete` | Gemini signals turn finished | 02 (reset poke state), 03 (finalize turn language), 04 (flush notes), 07 (send report) |
+| `on_interrupted` | Gemini signals barge-in | 01 (stale filter), 07 (interruption latency) |
+| `on_tool_call` | Tool dispatch (by name) | 04 (`write_notes` normalization) |
+| `on_gemini_message` | Every raw Gemini response | 05 (extract grounding metadata) |
+| `on_gemini_disconnect` | Gemini session drops | 06 (reconnect with backoff) |
+| `on_session_end` | WebSocket closing | 06 (persist state), 07 (final report) |
+| `async_task` | Standalone loop alongside forwarders | 02 (idle orchestrator), 04 (whiteboard dispatcher) |
+
+**Key insight:** `on_student_transcript`, `on_turn_complete`, and `on_tutor_text` are the most crowded hook points — 3-4 PoCs each. The integration order should ensure earlier-integrated PoCs don't block later ones at these shared points.
 
 ---
 
