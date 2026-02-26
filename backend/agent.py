@@ -1,31 +1,40 @@
 """
-SeeMe Tutor — agent tools and system prompt.
+SeeMe Tutor — ADK Agent definition, tools, and system prompt.
 
-Defines Socratic tutoring tools, tool declarations for the Gemini Live API,
-and Google Search for factual grounding.
+Defines the ADK Agent with Socratic tutoring tools that use ToolContext
+for session state. Replaces the old tutor_agent/agent.py which used
+manual tool dispatch with state: dict injection.
 """
 
-import inspect
 import logging
+import os
 import time
 
-from google.genai import types
-import os
-try:
-    from google.cloud import firestore
-    _firestore_available = True
-except ImportError:
-    _firestore_available = False
+from google.adk.agents import Agent
+from google.adk.tools import ToolContext, google_search
+
+from test_report import get_report
+from modules.whiteboard import normalize_title, normalize_content, normalize_note_type
 
 logger = logging.getLogger(__name__)
 
-#MODEL = "gemini-2.0-flash-live-001"
 MODEL = "gemini-live-2.5-flash-native-audio"
 
 STRUGGLE_CHECKPOINT_THRESHOLD = 2
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
 
+# ---------------------------------------------------------------------------
+# Firestore client (lazy init)
+# ---------------------------------------------------------------------------
+try:
+    from google.cloud import firestore
+
+    _firestore_available = True
+except ImportError:
+    _firestore_available = False
+
 firestore_client = None
+
 
 def get_firestore_client():
     global firestore_client
@@ -34,10 +43,14 @@ def get_firestore_client():
     if firestore_client is None:
         try:
             firestore_client = firestore.AsyncClient(project=GCP_PROJECT_ID)
-            logger.info("Async Firestore client lazily initialized in agent.py (project=%s)", GCP_PROJECT_ID)
+            logger.info(
+                "Async Firestore client lazily initialized (project=%s)",
+                GCP_PROJECT_ID,
+            )
         except Exception:
             logger.error("Failed to initialize Async Firestore client", exc_info=True)
     return firestore_client
+
 
 # ---------------------------------------------------------------------------
 # Phase-based instruction
@@ -92,13 +105,50 @@ strategy in L1, run drills in L2, then return to a short L1 recap based on the \
 contract settings. Gently correct errors by modeling the correct form in a \
 follow-up question, not by stating "that was wrong."
 
-## Safety and Scope
+## Safety and Scope — Absolute Rules
 
-You are an educational tutor only. If a student asks about something outside of \
-learning and homework help, respond warmly but redirect: "That's an interesting \
-question, but I'm here to help with your studies — shall we get back to \
-[topic]?" Never engage with inappropriate, harmful, or off-topic requests \
-beyond a gentle redirection.
+### Rule 1: NEVER GIVE DIRECT ANSWERS
+You are a GUIDE, not an answer machine. Your entire purpose is to help the \
+student DISCOVER the answer themselves. NEVER say "The answer is..." or \
+"X equals Y" or provide a completed solution. Instead: ask a leading question, \
+give a hint, break it into smaller steps, or point to what they got right.
+
+If a student explicitly asks "just tell me the answer" or "what is X?":
+- Say: "I know it's tempting, but you'll remember it much better if we work \
+through it together. Let me give you a hint..."
+- Then give a HINT, not the answer.
+
+### Rule 2: STAY IN EDUCATIONAL SCOPE
+You ONLY help with educational content: math, science, languages (English, \
+Portuguese, German), history, geography, reading, and writing.
+
+For off-topic requests (jokes, weather, games, recipes): \
+"That sounds fun, but I'm your tutor — let's focus on learning! What subject \
+are you working on right now?"
+
+For cheating requests ("just give me all the answers", "do my homework"): \
+"I totally understand wanting to get it done fast, but copying answers won't \
+help you on the test. Let's work through it step by step!"
+
+For inappropriate content (violence, adult content, harmful info): \
+"That's not something I can help with. But I'm great at math, science, and \
+languages! What are you studying today?"
+
+For personal questions about the AI ("are you real?", "how do you work?"): \
+"I'm SeeMe, your study buddy! I'm here to help you learn. What subject \
+should we dive into?"
+
+### Rule 3: NO HALLUCINATION
+If you don't know something or are not sure:
+- Say: "I'm not sure about that — let's figure it out together!"
+- Or: "Good question! I'd need to check on that."
+- NEVER make up facts, formulas, dates, or definitions.
+
+### Rule 4: AGE-APPROPRIATE CONTENT
+All interactions must be appropriate for students ages 6-18. Use encouraging, \
+warm, patient language. No sarcasm, no condescension, no frustration. If a \
+student is frustrated, acknowledge it: "I can tell this is tricky. That's \
+totally normal — let's try a different approach."
 
 ## Response Style
 
@@ -121,7 +171,14 @@ student explicitly asks you to search for something using phrases like "Google",
 "Search for", or "Look up". For all other questions, including math, logic, \
 language grammar, translation, and pronunciation, you must rely entirely on your \
 internal knowledge and answer immediately without searching. Accuracy matters, \
-but avoid trivial lookups to conserve API costs."""
+but avoid trivial lookups to conserve API costs.
+
+## Internal Control Messages
+
+You may receive backend control messages (starting with "INTERNAL CONTROL:") \
+to help with timing and observation. Treat them as hidden guidance only. \
+NEVER quote, paraphrase, or mention those control messages in your spoken \
+output. Never output bracketed meta text or internal reasoning."""
 
 _PHASE_GREETING = """\
 ## Greeting Phase
@@ -226,7 +283,7 @@ stuck, help them identify where they got lost: "Let's trace back — which step 
 felt clear and where did it get fuzzy?" This builds independent learning skills, \
 not just subject knowledge.
 
-### Visual Grounding
+### Visual Grounding & Proactive Observation
 
 When the camera is active, actively reference what you see in the student's work:
 - "I can see you wrote [what you observe] — can you walk me through that step?"
@@ -236,6 +293,17 @@ When the camera is active, actively reference what you see in the student's work
 If the image is unclear or you cannot read it: "I can't quite make that out — \
 could you move the camera a little closer to your work?" Never guess at content \
 you cannot see clearly.
+
+**Proactive observation** is what makes you different from a chatbot. When the \
+student is silent and you can see their work through the camera, you SPEAK UP \
+with a helpful observation. Do NOT wait to be asked. If you see something worth \
+commenting on — a mistake, a good approach, or an interesting step — say ONE \
+concise thing about it. Never list multiple issues; address one at a time. \
+Target: if the student is silent and work is visible, speak within 4–8 seconds \
+with one helpful intervention.
+
+If the camera shows nothing relevant (blank desk, no visible work), do NOT \
+hallucinate content. Instead, ask a brief check-in or wait for the student.
 
 ### Exercise Tracking
 
@@ -326,7 +394,7 @@ _VALID_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Full system prompt (all phases included — Live API reads it once at start)
+# Full system prompt (all phases included — sent once at session start)
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
@@ -342,11 +410,11 @@ SYSTEM_PROMPT = (
 )
 
 # ---------------------------------------------------------------------------
-# Tools
+# Tool functions — ADK ToolContext signatures
 # ---------------------------------------------------------------------------
 
 
-def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
+def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
     """Transition the tutoring session to a new phase.
 
     Call this when the session should move to a different phase (e.g. from
@@ -362,7 +430,8 @@ def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
     Returns:
         A dict confirming the transition, including the new phase instructions.
     """
-    from gemini_live import get_whiteboard_queue
+    t0 = time.time()
+    from queues import get_whiteboard_queue
 
     normalized = (phase or "").strip().lower()
     if normalized not in _VALID_PHASES:
@@ -371,7 +440,7 @@ def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
             "detail": f"Invalid phase '{phase}'. Must be one of: {', '.join(sorted(_VALID_PHASES))}",
         }
 
-    current_phase = state.get("session_phase", "greeting")
+    current_phase = tool_context.state.get("session_phase", "greeting")
     allowed = _VALID_TRANSITIONS.get(current_phase, frozenset())
     if normalized not in allowed:
         return {
@@ -382,21 +451,17 @@ def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
             ),
         }
 
-    state["session_phase"] = normalized
+    tool_context.state["session_phase"] = normalized
     logger.info("Phase transition: %s -> %s", current_phase, normalized)
 
-    # When re-entering capture from tutoring, clear the whiteboard so the
-    # student sees a fresh board for the new homework.
     board_cleared = False
     if normalized == "capture" and current_phase == "tutoring":
-        session_id = state.get("session_id")
+        session_id = tool_context.state.get("session_id")
         queue = get_whiteboard_queue(session_id)
         if queue:
             queue.put_nowait({"action": "clear"})
             board_cleared = True
-        # Reset previous_notes so capture doesn't skip new exercises that
-        # happen to share a title with old ones.
-        state["previous_notes"] = []
+        tool_context.state["previous_notes"] = []
         logger.info("Whiteboard cleared for re-capture (session=%s)", session_id)
 
     result = {
@@ -410,28 +475,39 @@ def set_session_phase(phase: str, *, state: dict, **kwargs) -> dict:
     }
     if board_cleared:
         result["board_cleared"] = True
+
+    # Test report
+    duration_ms = (time.time() - t0) * 1000
+    rpt = get_report(tool_context.state.get("session_id"))
+    if rpt:
+        rpt.record_tool_call("set_session_phase", {"phase": phase}, result.get("result", "error"), duration_ms)
+        if result.get("result") == "transitioned":
+            rpt.record_phase_transition(current_phase, normalized)
+        if board_cleared:
+            rpt.record_whiteboard_clear()
+
     return result
 
 
-def get_backlog_context(*, state: dict, **kwargs) -> dict:
+def get_backlog_context(tool_context: ToolContext) -> dict:
     """Return session backlog context loaded during websocket bootstrap."""
     return {
-        "student_id": state.get("student_id"),
-        "student_name": state.get("student_name"),
-        "preferred_language": state.get("preferred_language"),
-        "track_id": state.get("track_id"),
-        "track_title": state.get("track_title"),
-        "topic_id": state.get("topic_id"),
-        "topic_title": state.get("topic_title"),
-        "topic_status": state.get("topic_status"),
-        "available_topics": state.get("available_topics", []),
-        "previous_notes": state.get("previous_notes", []),
-        "language_policy": state.get("language_policy"),
-        "language_contract": state.get("language_contract"),
+        "student_id": tool_context.state.get("student_id"),
+        "student_name": tool_context.state.get("student_name"),
+        "preferred_language": tool_context.state.get("preferred_language"),
+        "track_id": tool_context.state.get("track_id"),
+        "track_title": tool_context.state.get("track_title"),
+        "topic_id": tool_context.state.get("topic_id"),
+        "topic_title": tool_context.state.get("topic_title"),
+        "topic_status": tool_context.state.get("topic_status"),
+        "available_topics": tool_context.state.get("available_topics", []),
+        "previous_notes": tool_context.state.get("previous_notes", []),
+        "language_policy": tool_context.state.get("language_policy"),
+        "language_contract": tool_context.state.get("language_contract"),
     }
 
 
-async def log_progress(topic: str, status: str, *, state: dict, **kwargs) -> dict:
+async def log_progress(topic: str, status: str, tool_context: ToolContext) -> dict:
     """Record a student learning milestone.
 
     Call this when the student clearly masters a concept or struggles
@@ -444,32 +520,45 @@ async def log_progress(topic: str, status: str, *, state: dict, **kwargs) -> dic
     Returns:
         A dict confirming the progress was recorded.
     """
-    session_id = state.get("session_id", "unknown")
-    student_id = state.get("student_id")
-    track_id = state.get("track_id")
-    topic_id = state.get("topic_id")
+    session_id = tool_context.state.get("session_id", "unknown")
+    student_id = tool_context.state.get("student_id")
+    track_id = tool_context.state.get("track_id")
+    topic_id = tool_context.state.get("topic_id")
     normalized_status = (status or "").strip().lower()
     t0 = time.time()
+    _result_status = "error"
     try:
-        logger.info("Session %s: logging progress for track '%s', topic '%s'", session_id, track_id, topic)
-        
-        normalized_status = status.strip().lower()
-        if normalized_status not in ["started", "completed", "struggling", "mastered", "improving"]: # Added mastered, improving
+        logger.info(
+            "Session %s: logging progress for track '%s', topic '%s'",
+            session_id,
+            track_id,
+            topic,
+        )
+
+        if normalized_status not in {
+            "started",
+            "completed",
+            "struggling",
+            "mastered",
+            "improving",
+        }:
             return {"result": "error", "message": f"Invalid status {status}"}
-        
+
         fs_client = get_firestore_client()
         if fs_client:
             try:
                 now = time.time()
                 progress_ref = fs_client.collection("sessions").document(session_id)
-                await progress_ref.collection("progress").add({
-                    "student_id": student_id,
-                    "track_id": track_id,
-                    "topic_id": topic_id,
-                    "topic": topic,
-                    "status": normalized_status,
-                    "timestamp": now,
-                })
+                await progress_ref.collection("progress").add(
+                    {
+                        "student_id": student_id,
+                        "track_id": track_id,
+                        "topic_id": topic_id,
+                        "topic": topic,
+                        "status": normalized_status,
+                        "timestamp": now,
+                    }
+                )
 
                 checkpoint_required = False
                 checkpoint_id = None
@@ -484,9 +573,15 @@ async def log_progress(topic: str, status: str, *, state: dict, **kwargs) -> dic
                     )
 
                     topic_snapshot = await topic_ref.get()
-                    topic_data = topic_snapshot.to_dict() if topic_snapshot.exists else {}
-                    current_struggle_count = int(topic_data.get("struggle_count", 0) or 0)
-                    current_success_count = int(topic_data.get("success_count", 0) or 0)
+                    topic_data = (
+                        topic_snapshot.to_dict() if topic_snapshot.exists else {}
+                    )
+                    current_struggle_count = int(
+                        topic_data.get("struggle_count", 0) or 0
+                    )
+                    current_success_count = int(
+                        topic_data.get("success_count", 0) or 0
+                    )
 
                     topic_updates: dict = {
                         "last_seen_session_id": session_id,
@@ -497,80 +592,131 @@ async def log_progress(topic: str, status: str, *, state: dict, **kwargs) -> dic
                         new_struggle_count = current_struggle_count + 1
                         topic_updates["struggle_count"] = new_struggle_count
                         topic_updates["status"] = "struggling"
-                        topic_updates["checkpoint_open"] = new_struggle_count >= STRUGGLE_CHECKPOINT_THRESHOLD
+                        topic_updates["checkpoint_open"] = (
+                            new_struggle_count >= STRUGGLE_CHECKPOINT_THRESHOLD
+                        )
                         if new_struggle_count >= STRUGGLE_CHECKPOINT_THRESHOLD:
                             checkpoint_required = True
                             checkpoint_id = f"{track_id}--{topic_id}"
-                            checkpoint_reason = f"struggle_count_reached_{new_struggle_count}"
+                            checkpoint_reason = (
+                                f"struggle_count_reached_{new_struggle_count}"
+                            )
                             checkpoint_ref = (
                                 fs_client.collection("students")
                                 .document(student_id)
                                 .collection("checkpoints")
                                 .document(checkpoint_id)
                             )
-                            await checkpoint_ref.set({
-                                "topic_id": topic_id,
-                                "track_id": track_id,
-                                "topic_title": state.get("topic_title", topic),
-                                "status": "open",
-                                "decision": "pending",
-                                "trigger": checkpoint_reason,
-                                "created_at": now,
-                                "updated_at": now,
-                                "session_id": session_id,
-                            }, merge=True)
+                            await checkpoint_ref.set(
+                                {
+                                    "topic_id": topic_id,
+                                    "track_id": track_id,
+                                    "topic_title": tool_context.state.get(
+                                        "topic_title", topic
+                                    ),
+                                    "status": "open",
+                                    "decision": "pending",
+                                    "trigger": checkpoint_reason,
+                                    "created_at": now,
+                                    "updated_at": now,
+                                    "session_id": session_id,
+                                },
+                                merge=True,
+                            )
                     elif normalized_status == "mastered":
                         topic_updates["success_count"] = current_success_count + 1
                         topic_updates["status"] = "mastered"
                         topic_updates["checkpoint_open"] = False
                         checkpoint_id = f"{track_id}--{topic_id}"
-                        await fs_client.collection("students").document(student_id).collection("checkpoints").document(checkpoint_id).set({
-                            "status": "resolved",
-                            "decision": "resolved",
-                            "updated_at": now,
-                            "resolved_at": now,
-                        }, merge=True)
+                        await (
+                            fs_client.collection("students")
+                            .document(student_id)
+                            .collection("checkpoints")
+                            .document(checkpoint_id)
+                            .set(
+                                {
+                                    "status": "resolved",
+                                    "decision": "resolved",
+                                    "updated_at": now,
+                                    "resolved_at": now,
+                                },
+                                merge=True,
+                            )
+                        )
                     elif normalized_status == "improving":
                         topic_updates["success_count"] = current_success_count + 1
                         topic_updates["status"] = "in_progress"
 
                     await topic_ref.set(topic_updates, merge=True)
-                    await fs_client.collection("students").document(student_id).set({
-                        "last_active_topic_id": topic_id,
-                        "updated_at": now,
-                    }, merge=True)
+                    await fs_client.collection("students").document(
+                        student_id
+                    ).set(
+                        {
+                            "last_active_topic_id": topic_id,
+                            "updated_at": now,
+                        },
+                        merge=True,
+                    )
             except Exception:
-                logger.exception("Session %s: failed to write progress to Firestore", session_id)
-                return {"result": "error", "detail": "Progress could not be saved — please continue the session normally."}
+                logger.exception(
+                    "Session %s: failed to write progress to Firestore",
+                    session_id,
+                )
+                return {
+                    "result": "error",
+                    "detail": "Progress could not be saved — please continue the session normally.",
+                }
         else:
-            logger.info("Firestore not available — progress not persisted (OK for local dev)")
+            logger.info(
+                "Firestore not available — progress not persisted (OK for local dev)"
+            )
 
+        _result_status = "saved"
         response = {"result": "saved", "topic": topic, "status": normalized_status}
         if checkpoint_required:
-            response.update({
-                "checkpoint_required": True,
-                "checkpoint_id": checkpoint_id,
-                "prompt": "This topic has been difficult twice. Ask the student if they want to solve it now or save it for later, then call set_checkpoint_decision.",
-            })
+            response.update(
+                {
+                    "checkpoint_required": True,
+                    "checkpoint_id": checkpoint_id,
+                    "prompt": "This topic has been difficult twice. Ask the student if they want to solve it now or save it for later, then call set_checkpoint_decision.",
+                }
+            )
         return response
     finally:
-        logger.info("TOOL_METRIC session=%s tool=log_progress duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=log_progress duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call("log_progress", {"topic": topic, "status": status}, _result_status, duration_ms)
 
 
-async def set_checkpoint_decision(decision: str, *, state: dict, **kwargs) -> dict:
+async def set_checkpoint_decision(
+    decision: str, tool_context: ToolContext
+) -> dict:
     """Persist learner decision for the current topic checkpoint."""
-    session_id = state.get("session_id", "unknown")
-    student_id = state.get("student_id")
-    track_id = state.get("track_id")
-    topic_id = state.get("topic_id")
+    session_id = tool_context.state.get("session_id", "unknown")
+    student_id = tool_context.state.get("student_id")
+    track_id = tool_context.state.get("track_id")
+    topic_id = tool_context.state.get("topic_id")
     t0 = time.time()
+    _result_status = "error"
     try:
         normalized_decision = (decision or "").strip().lower()
         if normalized_decision not in {"now", "later", "resolved"}:
-            return {"result": "error", "detail": "decision must be one of: now, later, resolved"}
+            return {
+                "result": "error",
+                "detail": "decision must be one of: now, later, resolved",
+            }
 
         if not student_id or not track_id or not topic_id:
-            return {"result": "error", "detail": "missing checkpoint context in session state"}
+            return {
+                "result": "error",
+                "detail": "missing checkpoint context in session state",
+            }
 
         checkpoint_id = f"{track_id}--{topic_id}"
         now = time.time()
@@ -597,30 +743,60 @@ async def set_checkpoint_decision(decision: str, *, state: dict, **kwargs) -> di
                     topic_status = "mastered"
                     checkpoint_open = False
 
-                await checkpoint_ref.set({
-                    "status": checkpoint_status,
-                    "decision": normalized_decision,
-                    "updated_at": now,
-                    "decision_at": now,
-                }, merge=True)
-                await fs_client.collection("students").document(student_id).collection("tracks").document(track_id).collection("topics").document(topic_id).set({
-                    "status": topic_status,
-                    "checkpoint_open": checkpoint_open,
-                    "updated_at": now,
-                }, merge=True)
+                await checkpoint_ref.set(
+                    {
+                        "status": checkpoint_status,
+                        "decision": normalized_decision,
+                        "updated_at": now,
+                        "decision_at": now,
+                    },
+                    merge=True,
+                )
+                await (
+                    fs_client.collection("students")
+                    .document(student_id)
+                    .collection("tracks")
+                    .document(track_id)
+                    .collection("topics")
+                    .document(topic_id)
+                    .set(
+                        {
+                            "status": topic_status,
+                            "checkpoint_open": checkpoint_open,
+                            "updated_at": now,
+                        },
+                        merge=True,
+                    )
+                )
             except Exception:
-                logger.exception("Failed to persist checkpoint decision for %s", checkpoint_id)
-                return {"result": "error", "detail": "Could not save checkpoint decision."}
+                logger.exception(
+                    "Failed to persist checkpoint decision for %s", checkpoint_id
+                )
+                return {
+                    "result": "error",
+                    "detail": "Could not save checkpoint decision.",
+                }
         else:
-            logger.info("Firestore not available — checkpoint decision not persisted (OK for local dev)")
+            logger.info(
+                "Firestore not available — checkpoint decision not persisted (OK for local dev)"
+            )
 
+        _result_status = "saved"
         return {
             "result": "saved",
             "checkpoint_id": checkpoint_id,
             "decision": normalized_decision,
         }
     finally:
-        logger.info("TOOL_METRIC session=%s tool=set_checkpoint_decision duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=set_checkpoint_decision duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call("set_checkpoint_decision", {"decision": decision}, _result_status, duration_ms)
 
 
 async def write_notes(
@@ -628,9 +804,7 @@ async def write_notes(
     content: str,
     note_type: str = "insight",
     status: str = "pending",
-    *,
-    state: dict,
-    **kwargs,
+    tool_context: ToolContext = None,
 ) -> dict:
     """Write a note to the student's whiteboard.
 
@@ -649,72 +823,132 @@ async def write_notes(
         A dict confirming the note was displayed.
     """
     t0 = time.time()
+    _result_status = "error"
+    _wb_duplicate = False
     try:
-        from gemini_live import get_whiteboard_queue
+        from queues import get_whiteboard_queue
 
-        valid_types = {"insight", "checklist_item", "formula", "summary", "vocabulary"}
         valid_statuses = {"pending", "in_progress", "done", "mastered", "struggling"}
-        note_type = note_type.strip().lower() if note_type else "insight"
-        if note_type not in valid_types:
-            note_type = "insight"
+        title = normalize_title(title)
+        content = normalize_content(content)
+        note_type = normalize_note_type(note_type)
         status = status.strip().lower() if status else "pending"
         if status not in valid_statuses:
             status = "pending"
 
-        # Check if a note with the same title already exists (loaded from previous session)
         normalized_title = title.strip().lower()
-        for prev in state.get("previous_notes", []):
-            if str(prev.get("title", "")).strip().lower() == normalized_title:
-                existing_id = prev.get("id", "")
-                logger.info("write_notes: skipping duplicate — '%s' already on board as %s", title.strip(), existing_id)
-                return {"result": "already_exists", "title": title, "note_id": existing_id, "note_type": note_type, "status": prev.get("status", status)}
+        seen_titles = tool_context.state.setdefault("_session_note_titles", {})
+        if not seen_titles:
+            for prev in tool_context.state.get("previous_notes", []):
+                prev_title = str(prev.get("title", "")).strip().lower()
+                if not prev_title:
+                    continue
+                seen_titles.setdefault(prev_title, str(prev.get("id", "")))
 
-        session_id = state.get("session_id")
+        existing_id = seen_titles.get(normalized_title)
+        if existing_id is not None:
+            logger.info(
+                "write_notes: skipping duplicate — '%s' already on board as %s",
+                title.strip(),
+                existing_id or "<unknown>",
+            )
+            _result_status = "already_exists"
+            _wb_duplicate = True
+            return {
+                "result": "already_exists",
+                "title": title,
+                "note_id": existing_id,
+                "note_type": note_type,
+                "status": status,
+            }
+
+        session_id = tool_context.state.get("session_id")
         note_id = f"note-{int(time.time() * 1000)}"
+        seen_titles[normalized_title] = note_id
         queue = get_whiteboard_queue(session_id)
         if queue:
             note = {
                 "id": note_id,
-                "title": title.strip(),
-                "content": content.strip(),
+                "title": title,
+                "content": content,
                 "note_type": note_type,
                 "status": status,
             }
             queue.put_nowait(note)
-            logger.info("Session %s: whiteboard note queued — %s [%s/%s]", session_id, title.strip(), note_type, status)
+            logger.info(
+                "Session %s: whiteboard note queued — %s [%s/%s]",
+                session_id,
+                title,
+                note_type,
+                status,
+            )
+            previous_notes = tool_context.state.setdefault("previous_notes", [])
+            previous_notes.append(note)
 
-        # Persist to Firestore
-        student_id = state.get("student_id")
-        track_id = state.get("track_id")
-        topic_id = state.get("topic_id")
+        student_id = tool_context.state.get("student_id")
+        track_id = tool_context.state.get("track_id")
+        topic_id = tool_context.state.get("topic_id")
         fs_client = get_firestore_client()
         if fs_client:
             try:
                 now = time.time()
-                await fs_client.collection("sessions").document(session_id).collection("notes").document(note_id).set({
-                    "title": title.strip(),
-                    "content": content.strip(),
-                    "note_type": note_type,
-                    "status": status,
-                    "student_id": student_id,
-                    "track_id": track_id,
-                    "topic_id": topic_id,
-                    "source": "tutor",
-                    "created_at": now,
-                    "updated_at": now,
-                })
+                await (
+                    fs_client.collection("sessions")
+                    .document(session_id)
+                    .collection("notes")
+                    .document(note_id)
+                    .set(
+                        {
+                            "title": title,
+                            "content": content,
+                            "note_type": note_type,
+                            "status": status,
+                            "student_id": student_id,
+                            "track_id": track_id,
+                            "topic_id": topic_id,
+                            "source": "tutor",
+                            "created_at": now,
+                            "updated_at": now,
+                        }
+                    )
+                )
             except Exception:
-                logger.exception("Session %s: failed to persist note to Firestore", session_id)
+                logger.exception(
+                    "Session %s: failed to persist note to Firestore", session_id
+                )
         else:
-            logger.info("Firestore not available — note not persisted (OK for local dev)")
+            logger.info(
+                "Firestore not available — note not persisted (OK for local dev)"
+            )
 
-        return {"result": "displayed", "title": title, "note_id": note_id, "note_type": note_type, "status": status}
+        _result_status = "displayed"
+        return {
+            "result": "displayed",
+            "title": title,
+            "note_id": note_id,
+            "note_type": note_type,
+            "status": status,
+        }
     finally:
-        session_id = state.get("session_id", "unknown")
-        logger.info("TOOL_METRIC session=%s tool=write_notes duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
+        session_id = tool_context.state.get("session_id", "unknown")
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=write_notes duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call("write_notes", {"title": title, "note_type": note_type}, _result_status, duration_ms)
+            if _wb_duplicate:
+                rpt.record_whiteboard_duplicate_skipped()
+            elif _result_status == "displayed":
+                rpt.record_whiteboard_note_created()
 
 
-async def update_note_status(note_id: str, status: str, *, state: dict, **kwargs) -> dict:
+async def update_note_status(
+    note_id: str, status: str, tool_context: ToolContext
+) -> dict:
     """Update the status of an existing whiteboard note.
 
     Call this to mark checklist items as in_progress, done, mastered, or
@@ -728,44 +962,82 @@ async def update_note_status(note_id: str, status: str, *, state: dict, **kwargs
     Returns:
         A dict confirming the status was updated.
     """
-    session_id = state.get("session_id")
+    session_id = tool_context.state.get("session_id")
     t0 = time.time()
+    _result_status = "error"
     try:
-        from gemini_live import get_whiteboard_queue
+        from queues import get_whiteboard_queue
 
         valid_statuses = {"pending", "in_progress", "done", "mastered", "struggling"}
         normalized_status = status.strip().lower() if status else "pending"
         if normalized_status not in valid_statuses:
-            return {"result": "error", "detail": f"status must be one of: {', '.join(sorted(valid_statuses))}"}
+            return {
+                "result": "error",
+                "detail": f"status must be one of: {', '.join(sorted(valid_statuses))}",
+            }
 
         fs_client = get_firestore_client()
         if fs_client:
             try:
                 now = time.time()
-                await fs_client.collection("sessions").document(session_id).collection("notes").document(note_id).set({
-                    "status": normalized_status,
-                    "updated_at": now,
-                }, merge=True)
+                await (
+                    fs_client.collection("sessions")
+                    .document(session_id)
+                    .collection("notes")
+                    .document(note_id)
+                    .set(
+                        {
+                            "status": normalized_status,
+                            "updated_at": now,
+                        },
+                        merge=True,
+                    )
+                )
             except Exception:
-                logger.exception("Session %s: failed to update note status in Firestore", session_id)
+                logger.exception(
+                    "Session %s: failed to update note status in Firestore",
+                    session_id,
+                )
         else:
-            logger.info("Firestore not available — note status not persisted (OK for local dev)")
+            logger.info(
+                "Firestore not available — note status not persisted (OK for local dev)"
+            )
 
         queue = get_whiteboard_queue(session_id)
         if queue:
-            queue.put_nowait({
-                "action": "update_status",
-                "id": note_id,
-                "status": normalized_status,
-            })
-            logger.info("Session %s: whiteboard status update — %s → %s", session_id, note_id, normalized_status)
+            queue.put_nowait(
+                {
+                    "action": "update_status",
+                    "id": note_id,
+                    "status": normalized_status,
+                }
+            )
+            logger.info(
+                "Session %s: whiteboard status update — %s → %s",
+                session_id,
+                note_id,
+                normalized_status,
+            )
 
+        _result_status = "updated"
         return {"result": "updated", "note_id": note_id, "status": normalized_status}
     finally:
-        logger.info("TOOL_METRIC session=%s tool=update_note_status duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=update_note_status duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call("update_note_status", {"note_id": note_id, "status": status}, _result_status, duration_ms)
+            if _result_status == "updated":
+                rpt.record_whiteboard_status_update()
 
 
-async def switch_topic(topic_id: str, topic_title: str, *, state: dict, **kwargs) -> dict:
+async def switch_topic(
+    topic_id: str, topic_title: str, tool_context: ToolContext
+) -> dict:
     """Switch the active topic for the current session.
 
     Call this when the student asks to change topic, or after mastering the
@@ -778,16 +1050,18 @@ async def switch_topic(topic_id: str, topic_title: str, *, state: dict, **kwargs
     Returns:
         A dict confirming the topic was switched.
     """
-    session_id = state.get("session_id")
-    student_id = state.get("student_id")
-    track_id = state.get("track_id")
-    old_topic_id = state.get("topic_id")
-    old_topic = state.get("topic_title", "--")
+    session_id = tool_context.state.get("session_id")
+    student_id = tool_context.state.get("student_id")
+    track_id = tool_context.state.get("track_id")
+    old_topic_id = tool_context.state.get("topic_id")
+    old_topic = tool_context.state.get("topic_title", "--")
     t0 = time.time()
+    _result_status = "error"
     try:
-        from gemini_live import get_topic_update_queue, get_whiteboard_queue
+        from queues import get_topic_update_queue, get_whiteboard_queue
 
         if str(topic_id) == str(old_topic_id):
+            _result_status = "noop"
             return {"result": "noop", "message": "Already on this topic"}
 
         fs_client = get_firestore_client()
@@ -795,99 +1069,104 @@ async def switch_topic(topic_id: str, topic_title: str, *, state: dict, **kwargs
             try:
                 now = time.time()
                 if student_id:
-                    await fs_client.collection("students").document(student_id).set({
-                        "last_active_topic_id": topic_id,
-                        "updated_at": now,
-                    }, merge=True)
+                    await fs_client.collection("students").document(
+                        student_id
+                    ).set(
+                        {
+                            "last_active_topic_id": topic_id,
+                            "updated_at": now,
+                        },
+                        merge=True,
+                    )
                 if student_id and track_id:
-                    await fs_client.collection("students").document(student_id).collection(
-                        "tracks"
-                    ).document(track_id).collection("topics").document(topic_id).set({
-                        "status": "in_progress",
-                        "updated_at": now,
-                    }, merge=True)
+                    await (
+                        fs_client.collection("students")
+                        .document(student_id)
+                        .collection("tracks")
+                        .document(track_id)
+                        .collection("topics")
+                        .document(topic_id)
+                        .set(
+                            {
+                                "status": "in_progress",
+                                "updated_at": now,
+                            },
+                            merge=True,
+                        )
+                    )
             except Exception:
                 logger.exception("Failed to persist topic switch to Firestore")
         else:
-            logger.info("Firestore not available — topic switch not persisted (OK for local dev)")
+            logger.info(
+                "Firestore not available — topic switch not persisted (OK for local dev)"
+            )
 
-        state["topic_id"] = topic_id
-        state["topic_title"] = topic_title
-        state["topic_status"] = "in_progress"
+        tool_context.state["topic_id"] = topic_id
+        tool_context.state["topic_title"] = topic_title
+        tool_context.state["topic_status"] = "in_progress"
 
-        # Push update to frontend via queue
         queue = get_topic_update_queue(session_id)
         if queue:
-            queue.put_nowait({
-                "topic_id": topic_id,
-                "topic_title": topic_title,
-            })
-        
-        # Also update whiteboard queue for topic change
+            queue.put_nowait(
+                {
+                    "topic_id": topic_id,
+                    "topic_title": topic_title,
+                }
+            )
+
         wb_queue = get_whiteboard_queue(session_id)
         if wb_queue:
-            wb_queue.put_nowait({
-                "action": "update_topic",
-                "topic_id": topic_id,
-                "topic_title": topic_title,
-            })
+            wb_queue.put_nowait(
+                {
+                    "action": "update_topic",
+                    "topic_id": topic_id,
+                    "topic_title": topic_title,
+                }
+            )
 
         logger.info(
             "Session %s: switched topic from '%s' to '%s' (%s)",
-            session_id, old_topic, topic_title, topic_id,
+            session_id,
+            old_topic,
+            topic_title,
+            topic_id,
         )
-        return {"result": "switched", "topic_id": topic_id, "topic_title": topic_title}
+        _result_status = "switched"
+        return {
+            "result": "switched",
+            "topic_id": topic_id,
+            "topic_title": topic_title,
+        }
     finally:
-        logger.info("TOOL_METRIC session=%s tool=switch_topic duration_ms=%.1f", session_id, (time.time() - t0) * 1000)
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=switch_topic duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call("switch_topic", {"topic_id": topic_id, "topic_title": topic_title}, _result_status, duration_ms)
 
 
 # ---------------------------------------------------------------------------
-# Tool registry — maps tool names to callables for dispatch
+# ADK Agent definition
 # ---------------------------------------------------------------------------
 
-TOOL_FUNCTIONS: dict[str, callable] = {
-    "set_session_phase": set_session_phase,
-    "get_backlog_context": get_backlog_context,
-    "log_progress": log_progress,
-    "set_checkpoint_decision": set_checkpoint_decision,
-    "write_notes": write_notes,
-    "update_note_status": update_note_status,
-    "switch_topic": switch_topic,
-}
+TUTOR_TOOLS = [
+    set_session_phase,
+    get_backlog_context,
+    log_progress,
+    set_checkpoint_decision,
+    write_notes,
+    update_note_status,
+    switch_topic,
+    google_search,
+]
 
-# ---------------------------------------------------------------------------
-# Tool declarations for the Gemini Live API
-# ---------------------------------------------------------------------------
-
-
-def _build_tool_declarations() -> types.Tool:
-    """Build FunctionDeclaration list from the tool functions."""
-    declarations = []
-    for name, fn in TOOL_FUNCTIONS.items():
-        sig = inspect.signature(fn)
-        properties: dict = {}
-        required: list[str] = []
-        for param_name, param in sig.parameters.items():
-            if param_name == "state":
-                continue  # injected, not sent by model
-            if param.kind == inspect.Parameter.KEYWORD_ONLY:
-                continue
-            schema: dict = {"type": "STRING"}
-            if param.default is inspect.Parameter.empty:
-                required.append(param_name)
-            properties[param_name] = schema
-
-        declarations.append(types.FunctionDeclaration(
-            name=name,
-            description=(fn.__doc__ or "").split("\n")[0].strip(),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={k: types.Schema(**v) for k, v in properties.items()},
-                required=required,
-            ),
-        ))
-    return types.Tool(function_declarations=declarations)
-
-
-TOOL_DECLARATIONS: types.Tool = _build_tool_declarations()
-GOOGLE_SEARCH_TOOL: types.Tool = types.Tool(google_search=types.GoogleSearch())
+tutor_agent = Agent(
+    name="seeme_tutor",
+    model=MODEL,
+    instruction=SYSTEM_PROMPT,
+    tools=TUTOR_TOOLS,
+)

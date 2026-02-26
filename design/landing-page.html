@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Milo — Your Patient AI Tutor</title>
+  <meta name="description" content="Milo sees your homework, hears your questions, and guides you to the answer — without ever giving it away.">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --red:    #E63946;
+      --ink:    #1E2235;
+      --paper:  #FAFAFA;
+      --grid:   #C8DCF0;
+      --mid:    #6B7280;
+      --yellow: #FFF176;
+      --green:  #06D6A0;
+      --white:  #FFFFFF;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      overflow-x: hidden;
+    }
+
+    /* ─── NOTEBOOK BG UTILITY ─── */
+    .nb {
+      position: relative;
+    }
+    .nb::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        var(--grid) 31px, var(--grid) 32px
+      );
+      opacity: 0.45;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .nb > * { position: relative; z-index: 1; }
+
+    /* Red margin line utility */
+    .has-margin::before {
+      content: '';
+      position: absolute;
+      left: 72px;
+      top: 0; bottom: 0;
+      width: 2px;
+      background: var(--red);
+      opacity: 0.5;
+      z-index: 2;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      background: rgba(250,250,250,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(200,220,240,0.6);
+      padding: 0 40px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      font-family: 'Inter', sans-serif;
+      font-weight: 800;
+      font-size: 24px;
+      letter-spacing: -1px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .nav-logo span { color: var(--red); }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--mid);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--ink); }
+
+    .nav-cta {
+      background: var(--red) !important;
+      color: white !important;
+      padding: 9px 22px;
+      border-radius: 8px;
+      font-weight: 600 !important;
+      box-shadow: 0 2px 10px rgba(230,57,70,0.3);
+      transition: transform 0.15s, box-shadow 0.15s !important;
+    }
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(230,57,70,0.4) !important;
+    }
+
+    /* ─── HERO ─── */
+    #hero {
+      min-height: 100vh;
+      padding: 120px 40px 80px;
+      display: flex;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 80px;
+      align-items: center;
+      width: 100%;
+    }
+
+    .hero-eyebrow {
+      font-family: 'Caveat', cursive;
+      font-size: 18px;
+      color: var(--red);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hero-eyebrow::before {
+      content: '';
+      width: 28px;
+      height: 2px;
+      background: var(--red);
+      border-radius: 2px;
+    }
+
+    h1 {
+      font-size: clamp(40px, 5vw, 62px);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -2px;
+      color: var(--ink);
+      margin-bottom: 24px;
+    }
+
+    h1 .accent { color: var(--red); }
+    h1 .hand { font-family: 'Caveat', cursive; font-weight: 700; letter-spacing: -1px; }
+
+    .hero-sub {
+      font-size: 18px;
+      color: var(--mid);
+      line-height: 1.65;
+      max-width: 480px;
+      margin-bottom: 40px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--red);
+      color: white;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+      box-shadow: 0 4px 18px rgba(230,57,70,0.35);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(230,57,70,0.4);
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+      padding: 14px 4px;
+      border-bottom: 2px solid var(--ink);
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .btn-ghost:hover { color: var(--red); border-color: var(--red); }
+
+    .hero-trust {
+      margin-top: 40px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--mid);
+    }
+
+    .trust-avatars {
+      display: flex;
+    }
+    .trust-avatars span {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      border: 2px solid var(--paper);
+      margin-left: -8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      background: #F3F4F6;
+    }
+    .trust-avatars span:first-child { margin-left: 0; }
+
+    /* ─── PHONE MOCKUP ─── */
+    .phone-wrap {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone {
+      width: 300px;
+      background: white;
+      border-radius: 40px;
+      box-shadow: 0 32px 80px rgba(30,34,53,0.18), 0 8px 24px rgba(30,34,53,0.1);
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,0.07);
+      position: relative;
+    }
+
+    .phone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        #DDEEFF 31px, #DDEEFF 32px
+      );
+      opacity: 0.3;
+      z-index: 0;
+    }
+
+    .phone-notch {
+      width: 100px; height: 28px;
+      background: white;
+      border-radius: 0 0 18px 18px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 2;
+    }
+
+    .phone-header {
+      background: rgba(255,255,255,0.95);
+      padding: 8px 18px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0,0,0,0.06);
+      position: relative;
+      z-index: 1;
+    }
+
+    .phone-logo {
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: -0.8px;
+      color: var(--ink);
+    }
+    .phone-logo span { color: var(--red); }
+
+    .phone-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .sdot {
+      width: 7px; height: 7px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50% { opacity:0.4; transform:scale(0.7); }
+    }
+
+    .phone-cam {
+      aspect-ratio: 4/3;
+      background: linear-gradient(160deg, #12121E, #0A0A16);
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .phone-cam-grid {
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 19px,
+        rgba(255,255,255,0.035) 19px, rgba(255,255,255,0.035) 20px
+      );
+    }
+
+    .cam-scanline {
+      position: absolute;
+      left: 28px; top: 0; bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, transparent 0%, var(--red) 40%, var(--red) 60%, transparent 100%);
+      opacity: 0.65;
+    }
+
+    .cam-corner { position: absolute; width: 16px; height: 16px; border-color: var(--red); border-style: solid; opacity: 0.75; }
+    .cam-corner.tl { top:10px; left:10px; border-width:2px 0 0 2px; }
+    .cam-corner.tr { top:10px; right:10px; border-width:2px 2px 0 0; }
+    .cam-corner.bl { bottom:10px; left:10px; border-width:0 0 2px 2px; }
+    .cam-corner.br { bottom:10px; right:10px; border-width:0 2px 2px 0; }
+
+    .cam-content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      color: rgba(255,255,255,0.35);
+    }
+    .cam-content .emoji { font-size: 40px; display: block; margin-bottom: 6px; }
+    .cam-content .label {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+    }
+
+    .phone-bubble {
+      padding: 14px 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .bubble {
+      background: white;
+      border-radius: 4px 14px 14px 14px;
+      padding: 10px 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .bubble-name {
+      font-family: 'Caveat', cursive;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--red);
+      margin-bottom: 4px;
+    }
+
+    .bubble-text {
+      font-size: 13px;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .hl { background: var(--yellow); padding: 1px 3px; border-radius: 2px; }
+
+    .phone-controls {
+      padding: 12px 20px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid rgba(0,0,0,0.06);
+      background: rgba(255,255,255,0.88);
+    }
+
+    .cbtn {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: #F3F4F6;
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px;
+    }
+
+    .cbtn.main {
+      width: 56px; height: 56px;
+      background: var(--red);
+      box-shadow: 0 4px 14px rgba(230,57,70,0.35);
+      font-size: 22px;
+    }
+
+    .waveform {
+      display: flex; align-items: center;
+      gap: 2px; height: 24px;
+    }
+    .wb {
+      width: 2px; border-radius: 2px;
+      background: var(--red); opacity: 0.65;
+      animation: wv 1.4s ease-in-out infinite;
+    }
+    .wb:nth-child(1){height:5px;animation-delay:0s}
+    .wb:nth-child(2){height:14px;animation-delay:.1s}
+    .wb:nth-child(3){height:22px;animation-delay:.2s}
+    .wb:nth-child(4){height:11px;animation-delay:.3s}
+    .wb:nth-child(5){height:18px;animation-delay:.15s}
+    .wb:nth-child(6){height:8px;animation-delay:.25s}
+    .wb:nth-child(7){height:15px;animation-delay:.05s}
+    @keyframes wv { 0%,100%{transform:scaleY(.35)} 50%{transform:scaleY(1)} }
+
+    /* Floating annotations */
+    .phone-annotation {
+      position: absolute;
+      background: white;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      color: var(--ink);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      border: 1px solid rgba(0,0,0,0.06);
+      white-space: nowrap;
+    }
+
+    .ann-1 { top: 80px; right: -80px; }
+    .ann-2 { bottom: 120px; right: -90px; }
+    .ann-3 { top: 200px; left: -90px; }
+
+    .ann-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* ─── SECTION SHARED ─── */
+    section {
+      position: relative;
+    }
+
+    .section-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 100px 40px;
+    }
+
+    .section-eyebrow {
+      font-family: 'Caveat', cursive;
+      font-size: 17px;
+      color: var(--red);
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: clamp(30px, 4vw, 46px);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      color: var(--ink);
+      margin-bottom: 20px;
+    }
+
+    .section-lead {
+      font-size: 17px;
+      color: var(--mid);
+      line-height: 1.65;
+      max-width: 560px;
+    }
+
+    /* ─── HOW IT WORKS ─── */
+    #how {
+      background: var(--ink);
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #how::after {
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        rgba(255,255,255,0.04) 31px, rgba(255,255,255,0.04) 32px
+      );
+      opacity: 1;
+    }
+
+    #how .section-eyebrow { color: #FFB3B8; }
+    #how h2 { color: white; }
+    #how .section-lead { color: rgba(255,255,255,0.6); }
+
+    .how-margin {
+      position: absolute;
+      left: 72px; top: 0; bottom: 0;
+      width: 2px;
+      background: var(--red);
+      opacity: 0.4;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px;
+      margin-top: 64px;
+    }
+
+    .step {
+      position: relative;
+    }
+
+    .step-num {
+      font-family: 'Caveat', cursive;
+      font-size: 64px;
+      font-weight: 700;
+      color: var(--red);
+      opacity: 0.25;
+      line-height: 1;
+      margin-bottom: 16px;
+    }
+
+    .step-icon {
+      width: 56px; height: 56px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .step h3 {
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 10px;
+      letter-spacing: -0.4px;
+    }
+
+    .step p {
+      font-size: 15px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.65;
+    }
+
+    .step-connector {
+      position: absolute;
+      top: 100px;
+      right: -20px;
+      font-family: 'Caveat', cursive;
+      font-size: 32px;
+      color: rgba(255,255,255,0.15);
+    }
+
+    /* ─── FEATURES ─── */
+    #features .section-inner {
+      padding-top: 100px;
+      padding-bottom: 100px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-top: 56px;
+    }
+
+    .feature-card {
+      background: white;
+      border-radius: 20px;
+      padding: 32px;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+    }
+
+    /* Notebook lines inside feature cards */
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        #EEF5FF 31px, #EEF5FF 32px
+      );
+      opacity: 0.5;
+      z-index: 0;
+    }
+
+    .feature-card > * { position: relative; z-index: 1; }
+
+    .feature-card.large {
+      grid-column: span 2;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: center;
+    }
+
+    .feature-icon {
+      width: 52px; height: 52px;
+      background: #FFF0F0;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+
+    .feature-card h3 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+
+    .feature-card p {
+      font-size: 15px;
+      color: var(--mid);
+      line-height: 1.65;
+    }
+
+    .feature-accent-line {
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--red);
+      border-radius: 0 2px 2px 0;
+    }
+
+    /* Language tags */
+    .lang-tags {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+
+    .lang-tag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #FFF0F0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      border: 1px solid rgba(230,57,70,0.15);
+    }
+
+    /* Socratic example */
+    .socratic-demo {
+      background: #FAFAFA;
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-line {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .chat-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .chat-avatar.student { background: #E8F0FB; }
+    .chat-avatar.milo { background: #FFF0F0; }
+
+    .chat-text {
+      background: white;
+      border-radius: 4px 12px 12px 12px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--ink);
+      line-height: 1.5;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      max-width: 240px;
+    }
+
+    .chat-line.milo-line .chat-text {
+      border-radius: 12px 4px 12px 12px;
+      background: #FFF8F8;
+      border: 1px solid rgba(230,57,70,0.1);
+    }
+
+    /* ─── FAMILY / STORY ─── */
+    #story {
+      background: linear-gradient(160deg, #FFF8F8, #FAFAFA);
+      border-top: 1px solid rgba(200,220,240,0.5);
+      border-bottom: 1px solid rgba(200,220,240,0.5);
+    }
+
+    .story-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 100px 40px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 80px;
+      align-items: center;
+    }
+
+    .quote-mark {
+      font-family: 'Caveat', cursive;
+      font-size: 120px;
+      color: var(--red);
+      opacity: 0.15;
+      line-height: 0.8;
+      margin-bottom: 16px;
+    }
+
+    blockquote {
+      font-family: 'Caveat', cursive;
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.4;
+      margin-bottom: 24px;
+    }
+
+    .quote-author {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .quote-avatar {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: #FFF0F0;
+      border: 2px solid var(--red);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    .quote-meta strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .quote-meta span {
+      font-size: 13px;
+      color: var(--mid);
+    }
+
+    .story-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .story-card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px 24px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .story-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        #EEF5FF 31px, #EEF5FF 32px
+      );
+      opacity: 0.4;
+    }
+
+    .story-card > * { position: relative; z-index: 1; }
+
+    .story-emoji { font-size: 32px; }
+
+    .story-card h4 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 3px;
+    }
+
+    .story-card p {
+      font-size: 13px;
+      color: var(--mid);
+    }
+
+    .story-lang {
+      margin-left: auto;
+      font-size: 20px;
+    }
+
+    /* ─── CTA ─── */
+    #cta {
+      background: var(--ink);
+      position: relative;
+      overflow: hidden;
+    }
+
+    #cta::after {
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px,
+        rgba(255,255,255,0.03) 31px, rgba(255,255,255,0.03) 32px
+      );
+      opacity: 1;
+    }
+
+    .cta-margin {
+      position: absolute;
+      left: 72px; top: 0; bottom: 0;
+      width: 2px;
+      background: var(--red);
+      opacity: 0.4;
+    }
+
+    .cta-inner {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 120px 40px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cta-eyebrow {
+      font-family: 'Caveat', cursive;
+      font-size: 18px;
+      color: #FFB3B8;
+      margin-bottom: 20px;
+    }
+
+    #cta h2 {
+      font-size: clamp(32px, 5vw, 52px);
+      color: white;
+      margin-bottom: 20px;
+    }
+
+    #cta p {
+      font-size: 17px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.65;
+      margin-bottom: 40px;
+    }
+
+    .cta-actions {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-white {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: white;
+      color: var(--ink);
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.2);
+      transition: transform 0.15s;
+    }
+    .btn-white:hover { transform: translateY(-2px); }
+
+    .btn-outline-white {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      color: white;
+      border: 2px solid rgba(255,255,255,0.3);
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+      transition: border-color 0.2s;
+    }
+    .btn-outline-white:hover { border-color: rgba(255,255,255,0.7); }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background: var(--ink);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      padding: 32px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 1;
+    }
+
+    .footer-logo {
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -0.8px;
+      color: white;
+    }
+    .footer-logo span { color: #FFB3B8; }
+
+    .footer-note {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      color: rgba(255,255,255,0.35);
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 900px) {
+      .hero-inner { grid-template-columns: 1fr; }
+      .phone-wrap { display: none; }
+      .steps { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .feature-card.large { grid-column: span 1; grid-template-columns: 1fr; }
+      .story-inner { grid-template-columns: 1fr; gap: 48px; }
+      nav { padding: 0 20px; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── NAV ─── -->
+  <nav>
+    <a href="#" class="nav-logo">mil<span>o</span></a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#story">Our story</a></li>
+      <li><a href="#cta" class="nav-cta">Try Milo</a></li>
+    </ul>
+  </nav>
+
+  <!-- ─── HERO ─── -->
+  <section id="hero" class="nb has-margin">
+    <div class="hero-inner">
+      <div>
+        <div class="hero-eyebrow">AI Tutor · Multimodal · Real-time</div>
+        <h1>
+          The tutor who<br>
+          <span class="accent">sees</span> your homework<br>
+          <span class="hand">and never gives<br>the answer away</span>
+        </h1>
+        <p class="hero-sub">
+          Milo watches your work through the camera, hears your questions, and guides you to the answer using the Socratic method — in your language.
+        </p>
+        <div class="hero-actions">
+          <a href="#cta" class="btn-primary">▶ Start Studying</a>
+          <a href="#how" class="btn-ghost">How it works →</a>
+        </div>
+        <div class="hero-trust">
+          <div class="trust-avatars">
+            <span>👧</span><span>👩</span><span>👨</span>
+          </div>
+          <span>Built for real families · Math, Chemistry, German & more</span>
+        </div>
+      </div>
+
+      <!-- Phone mockup -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-header">
+            <div class="phone-logo">mil<span>o</span></div>
+            <div class="phone-status">
+              <div class="sdot"></div>listening
+            </div>
+          </div>
+          <div class="phone-cam">
+            <div class="phone-cam-grid"></div>
+            <div class="cam-scanline"></div>
+            <div class="cam-corner tl"></div>
+            <div class="cam-corner tr"></div>
+            <div class="cam-corner bl"></div>
+            <div class="cam-corner br"></div>
+            <div class="cam-content">
+              <span class="emoji">📐</span>
+              <span class="label">show me your problem</span>
+            </div>
+          </div>
+          <div class="phone-bubble">
+            <div class="bubble">
+              <div class="bubble-name">Milo</div>
+              <div class="bubble-text">
+                I can see you wrote <span class="hl">7 × 8 = 54</span> — what's 7 × 7 first?
+              </div>
+            </div>
+          </div>
+          <div class="phone-controls">
+            <button class="cbtn">📷</button>
+            <button class="cbtn main">🎤</button>
+            <div class="waveform">
+              <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+              <div class="wb"></div><div class="wb"></div><div class="wb"></div>
+              <div class="wb"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating annotations -->
+        <div class="phone-annotation ann-1">
+          <span class="ann-dot" style="background:var(--green)"></span>live camera 👁
+        </div>
+        <div class="phone-annotation ann-2">
+          <span class="ann-dot" style="background:var(--yellow);border:1px solid #ccc"></span>Milo sees your work
+        </div>
+        <div class="phone-annotation ann-3">
+          <span class="ann-dot" style="background:var(--red)"></span>voice · real-time
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── HOW IT WORKS ─── -->
+  <section id="how" class="nb">
+    <div class="how-margin"></div>
+    <div class="section-inner">
+      <div class="section-eyebrow">How it works</div>
+      <h2>Three steps.<br>One patient tutor.</h2>
+      <p class="section-lead">No more "just Google it." Milo guides your child from confusion to understanding — every time.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div class="step-icon">📷</div>
+          <h3>Show Milo your work</h3>
+          <p>Point your camera at the homework. Milo sees exactly what's on the page — equations, diagrams, written answers — and references what it actually sees.</p>
+          <div class="step-connector">→</div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div class="step-icon">🎤</div>
+          <h3>Ask your question</h3>
+          <p>Just speak naturally. Interrupt when you need to. Milo listens in real-time and adjusts. No buttons, no typing, no waiting.</p>
+          <div class="step-connector">→</div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div class="step-icon">💡</div>
+          <h3>Milo guides you there</h3>
+          <p>Instead of answers, Milo asks questions. It leads you to the "aha" moment yourself — so you actually remember it next time.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FEATURES ─── -->
+  <section id="features" class="nb">
+    <div class="section-inner">
+      <div class="section-eyebrow">Features</div>
+      <h2>Built different.<br>On purpose.</h2>
+      <p class="section-lead">Every design decision comes from one question: what does a truly great human tutor actually do?</p>
+
+      <div class="features-grid">
+
+        <!-- Socratic -->
+        <div class="feature-card large">
+          <div>
+            <div class="feature-accent-line"></div>
+            <div class="feature-icon">🧠</div>
+            <h3>Socratic method — always</h3>
+            <p>Milo never gives the answer. Not even when you beg. It asks questions, highlights what you already know, and leads you to the discovery yourself. The science is clear: you remember what you figure out on your own.</p>
+          </div>
+          <div class="socratic-demo">
+            <div class="chat-line">
+              <div class="chat-avatar student">👧</div>
+              <div class="chat-text">I don't understand why x = 5 here</div>
+            </div>
+            <div class="chat-line milo-line">
+              <div class="chat-avatar milo">👁</div>
+              <div class="chat-text" style="border-color:rgba(230,57,70,0.15)">I can see the equation — what did you do to the left side?</div>
+            </div>
+            <div class="chat-line">
+              <div class="chat-avatar student">👧</div>
+              <div class="chat-text">I subtracted 3 from both sides</div>
+            </div>
+            <div class="chat-line milo-line">
+              <div class="chat-avatar milo">👁</div>
+              <div class="chat-text" style="border-color:rgba(230,57,70,0.15)">Exactly right! And what's 8 minus 3?</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Camera -->
+        <div class="feature-card">
+          <div class="feature-accent-line"></div>
+          <div class="feature-icon">👁</div>
+          <h3>Sees your actual work</h3>
+          <p>Milo references what's on the page. Not a description — the real thing. "I can see you wrote..." grounds every hint in reality, not guesswork.</p>
+        </div>
+
+        <!-- Multilingual -->
+        <div class="feature-card">
+          <div class="feature-accent-line"></div>
+          <div class="feature-icon">🌍</div>
+          <h3>Speaks your language</h3>
+          <p>Milo detects and matches the student's language automatically — no switching, no settings.</p>
+          <div class="lang-tags">
+            <div class="lang-tag">🇬🇧 English</div>
+            <div class="lang-tag">🇵🇹 Português</div>
+            <div class="lang-tag">🇩🇪 Deutsch</div>
+          </div>
+        </div>
+
+        <!-- Interruption -->
+        <div class="feature-card">
+          <div class="feature-accent-line"></div>
+          <div class="feature-icon">✋</div>
+          <h3>Handles interruptions gracefully</h3>
+          <p>Kids interrupt. Thoughts change mid-sentence. Milo stops the moment it hears you, listens, and re-approaches. Just like a real tutor would.</p>
+        </div>
+
+        <!-- Patience -->
+        <div class="feature-card">
+          <div class="feature-accent-line"></div>
+          <div class="feature-icon">⏳</div>
+          <h3>Infinite patience</h3>
+          <p>No sighs. No judgment. No impatience. Whether it's the first or the fifteenth time you've asked the same question, Milo responds the same way — warmly.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── STORY ─── -->
+  <section id="story">
+    <div class="story-inner">
+      <div>
+        <div class="quote-mark">"</div>
+        <blockquote>
+          My daughters were stuck. I couldn't help — different grades, different languages, different subjects. So I built them a tutor who could.
+        </blockquote>
+        <div class="quote-author">
+          <div class="quote-avatar">👨</div>
+          <div class="quote-meta">
+            <strong>Luis</strong>
+            <span>Builder · Father · German learner</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="story-cards">
+        <div class="story-card">
+          <div class="story-emoji">👧</div>
+          <div>
+            <h4>Sofia — Math homework</h4>
+            <p>Multiplication tables, fractions, geometry. Milo walks her through each step without ever spoiling the answer.</p>
+          </div>
+          <div class="story-lang">🇬🇧</div>
+        </div>
+        <div class="story-card">
+          <div class="story-emoji">👩</div>
+          <div>
+            <h4>Beatriz — Chemistry</h4>
+            <p>Periodic table, equations, reaction types. Asks questions in Portuguese, gets answers in Portuguese.</p>
+          </div>
+          <div class="story-lang">🇵🇹</div>
+        </div>
+        <div class="story-card">
+          <div class="story-emoji">👨</div>
+          <div>
+            <h4>Luis — German grammar</h4>
+            <p>Der, die, das — even the builder uses Milo. It's that useful.</p>
+          </div>
+          <div class="story-lang">🇩🇪</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── CTA ─── -->
+  <section id="cta" class="nb">
+    <div class="cta-margin"></div>
+    <div class="cta-inner">
+      <div class="cta-eyebrow">Every child deserves this</div>
+      <h2>A patient tutor who speaks their language</h2>
+      <p>Milo is free to try. No account needed. Just open it, point your camera, and ask.</p>
+      <div class="cta-actions">
+        <a href="#" class="btn-white">▶ Try Milo Free</a>
+        <a href="#" class="btn-outline-white">View on GitHub →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ─── -->
+  <footer>
+    <div class="footer-logo">mil<span>o</span></div>
+    <div class="footer-note">built with ❤️ for real families · milotutor.ai</div>
+  </footer>
+
+</body>
+</html>

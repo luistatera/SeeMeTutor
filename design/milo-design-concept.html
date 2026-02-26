@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>milo — Design Concept</title>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --paper: #FAFAFA;
+      --grid: #C8DCF0;
+      --margin: #E63946;
+      --ink: #1E2235;
+      --ink-mid: #6B7280;
+      --highlight: #FFF176;
+      --green: #06D6A0;
+      --blue: #118AB2;
+    }
+
+    body {
+      background-color: var(--paper);
+      color: var(--ink);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Notebook paper lines — fixed so they scroll with page */
+    .notebook-bg {
+      position: fixed;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent,
+        transparent 31px,
+        var(--grid) 31px,
+        var(--grid) 32px
+      );
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.55;
+    }
+
+    /* Red margin line */
+    .margin-line {
+      position: fixed;
+      left: 84px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--margin);
+      opacity: 0.65;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      z-index: 2;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 56px 56px 100px 136px;
+    }
+
+    /* ─── PAGE HEADER ─── */
+    .page-header {
+      margin-bottom: 72px;
+      padding-bottom: 48px;
+      border-bottom: 1px dashed var(--grid);
+    }
+
+    .page-title {
+      font-family: 'Caveat', cursive;
+      font-size: 52px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+
+    .page-subtitle {
+      font-size: 14px;
+      color: var(--ink-mid);
+      font-style: italic;
+      letter-spacing: 0.02em;
+    }
+
+    /* ─── SECTIONS ─── */
+    .section {
+      margin-bottom: 72px;
+    }
+
+    .section-label {
+      font-family: 'Caveat', cursive;
+      font-size: 14px;
+      color: var(--margin);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--grid);
+      opacity: 0.8;
+    }
+
+    /* ─── LOGO ─── */
+    .logo-variations {
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .logo-variant {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 20px 28px;
+      border-radius: 16px;
+    }
+
+    .logo-variant.on-white {
+      background: white;
+      border: 1px solid rgba(0,0,0,0.07);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+
+    .logo-variant.on-dark {
+      background: var(--ink);
+    }
+
+    .logo-variant.on-red {
+      background: var(--margin);
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+    }
+
+    .logo-wordmark {
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 34px;
+      letter-spacing: -1.5px;
+      line-height: 1;
+      color: var(--ink);
+    }
+
+    .logo-wordmark .accent { color: var(--margin); }
+    .logo-wordmark.on-dark-text { color: white; }
+    .logo-wordmark.on-dark-text .accent { color: #FFB3B8; }
+    .logo-wordmark.on-red-text { color: white; }
+    .logo-wordmark.on-red-text .accent { color: rgba(255,255,255,0.7); }
+
+    .logo-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-mid);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .logo-tagline {
+      font-family: 'Caveat', cursive;
+      font-size: 17px;
+      color: var(--ink-mid);
+      margin-left: 56px;
+      margin-top: -4px;
+    }
+
+    /* ─── PALETTE ─── */
+    .palette {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .swatch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .swatch-color {
+      width: 80px;
+      height: 80px;
+      border-radius: 14px;
+      border: 1px solid rgba(0,0,0,0.08);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .swatch-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink);
+      text-align: center;
+    }
+
+    .swatch-hex {
+      font-size: 11px;
+      color: var(--ink-mid);
+      font-family: 'Courier New', monospace;
+    }
+
+    .swatch-use {
+      font-family: 'Caveat', cursive;
+      font-size: 13px;
+      color: var(--ink-mid);
+      text-align: center;
+    }
+
+    /* ─── TWO COLUMN ─── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+
+    /* ─── APP MOCKUP ─── */
+    .app-mockup {
+      background: white;
+      border-radius: 32px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.08);
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,0.06);
+      position: relative;
+    }
+
+    /* Notebook lines inside mockup */
+    .app-mockup::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent,
+        transparent 31px,
+        #DDEEFF 31px,
+        #DDEEFF 32px
+      );
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    .app-header {
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px);
+      padding: 14px 20px 12px;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 1;
+    }
+
+    .app-logo-small {
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 22px;
+      letter-spacing: -1px;
+      color: var(--ink);
+    }
+
+    .app-logo-small span { color: var(--margin); }
+
+    .app-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    /* Camera area */
+    .camera-area {
+      aspect-ratio: 4/3;
+      background: linear-gradient(160deg, #1A1A2E, #0D0D1A);
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Grid overlay on camera */
+    .camera-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(transparent, transparent 23px, rgba(255,255,255,0.04) 23px, rgba(255,255,255,0.04) 24px);
+    }
+
+    /* Red scan line on camera */
+    .camera-scan {
+      position: absolute;
+      left: 36px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, transparent, var(--margin), transparent);
+      opacity: 0.7;
+    }
+
+    .camera-placeholder {
+      text-align: center;
+      color: rgba(255,255,255,0.35);
+      position: relative;
+      z-index: 1;
+    }
+
+    .camera-emoji { font-size: 48px; margin-bottom: 8px; filter: grayscale(0.5); }
+
+    .camera-label {
+      font-family: 'Caveat', cursive;
+      font-size: 18px;
+      color: rgba(255,255,255,0.4);
+    }
+
+    /* Corner brackets on camera */
+    .corner { position: absolute; width: 20px; height: 20px; border-color: var(--margin); border-style: solid; opacity: 0.7; }
+    .corner.tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+    .corner.tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+    .corner.bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+    .corner.br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+    /* Milo response bubble */
+    .milo-response {
+      padding: 16px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .milo-bubble {
+      background: white;
+      border-radius: 4px 16px 16px 16px;
+      padding: 12px 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .milo-name {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--margin);
+      margin-bottom: 5px;
+    }
+
+    .milo-text {
+      font-size: 14px;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    .hl { background: var(--highlight); padding: 1px 3px; border-radius: 3px; }
+
+    /* Controls */
+    .app-controls {
+      padding: 14px 24px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid rgba(0,0,0,0.06);
+      background: rgba(255,255,255,0.9);
+    }
+
+    .ctrl-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      background: #F3F4F6;
+      transition: transform 0.15s;
+    }
+
+    .ctrl-btn:hover { transform: scale(1.08); }
+
+    .ctrl-btn.main {
+      width: 62px;
+      height: 62px;
+      background: var(--margin);
+      font-size: 26px;
+      box-shadow: 0 4px 16px rgba(230,57,70,0.35);
+    }
+
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 28px;
+    }
+
+    .wbar {
+      width: 3px;
+      border-radius: 2px;
+      background: var(--margin);
+      opacity: 0.6;
+      animation: wv 1.4s ease-in-out infinite;
+    }
+
+    .wbar:nth-child(1) { height: 6px;  animation-delay: 0s; }
+    .wbar:nth-child(2) { height: 18px; animation-delay: 0.1s; }
+    .wbar:nth-child(3) { height: 26px; animation-delay: 0.2s; }
+    .wbar:nth-child(4) { height: 14px; animation-delay: 0.3s; }
+    .wbar:nth-child(5) { height: 22px; animation-delay: 0.15s; }
+    .wbar:nth-child(6) { height: 10px; animation-delay: 0.25s; }
+    .wbar:nth-child(7) { height: 18px; animation-delay: 0.05s; }
+
+    @keyframes wv {
+      0%, 100% { transform: scaleY(0.4); }
+      50% { transform: scaleY(1); }
+    }
+
+    /* ─── RIGHT COLUMN COMPONENTS ─── */
+    .comp-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .comp-card {
+      background: rgba(255,255,255,0.85);
+      border-radius: 16px;
+      padding: 20px 22px;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .comp-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 31px, #D6E8F8 31px, #D6E8F8 32px
+      );
+      opacity: 0.35;
+      z-index: 0;
+    }
+
+    .comp-card > * { position: relative; z-index: 1; }
+
+    .comp-title {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      color: var(--margin);
+      margin-bottom: 14px;
+      font-weight: 700;
+    }
+
+    .btn-demo {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+      margin: 3px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .btn-red { background: var(--margin); color: white; box-shadow: 0 2px 8px rgba(230,57,70,0.3); }
+    .btn-outline { background: transparent; color: var(--margin); border: 2px solid var(--margin); }
+    .btn-ghost { background: #F3F4F6; color: var(--ink); }
+
+    .session-item {
+      background: #FFF5F5;
+      border-left: 3px solid var(--margin);
+      border-radius: 0 8px 8px 0;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+    }
+
+    .session-item:last-child { margin-bottom: 0; }
+
+    .session-subject {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--ink);
+    }
+
+    .session-meta {
+      font-family: 'Caveat', cursive;
+      font-size: 14px;
+      color: var(--ink-mid);
+      margin-top: 2px;
+    }
+
+    .design-notes {
+      font-family: 'Caveat', cursive;
+      font-size: 16px;
+      color: var(--ink-mid);
+      line-height: 1.9;
+    }
+
+    /* ─── TYPOGRAPHY ─── */
+    .type-samples {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .type-row {
+      display: flex;
+      align-items: baseline;
+      gap: 28px;
+    }
+
+    .type-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-mid);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      width: 110px;
+      flex-shrink: 0;
+    }
+
+    /* ─── IDENTITY NOTES ─── */
+    .identity-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+
+    .identity-card {
+      background: rgba(255,255,255,0.85);
+      border-radius: 16px;
+      padding: 22px;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    .identity-icon { font-size: 28px; margin-bottom: 12px; }
+
+    .identity-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+
+    .identity-desc {
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      color: var(--ink-mid);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 800px) {
+      .two-col { grid-template-columns: 1fr; }
+      .identity-grid { grid-template-columns: 1fr; }
+      .content { padding-left: 108px; padding-right: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="notebook-bg"></div>
+<div class="margin-line"></div>
+
+<div class="content">
+
+  <!-- ─── HEADER ─── -->
+  <div class="page-header">
+    <div class="page-title">milo — design concept</div>
+    <div class="page-subtitle">Visual identity, UI direction & brand language for milotutor.ai</div>
+  </div>
+
+  <!-- ─── 1. LOGO ─── -->
+  <div class="section">
+    <div class="section-label">① Logo &amp; Identity</div>
+
+    <div class="logo-variations">
+
+      <!-- Primary -->
+      <div>
+        <div class="logo-variant on-white" style="display: inline-flex;">
+          <!-- Eye/lens SVG icon -->
+          <svg class="logo-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="22" cy="22" r="20" fill="#FFF0F0" stroke="#E63946" stroke-width="1.8"/>
+            <ellipse cx="22" cy="22" rx="10" ry="7" fill="#E63946"/>
+            <circle cx="22" cy="22" r="4" fill="white"/>
+            <circle cx="24.5" cy="20" r="1.5" fill="white"/>
+            <!-- small lines like eyelashes / notebook ruled lines -->
+            <line x1="22" y1="3" x2="22" y2="8" stroke="#E63946" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="22" y1="36" x2="22" y2="41" stroke="#E63946" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="3" y1="22" x2="8" y2="22" stroke="#E63946" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="36" y1="22" x2="41" y2="22" stroke="#E63946" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <div class="logo-wordmark">mil<span class="accent">o</span></div>
+            <div class="logo-tag">Primary — light bg</div>
+          </div>
+        </div>
+
+        &nbsp;&nbsp;&nbsp;
+
+        <!-- On dark -->
+        <div class="logo-variant on-dark" style="display: inline-flex;">
+          <svg class="logo-icon" viewBox="0 0 44 44" fill="none">
+            <circle cx="22" cy="22" r="20" fill="rgba(255,255,255,0.08)" stroke="#FFB3B8" stroke-width="1.8"/>
+            <ellipse cx="22" cy="22" rx="10" ry="7" fill="#FFB3B8"/>
+            <circle cx="22" cy="22" r="4" fill="#1E2235"/>
+            <circle cx="24.5" cy="20" r="1.5" fill="#1E2235"/>
+            <line x1="22" y1="3" x2="22" y2="8" stroke="#FFB3B8" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="22" y1="36" x2="22" y2="41" stroke="#FFB3B8" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="3" y1="22" x2="8" y2="22" stroke="#FFB3B8" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="36" y1="22" x2="41" y2="22" stroke="#FFB3B8" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <div class="logo-wordmark on-dark-text">mil<span class="accent">o</span></div>
+            <div class="logo-tag" style="color: rgba(255,255,255,0.4);">On dark bg</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="logo-tagline">your patient tutor — always watching, never telling</div>
+
+    </div>
+  </div>
+
+  <!-- ─── 2. PALETTE ─── -->
+  <div class="section">
+    <div class="section-label">② Color Palette</div>
+    <div class="palette">
+      <div class="swatch">
+        <div class="swatch-color" style="background:#E63946;"></div>
+        <div class="swatch-name">Margin Red</div>
+        <div class="swatch-hex">#E63946</div>
+        <div class="swatch-use">brand, CTAs</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#1E2235;"></div>
+        <div class="swatch-name">Ink</div>
+        <div class="swatch-hex">#1E2235</div>
+        <div class="swatch-use">body text</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#FAFAFA; border:1px solid #DDE;"></div>
+        <div class="swatch-name">Paper</div>
+        <div class="swatch-hex">#FAFAFA</div>
+        <div class="swatch-use">backgrounds</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#C8DCF0;"></div>
+        <div class="swatch-name">Grid Blue</div>
+        <div class="swatch-hex">#C8DCF0</div>
+        <div class="swatch-use">lines, dividers</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#FFF176;"></div>
+        <div class="swatch-name">Highlighter</div>
+        <div class="swatch-hex">#FFF176</div>
+        <div class="swatch-use">what Milo sees</div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background:#06D6A0;"></div>
+        <div class="swatch-name">Correct</div>
+        <div class="swatch-hex">#06D6A0</div>
+        <div class="swatch-use">success, praise</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 3. APP MOCKUP ─── -->
+  <div class="section">
+    <div class="section-label">③ App Interface</div>
+    <div class="two-col">
+
+      <!-- Mockup -->
+      <div class="app-mockup">
+
+        <div class="app-header">
+          <div class="app-logo-small">mil<span>o</span></div>
+          <div class="app-status">
+            <div class="status-dot"></div>
+            listening
+          </div>
+        </div>
+
+        <div class="camera-area">
+          <div class="camera-grid"></div>
+          <div class="camera-scan"></div>
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="camera-placeholder">
+            <div class="camera-emoji">📚</div>
+            <div class="camera-label">show me your homework</div>
+          </div>
+        </div>
+
+        <div class="milo-response">
+          <div class="milo-bubble">
+            <div class="milo-name">Milo</div>
+            <div class="milo-text">
+              I can see you wrote <span class="hl">7 × 8 = 54</span> — let's check that together. What's 7 × 7?
+            </div>
+          </div>
+        </div>
+
+        <div class="app-controls">
+          <button class="ctrl-btn">📷</button>
+          <button class="ctrl-btn main">🎤</button>
+          <div class="waveform">
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+            <div class="wbar"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Components + notes -->
+      <div class="comp-stack">
+
+        <div class="comp-card">
+          <div class="comp-title">Buttons</div>
+          <button class="btn-demo btn-red">▶ Start Session</button>
+          <button class="btn-demo btn-outline">◼ End Session</button>
+          <button class="btn-demo btn-ghost">⚙ Settings</button>
+        </div>
+
+        <div class="comp-card">
+          <div class="comp-title">Session History</div>
+          <div class="session-item">
+            <div class="session-subject">Math — Multiplication</div>
+            <div class="session-meta">Today · 18 min · 🇬🇧 English</div>
+          </div>
+          <div class="session-item">
+            <div class="session-subject">Chemistry — Periodic Table</div>
+            <div class="session-meta">Yesterday · 20 min · 🇵🇹 Português</div>
+          </div>
+          <div class="session-item">
+            <div class="session-subject">Deutsch — Grammatik</div>
+            <div class="session-meta">Feb 24 · 15 min · 🇩🇪 Deutsch</div>
+          </div>
+        </div>
+
+        <div class="design-notes">
+          ← The red margin line<br>
+          &nbsp;&nbsp;&nbsp;IS the brand<br>
+          <br>
+          ← Grid lines appear<br>
+          &nbsp;&nbsp;&nbsp;everywhere — paper feel<br>
+          <br>
+          ← Yellow = what Milo<br>
+          &nbsp;&nbsp;&nbsp;"sees" on your work<br>
+          <br>
+          ← Camera corners mimic<br>
+          &nbsp;&nbsp;&nbsp;a viewfinder / ruler
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 4. TYPOGRAPHY ─── -->
+  <div class="section">
+    <div class="section-label">④ Typography</div>
+    <div class="type-samples">
+      <div class="type-row">
+        <span class="type-label">Display</span>
+        <span style="font-family:'Caveat',cursive;font-size:40px;font-weight:700;color:var(--ink);">Ready to study?</span>
+      </div>
+      <div class="type-row">
+        <span class="type-label">Heading</span>
+        <span style="font-size:22px;font-weight:700;color:var(--ink);">Today's Session</span>
+      </div>
+      <div class="type-row">
+        <span class="type-label">Body</span>
+        <span style="font-size:15px;color:var(--ink);line-height:1.6;max-width:440px;">Milo sees your homework and guides you — without ever giving you the answer directly.</span>
+      </div>
+      <div class="type-row">
+        <span class="type-label">Milo voice</span>
+        <span style="font-family:'Caveat',cursive;font-size:22px;color:var(--margin);">"What do you think happens next?"</span>
+      </div>
+      <div class="type-row">
+        <span class="type-label">Label / UI</span>
+        <span style="font-size:12px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-mid);">Session Active · 4:32</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── 5. BRAND IDENTITY ─── -->
+  <div class="section">
+    <div class="section-label">⑤ Brand Identity</div>
+    <div class="identity-grid">
+      <div class="identity-card">
+        <div class="identity-icon">📖</div>
+        <div class="identity-title">The Notebook Metaphor</div>
+        <div class="identity-desc">Every screen feels like a page. Grid lines, the red margin, the handwriting font — it's school, but warm and alive.</div>
+      </div>
+      <div class="identity-card">
+        <div class="identity-icon">👁</div>
+        <div class="identity-title">Milo Sees</div>
+        <div class="identity-desc">The eye/lens in the logo is the product promise. Milo watches your work and responds to what it actually sees — not guesses.</div>
+      </div>
+      <div class="identity-card">
+        <div class="identity-icon">💬</div>
+        <div class="identity-title">Milo's Personality</div>
+        <div class="identity-desc">Patient. Curious. A little playful. Never condescending. Asks questions instead of giving answers. Speaks your language.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

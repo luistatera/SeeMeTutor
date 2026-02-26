@@ -29,12 +29,47 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from gemini_live import (
-    GeminiLiveSession,
+from google.adk.agents.live_request_queue import LiveRequestQueue
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.genai import types
+
+from agent import tutor_agent, SYSTEM_PROMPT
+from queues import (
     register_whiteboard_queue,
     unregister_whiteboard_queue,
     register_topic_update_queue,
     unregister_topic_update_queue,
+)
+from test_report import create_report, remove_report
+from modules.proactive import (
+    proactive_idle_orchestrator,
+    init_proactive_state,
+    reset_silence_tracking,
+    sanitize_tutor_output,
+)
+from modules.screen_share import (
+    init_screen_share_state,
+    get_switch_prompt,
+    STOP_SHARING_PROMPT,
+    SOURCE_SWITCH_COOLDOWN_S,
+)
+from modules.whiteboard import (
+    init_whiteboard_state,
+    whiteboard_dispatcher,
+)
+from modules.guardrails import (
+    init_guardrails_state,
+    check_student_input,
+    check_tutor_output,
+    select_reinforcement,
+    record_guardrail_event,
+    record_reinforcement,
+)
+from modules.grounding import (
+    init_grounding_state,
+    extract_grounding,
 )
 
 load_dotenv()
@@ -551,6 +586,38 @@ except Exception:
         GCP_PROJECT_ID,
         exc_info=True,
     )
+# ---------------------------------------------------------------------------
+# ADK Runner + Session Service
+# ---------------------------------------------------------------------------
+session_service = InMemorySessionService()
+runner = Runner(
+    app_name="seeme_tutor",
+    agent=tutor_agent,
+    session_service=session_service,
+)
+
+ADK_RUN_CONFIG = RunConfig(
+    streaming_mode=StreamingMode.BIDI,
+    response_modalities=["AUDIO"],
+    speech_config=types.SpeechConfig(
+        voice_config=types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                voice_name="Puck",
+            ),
+        ),
+    ),
+    realtime_input_config=types.RealtimeInputConfig(
+        automatic_activity_detection=types.AutomaticActivityDetection(
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+            prefix_padding_ms=300,
+            silence_duration_ms=700,
+        ),
+    ),
+    input_audio_transcription=types.AudioTranscriptionConfig(),
+    output_audio_transcription=types.AudioTranscriptionConfig(),
+)
+
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 if not FRONTEND_DIR.is_dir():
     FRONTEND_DIR = BASE_DIR / "frontend"
@@ -708,7 +775,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "resume_message": backlog_context.get("resume_message"),
         "session_phase": "greeting",
     }
+    report = create_report(session_id, raw_student_id)
     await _send_json(websocket, {"type": "backlog_context", "data": backlog_context})
+    report.record_backlog_sent()
     for note in backlog_context.get("previous_notes", []):
         await _send_json(websocket, {"type": "whiteboard", "data": note})
 
@@ -754,75 +823,124 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "mic_active": False,
         "mic_opened_at": None,
         "mic_kickoff_sent": False,
+        "_greeting_delivered": False,  # True after first greeting turn completes
+        "_student_has_spoken": False,   # True after first input_transcription
+        "_turn_ticket_count": 1,        # Allow one tutor turn per student/proactive trigger
+        "_last_tutor_audio_at": 0.0,    # For echo-guard around input_transcription
         "resume_message": backlog_context.get("resume_message"),
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
         "track_id": backlog_context.get("track_id"),
+        **init_proactive_state(),
+        **init_screen_share_state(),
+        **init_whiteboard_state(),
+        **init_guardrails_state(),
+        **init_grounding_state(),
         "topic_id": backlog_context.get("topic_id"),
         "topic_title": backlog_context.get("topic_title"),
+        "_report": report,
     }
     wb_queue = register_whiteboard_queue(session_id)
     topic_queue = register_topic_update_queue(session_id)
     ended_reason = "disconnect"
     try:
         try:
-            async with GeminiLiveSession(state=session_state) as gemini_session:
-                forward_task = asyncio.create_task(
-                    _forward_to_gemini(websocket, gemini_session, session_id, runtime_state),
-                    name="forward_to_gemini",
-                )
-                receive_task = asyncio.create_task(
-                    _forward_to_client(websocket, gemini_session, session_id, runtime_state, wb_queue, topic_queue),
-                    name="forward_to_client",
-                )
-                timer_task = asyncio.create_task(
-                    _session_timer(websocket, SESSION_TIMEOUT_SECONDS),
-                    name="session_timer",
-                )
-                idle_task = asyncio.create_task(
-                    _idle_orchestrator(websocket, runtime_state),
-                    name="idle_orchestrator",
-                )
-                heartbeat_task = asyncio.create_task(
-                    _session_heartbeat(session_id, runtime_state),
-                    name="session_heartbeat",
-                )
+            # Create ADK session with initial state
+            adk_session = await session_service.create_session(
+                app_name="seeme_tutor",
+                user_id=raw_student_id,
+                state=session_state,
+                session_id=session_id,
+            )
 
-                done, pending = await asyncio.wait(
-                    {forward_task, receive_task, timer_task, idle_task, heartbeat_task},
-                    return_when=asyncio.FIRST_COMPLETED,
+            # Create queue for browser→Gemini upstream
+            live_queue = LiveRequestQueue()
+
+            # Send [SESSION START] hidden turn with student context
+            student_context = {
+                "student_name": session_state.get("student_name"),
+                "preferred_language": session_state.get("preferred_language"),
+                "resume_message": session_state.get("resume_message"),
+                "topic_title": session_state.get("topic_title"),
+                "topic_status": session_state.get("topic_status"),
+                "language_contract": session_state.get("language_contract"),
+                "previous_notes_count": len(session_state.get("previous_notes", [])),
+            }
+            import json as _json
+            live_queue.send_content(
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text=(
+                        "[SESSION START — CONTEXT ONLY, DO NOT SPEAK]\n"
+                        + _json.dumps(student_context, ensure_ascii=False)
+                        + "\n[IMPORTANT: This is background context only. "
+                        "Do NOT generate any audio or text response to this message. "
+                        "Wait silently until the student speaks to you via their microphone. "
+                        "When the student speaks, greet them naturally and begin the session.]"
+                    ))],
                 )
+            )
 
-                for task in pending:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception:
-                        logger.exception("Error while cancelling task %s", task.get_name())
+            forward_task = asyncio.create_task(
+                _forward_to_gemini(websocket, live_queue, session_id, runtime_state, report),
+                name="forward_to_gemini",
+            )
+            receive_task = asyncio.create_task(
+                _forward_to_client(websocket, runner, live_queue, session_id, runtime_state, topic_queue, report),
+                name="forward_to_client",
+            )
+            timer_task = asyncio.create_task(
+                _session_timer(websocket, SESSION_TIMEOUT_SECONDS),
+                name="session_timer",
+            )
+            idle_task = asyncio.create_task(
+                proactive_idle_orchestrator(websocket, live_queue, runtime_state),
+                name="idle_orchestrator",
+            )
+            heartbeat_task = asyncio.create_task(
+                _session_heartbeat(session_id, runtime_state),
+                name="session_heartbeat",
+            )
+            wb_dispatcher_task = asyncio.create_task(
+                whiteboard_dispatcher(websocket, wb_queue, runtime_state),
+                name="whiteboard_dispatcher",
+            )
 
-                for task in done:
-                    try:
-                        exc = task.exception()
-                    except asyncio.CancelledError:
-                        logger.debug("Task %s was cancelled", task.get_name())
-                        continue
-                    if task is timer_task and exc is None:
-                        ended_reason = "limit"
-                    elif isinstance(exc, _StudentEndedSession):
-                        ended_reason = "student_ended"
-                    elif exc is not None:
-                        exc_name = type(exc).__name__
-                        if "Disconnect" not in exc_name and "Closed" not in exc_name:
-                            logger.error("Task %s crashed: %s", task.get_name(), exc, exc_info=exc)
-                            if ended_reason == "disconnect":
-                                ended_reason = "error"
-                        else:
-                            logger.info("Task %s ended normally (client disconnect)", task.get_name())
+            done, pending = await asyncio.wait(
+                {forward_task, receive_task, timer_task, idle_task, heartbeat_task, wb_dispatcher_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Error while cancelling task %s", task.get_name())
+
+            for task in done:
+                try:
+                    exc = task.exception()
+                except asyncio.CancelledError:
+                    logger.debug("Task %s was cancelled", task.get_name())
+                    continue
+                if task is timer_task and exc is None:
+                    ended_reason = "limit"
+                elif isinstance(exc, _StudentEndedSession):
+                    ended_reason = "student_ended"
+                elif exc is not None:
+                    exc_name = type(exc).__name__
+                    if "Disconnect" not in exc_name and "Closed" not in exc_name:
+                        logger.error("Task %s crashed: %s", task.get_name(), exc, exc_info=exc)
+                        if ended_reason == "disconnect":
+                            ended_reason = "error"
+                    else:
+                        logger.info("Task %s ended normally (client disconnect)", task.get_name())
 
         except Exception as exc:
-            logger.exception("Session %s: Gemini session error: %s", session_id, exc)
+            logger.exception("Session %s: ADK runner error: %s", session_id, exc)
             await _send_json(websocket, {
                 "type": "error",
                 "data": "Could not connect to the tutoring service. Please try again in a moment.",
@@ -886,6 +1004,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
         logger.info("Session %s ended after %ds (reason: %s)", session_id, duration, ended_reason)
 
+        # Save test report
+        if report:
+            report.finalize(ended_reason)
+            try:
+                report.save()
+            except Exception:
+                logger.warning("Session %s: failed to save test report", session_id, exc_info=True)
+            remove_report(session_id)
+
 
 async def _session_heartbeat(session_id: str, runtime_state: dict) -> None:
     """Log session state every 3 seconds for debugging silence issues."""
@@ -948,85 +1075,40 @@ async def _session_timer(websocket: WebSocket, timeout: float) -> None:
         )
 
 
-async def _idle_orchestrator(websocket: WebSocket, runtime_state: dict) -> None:
-    """Drive deterministic idle check-ins and away-mode transitions."""
-    while True:
-        await asyncio.sleep(0.5)
-        if runtime_state.get("away_mode"):
-            continue
-        if not runtime_state.get("mic_active"):
-            continue
-        if runtime_state.get("assistant_speaking"):
-            continue
+def _mark_student_activity(runtime_state: dict, *, unlock_turn: bool = False) -> None:
+    """Common state reset when the student does something intentional.
 
-        now = time.time()
-        last_activity = runtime_state.get("last_user_activity_at", now)
-        idle_for = now - last_activity
-        idle_stage = runtime_state.get("idle_stage", 0)
-        mic_opened_at = runtime_state.get("mic_opened_at")
+    Called from every upstream control-message handler that represents real
+    student engagement (speech, button press, source switch, etc.).  Centralises
+    the six-line pattern that was copy-pasted across 8+ handlers.
 
-        # Start the conversation only after the mic has been opened and
-        # the learner has been quiet for a few seconds. If Gemini already
-        # started a real turn, suppress this kickoff prompt.
-        if (
-            not runtime_state.get("conversation_started")
-            and not runtime_state.get("mic_kickoff_sent")
-            and mic_opened_at is not None
-        ):
-            mic_open_for = now - float(mic_opened_at)
-            if mic_open_for >= MIC_KICKOFF_SECONDS and idle_for >= MIC_KICKOFF_SECONDS:
-                runtime_state["mic_kickoff_sent"] = True
-                runtime_state["conversation_started"] = True
-                runtime_state["last_user_activity_at"] = now
-                runtime_state["idle_stage"] = 0
-                topic_title = runtime_state.get("topic_title") or "your current topic"
-                await _send_json(websocket, {"type": "assistant_state", "data": {"state": "active", "reason": "mic_kickoff"}})
-                await _send_json(websocket, {
-                    "type": "assistant_prompt",
-                    "data": f"Let's begin with {topic_title}. Tell me where you want to start.",
-                })
-                continue
+    Args:
+        unlock_turn: If True, also guarantee at least one turn ticket so the
+            tutor can respond (used for barge-in, speech pace, transcription).
+    """
+    runtime_state["last_user_activity_at"] = time.time()
+    runtime_state["idle_stage"] = 0
+    runtime_state["conversation_started"] = True
+    runtime_state["mic_kickoff_sent"] = True
+    runtime_state["proactive_waiting_for_student"] = False
+    reset_silence_tracking(runtime_state)
+    if unlock_turn:
+        runtime_state["_turn_ticket_count"] = max(
+            int(runtime_state.get("_turn_ticket_count", 0)), 1,
+        )
 
-        # Do not send idle check-ins before a real turn has started.
-        if not runtime_state.get("conversation_started"):
-            continue
 
-        if idle_stage < 1 and idle_for >= IDLE_CHECKIN_1_SECONDS:
-            runtime_state["idle_stage"] = 1
-            runtime_state["last_user_activity_at"] = now
-            await _send_json(websocket, {"type": "assistant_state", "data": {"state": "idle_checkin_1"}})
-            await _send_json(websocket, {
-                "type": "assistant_prompt",
-                "data": "Still with me? Take your time — I can wait while you think.",
-            })
-            continue
-
-        if idle_stage < 2 and idle_for >= IDLE_CHECKIN_2_SECONDS:
-            runtime_state["idle_stage"] = 2
-            runtime_state["last_user_activity_at"] = now
-            await _send_json(websocket, {"type": "assistant_state", "data": {"state": "idle_checkin_2"}})
-            await _send_json(websocket, {
-                "type": "assistant_prompt",
-                "data": "Would you like a short pause? Say 'I'm back' whenever you want to continue.",
-            })
-            continue
-
-        if idle_for >= IDLE_AUTO_AWAY_SECONDS:
-            runtime_state["away_mode"] = True
-            runtime_state["last_user_activity_at"] = now
-            await _send_json(websocket, {"type": "assistant_state", "data": {"state": "away", "reason": "idle_timeout"}})
-            await _send_json(websocket, {
-                "type": "assistant_prompt",
-                "data": "No rush. I'll wait here quietly until you come back.",
-            })
+def _mark_proactive_response_seen(runtime_state: dict, *, source: str) -> None:
+    """Lock proactive idle injections after a proactive-guided tutor response."""
+    if runtime_state.get("idle_poke_sent") or runtime_state.get("idle_nudge_sent"):
+        if not runtime_state.get("proactive_waiting_for_student"):
+            logger.info("Proactive cycle locked after tutor %s output; waiting for student activity", source)
+        runtime_state["proactive_waiting_for_student"] = True
 
 
 async def _resume_from_away(websocket: WebSocket, runtime_state: dict) -> None:
     runtime_state["away_mode"] = False
-    runtime_state["idle_stage"] = 0
-    runtime_state["last_user_activity_at"] = time.time()
-    runtime_state["conversation_started"] = True
-    runtime_state["mic_kickoff_sent"] = True
+    _mark_student_activity(runtime_state)
     await _send_json(websocket, {"type": "assistant_state", "data": {"state": "active", "reason": "resume"}})
     if runtime_state.get("mic_active"):
         resume_message = runtime_state.get("resume_message") or "Welcome back. Let's continue from your last checkpoint."
@@ -1143,12 +1225,14 @@ async def _log_command_event(session_id: str, runtime_state: dict, payload: dict
 
 async def _forward_to_gemini(
     websocket: WebSocket,
-    session: GeminiLiveSession,
+    queue: LiveRequestQueue,
     session_id: str,
     runtime_state: dict,
+    report: "SessionReport | None" = None,
 ) -> None:
     """
-    Receive JSON messages from the browser and forward media to Gemini.
+    Receive JSON messages from the browser and forward media to Gemini
+    via the ADK LiveRequestQueue.
 
     Runs until the WebSocket is disconnected or an unrecoverable error occurs.
     """
@@ -1175,6 +1259,7 @@ async def _forward_to_gemini(
             # Control messages (no data payload)
             if msg_type == "end_session":
                 logger.info("Student requested end_session")
+                queue.close()
                 raise _StudentEndedSession()
             if msg_type == "consent_ack":
                 logger.info("Session %s: consent acknowledged", session_id)
@@ -1188,10 +1273,13 @@ async def _forward_to_gemini(
                         logger.warning("Session %s: failed to record consent", session_id, exc_info=True)
                 continue
             if msg_type == "user_activity":
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
+                activity = message.get("data") if isinstance(message.get("data"), dict) else {}
+                activity_kind = str(activity.get("kind", "")).strip().lower()
+                # Frontend "speech" activity is a coarse RMS signal and can fire on noise.
+                # Do not treat it as real student intent/activity for turn unlocking.
+                if activity_kind == "speech":
+                    continue
+                _mark_student_activity(runtime_state)
                 if runtime_state.get("away_mode"):
                     await _resume_from_away(websocket, runtime_state)
                 continue
@@ -1199,21 +1287,28 @@ async def _forward_to_gemini(
                 now = time.time()
                 runtime_state["mic_active"] = True
                 runtime_state["mic_opened_at"] = now
-                runtime_state["mic_kickoff_sent"] = False
-                runtime_state["conversation_started"] = False
+                # mic_start deliberately resets conversation to allow the
+                # kickoff timer to fire — do NOT use _mark_student_activity here.
                 runtime_state["last_user_activity_at"] = now
                 runtime_state["idle_stage"] = 0
+                runtime_state["mic_kickoff_sent"] = False
+                runtime_state["conversation_started"] = False
+                runtime_state["proactive_waiting_for_student"] = False
+                reset_silence_tracking(runtime_state)
                 try:
-                    await session.send_activity_start()
+                    queue.send_activity_start()
                 except Exception:
                     logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
                 logger.info("Control message from browser: 'mic_start'")
                 continue
             if msg_type == "away_mode":
                 active = bool(message.get("active", True))
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
                 runtime_state["away_mode"] = active
+                if not active:
+                    _mark_student_activity(runtime_state)
+                else:
+                    runtime_state["last_user_activity_at"] = time.time()
+                    runtime_state["idle_stage"] = 0
                 if active:
                     await _send_json(websocket, {"type": "assistant_state", "data": {"state": "away", "reason": "student_requested"}})
                     await _send_json(websocket, {
@@ -1255,21 +1350,17 @@ async def _forward_to_gemini(
                     logger.warning("Session %s: unsupported speech pace command '%s'", session_id, pace)
                     continue
                 runtime_state["speech_pace"] = pace
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
+                _mark_student_activity(runtime_state, unlock_turn=True)
                 try:
-                    await session.send_text(instruction)
+                    queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=instruction)])
+                    )
                 except Exception:
                     logger.warning("Session %s: failed to forward speech pace command", session_id, exc_info=True)
                 continue
             if msg_type == "barge_in":
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
+                _mark_student_activity(runtime_state, unlock_turn=True)
                 runtime_state["assistant_speaking"] = False
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
                 await _send_json(websocket, {"type": "interrupted"})
                 continue
             if msg_type == "command_event":
@@ -1282,10 +1373,62 @@ async def _forward_to_gemini(
                     runtime_state["mic_kickoff_sent"] = False
                     runtime_state["idle_stage"] = 0
                     try:
-                        await session.send_activity_end()
+                        queue.send_activity_end()
                     except Exception:
                         logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
                 logger.info("Control message from browser: '%s'", msg_type)
+                continue
+            if msg_type == "source_switch":
+                now = time.time()
+                new_source = str(message.get("source", "")).strip().lower()
+                if new_source not in ("screen", "camera"):
+                    logger.warning("Session %s: invalid source_switch source '%s'", session_id, new_source)
+                    continue
+                old_source = runtime_state.get("active_source", "camera")
+                # Debounce rapid duplicate switches
+                last_switch = runtime_state.get("last_switch_at", 0.0)
+                if last_switch > 0 and (now - last_switch) < SOURCE_SWITCH_COOLDOWN_S and old_source == new_source:
+                    continue
+                runtime_state["active_source"] = new_source
+                runtime_state["source_switches"] = runtime_state.get("source_switches", 0) + 1
+                runtime_state["last_switch_at"] = now
+                _mark_student_activity(runtime_state)
+                logger.info(
+                    "SOURCE SWITCH #%d: %s -> %s",
+                    runtime_state["source_switches"], old_source, new_source,
+                )
+                prompt = get_switch_prompt(new_source)
+                if prompt:
+                    try:
+                        queue.send_content(
+                            types.Content(role="user", parts=[types.Part(text=prompt)])
+                        )
+                        runtime_state["last_hidden_prompt_at"] = now
+                    except Exception:
+                        logger.warning("Session %s: failed to send source switch prompt", session_id, exc_info=True)
+                await _send_json(websocket, {
+                    "type": "source_switch_ack",
+                    "data": {"source": new_source, "count": runtime_state["source_switches"]},
+                })
+                continue
+            if msg_type == "stop_sharing":
+                now = time.time()
+                old_source = runtime_state.get("active_source", "camera")
+                runtime_state["active_source"] = "none"
+                runtime_state["stop_sharing_count"] = runtime_state.get("stop_sharing_count", 0) + 1
+                _mark_student_activity(runtime_state)
+                logger.info("STOP SHARING #%d: was=%s", runtime_state["stop_sharing_count"], old_source)
+                try:
+                    queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=STOP_SHARING_PROMPT)])
+                    )
+                    runtime_state["last_hidden_prompt_at"] = now
+                except Exception:
+                    logger.warning("Session %s: failed to send stop sharing prompt", session_id, exc_info=True)
+                await _send_json(websocket, {
+                    "type": "stop_sharing_ack",
+                    "data": {"count": runtime_state["stop_sharing_count"]},
+                })
                 continue
 
             encoded_data = message.get("data")
@@ -1305,10 +1448,20 @@ async def _forward_to_gemini(
 
             if msg_type == "audio":
                 now = time.time()
-                runtime_state["last_user_activity_at"] = now
-                runtime_state["idle_stage"] = 0
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
+                # Greeting-gate race fix: open the gate as soon as real speech audio arrives,
+                # even if input_transcription.finished lands later in the stream.
+                if (
+                    runtime_state.get("_greeting_delivered")
+                    and not runtime_state.get("_student_has_spoken")
+                    and any(raw_bytes)
+                ):
+                    runtime_state["_student_has_spoken"] = True
+                    runtime_state["proactive_waiting_for_student"] = False
+                    runtime_state["_turn_ticket_count"] = max(int(runtime_state.get("_turn_ticket_count", 0)), 1)
+                    logger.info("Detected non-silent student audio — opening greeting gate")
+                # NOTE: Raw audio chunks are continuous (~15/sec) even during silence.
+                # Do NOT reset idle/silence tracking here — that must only happen on
+                # actual speech (input_transcription) or deliberate user actions.
                 lat = _latency_state.get(session_id)
                 if lat is not None:
                     lat["last_audio_in"] = now
@@ -1317,14 +1470,21 @@ async def _forward_to_gemini(
                 if dc is not None:
                     dc["audio_in"] += 1
                     dc["last_audio_in_at"] = now
-                await session.send_audio(raw_bytes)
+                queue.send_realtime(types.Blob(data=raw_bytes, mime_type="audio/pcm;rate=16000"))
                 audio_chunks_sent += 1
-            elif msg_type == "video":
+                if report:
+                    report.record_audio_in()
+            elif msg_type in ("video", "screen_frame"):
+                runtime_state["last_video_frame_at"] = time.time()
+                if msg_type == "screen_frame":
+                    runtime_state["last_screen_frame_at"] = time.time()
                 dc = _debug_counters.get(session_id)
                 if dc is not None:
                     dc["video_in"] += 1
-                await session.send_video_frame(raw_bytes)
+                queue.send_realtime(types.Blob(data=raw_bytes, mime_type="image/jpeg"))
                 video_frames_sent += 1
+                if report:
+                    report.record_video_in()
             else:
                 logger.warning("Unknown message type from browser: '%s'", msg_type)
 
@@ -1342,10 +1502,12 @@ async def _forward_to_gemini(
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_gemini)")
+        queue.close()
     except _StudentEndedSession:
         raise
     except Exception as exc:
         logger.exception("Unexpected error in forward_to_gemini: %s", exc)
+        queue.close()
         await _send_json(websocket, {
             "type": "error",
             "data": "The connection to the tutor was interrupted. Please refresh to start a new session.",
@@ -1354,32 +1516,36 @@ async def _forward_to_gemini(
 
 async def _forward_to_client(
     websocket: WebSocket,
-    session: GeminiLiveSession,
+    adk_runner: Runner,
+    live_queue: LiveRequestQueue,
     session_id: str = "",
     runtime_state: dict | None = None,
-    wb_queue: asyncio.Queue | None = None,
     topic_queue: asyncio.Queue | None = None,
+    report: "SessionReport | None" = None,
 ) -> None:
     """
-    Receive responses from Gemini and forward them to the browser.
+    Receive ADK Runner events from Gemini and forward them to the browser.
 
-    Runs until the Gemini session closes, the WebSocket disconnects,
+    Runs until the Runner stream ends, the WebSocket disconnects,
     or an unrecoverable error occurs.
     """
     audio_response_chunks = 0
     turn_count = 0
+    turn_had_output = False
+    drop_turn_in_progress = False
 
     try:
         runtime_state = runtime_state or {}
-        async for event in session.receive():
-            # Drain any pending whiteboard notes queued by write_notes tool
-            if wb_queue is not None:
-                while not wb_queue.empty():
-                    try:
-                        note = wb_queue.get_nowait()
-                        await _send_json(websocket, {"type": "whiteboard", "data": note})
-                    except asyncio.QueueEmpty:
-                        break
+        user_id = runtime_state.get("student_id", "unknown")
+
+        async for event in adk_runner.run_live(
+            user_id=user_id,
+            session_id=session_id,
+            live_request_queue=live_queue,
+            run_config=ADK_RUN_CONFIG,
+        ):
+            # Whiteboard notes are dispatched by the whiteboard_dispatcher task
+            # (modules/whiteboard.py) which handles speech-sync timing and dedupe.
 
             # Drain any pending topic updates queued by switch_topic tool
             if topic_queue is not None:
@@ -1392,61 +1558,131 @@ async def _forward_to_client(
                     except asyncio.QueueEmpty:
                         break
 
-            event_type = event.get("type")
             dc = _debug_counters.get(session_id)
             if dc is not None:
                 dc["last_gemini_event_at"] = time.time()
 
-            if event_type == "audio":
-                was_speaking = runtime_state.get("assistant_speaking")
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
-                runtime_state["assistant_speaking"] = True
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
-                if not was_speaking:
-                    _debug_logger.debug(
-                        "SPEAKING_START sid=%s (was silent, now audio)",
-                        session_id[:8],
-                    )
-                lat = _latency_state.get(session_id)
-                if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
-                    delta_ms = (time.time() - lat["last_audio_in"]) * 1000
-                    logger.info(
-                        "LATENCY session=%s response_start_ms=%.0f",
-                        session_id, delta_ms,
-                    )
-                    lat["awaiting_first_response"] = False
-                if dc is not None:
-                    dc["audio_out"] += 1
-                audio_bytes: bytes = event["data"]
-                encoded = base64.b64encode(audio_bytes).decode("utf-8")
-                await _send_json(websocket, {"type": "audio", "data": encoded})
-                audio_response_chunks += 1
+            # If a turn was gated out due missing student/proactive trigger, discard
+            # all events until the matching turn_complete boundary.
+            if drop_turn_in_progress:
+                if event.turn_complete:
+                    drop_turn_in_progress = False
+                    runtime_state["assistant_speaking"] = False
+                    audio_response_chunks = 0
+                    turn_had_output = False
+                    _debug_logger.debug("TURN_DROPPED_COMPLETE sid=%s (no ticket)", session_id[:8])
+                continue
 
-            elif event_type == "text":
-                logger.info("TUTOR TRANSCRIPT: %s", event["data"])
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
-                runtime_state["assistant_speaking"] = True
-                runtime_state["conversation_started"] = True
-                runtime_state["mic_kickoff_sent"] = True
-                if dc is not None:
-                    dc["text_out"] += 1
-                _debug_logger.debug(
-                    "TEXT sid=%s data=%s",
-                    session_id[:8], str(event["data"])[:120],
-                )
-                await _send_json(websocket, {"type": "text", "data": event["data"]})
+            # --- Audio and text from content parts ---
+            if event.content and event.content.parts:
+                # Greeting gate: after first greeting turn, suppress output until student speaks.
+                # Prevents Gemini from producing duplicate greetings from [SESSION START].
+                if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken"):
+                    continue
 
-            elif event_type == "input_transcript":
-                logger.info("STUDENT HEARD: %s", event["data"])
+                # General turn gate: allow only one tutor turn per student/proactive trigger.
+                if int(runtime_state.get("_turn_ticket_count", 0)) <= 0:
+                    runtime_state["assistant_speaking"] = False
+                    if event.turn_complete:
+                        audio_response_chunks = 0
+                        turn_had_output = False
+                        _debug_logger.debug("TURN_DROPPED_ONE_EVENT sid=%s (no ticket)", session_id[:8])
+                    else:
+                        drop_turn_in_progress = True
+                        _debug_logger.debug("TURN_DROPPED_START sid=%s (no ticket)", session_id[:8])
+                    logger.info("Suppressed extra tutor turn without new student activity")
+                    continue
 
-            elif event_type == "turn_complete":
+                for part in event.content.parts:
+                    # Audio data
+                    inline_data = getattr(part, "inline_data", None)
+                    if inline_data is not None and inline_data.data:
+                        _mark_proactive_response_seen(runtime_state, source="audio")
+                        was_speaking = runtime_state.get("assistant_speaking")
+                        runtime_state["last_user_activity_at"] = time.time()
+                        runtime_state["idle_stage"] = 0
+                        runtime_state["assistant_speaking"] = True
+                        runtime_state["conversation_started"] = True
+                        runtime_state["mic_kickoff_sent"] = True
+                        if not was_speaking:
+                            reset_silence_tracking(runtime_state)
+                            _debug_logger.debug(
+                                "SPEAKING_START sid=%s (was silent, now audio)",
+                                session_id[:8],
+                            )
+                        lat = _latency_state.get(session_id)
+                        if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
+                            delta_ms = (time.time() - lat["last_audio_in"]) * 1000
+                            logger.info(
+                                "LATENCY session=%s response_start_ms=%.0f",
+                                session_id, delta_ms,
+                            )
+                            lat["awaiting_first_response"] = False
+                            if report:
+                                report.record_first_response_latency(delta_ms)
+                        if dc is not None:
+                            dc["audio_out"] += 1
+                            if dc["audio_out"] == 1:
+                                logger.info(
+                                    "AUDIO_DEBUG session=%s mime_type=%s data_len=%d first_bytes=%s",
+                                    session_id, getattr(inline_data, "mime_type", "NONE"),
+                                    len(inline_data.data), inline_data.data[:16].hex(),
+                                )
+                        runtime_state["_last_tutor_audio_at"] = time.time()
+                        audio_bytes: bytes = inline_data.data
+                        encoded = base64.b64encode(audio_bytes).decode("utf-8")
+                        await _send_json(websocket, {"type": "audio", "data": encoded})
+                        turn_had_output = True
+                        audio_response_chunks += 1
+                        if report:
+                            report.record_audio_out()
+                        continue
+
+                    # Text data
+                    text = getattr(part, "text", None)
+                    if text:
+                        _mark_proactive_response_seen(runtime_state, source="text")
+                        cleaned, had_leak = sanitize_tutor_output(text)
+                        if had_leak:
+                            logger.info("Sanitized leaked internal text from tutor output")
+                        if not cleaned:
+                            continue
+                        logger.info("TUTOR TEXT: %s", cleaned)
+                        runtime_state["last_user_activity_at"] = time.time()
+                        runtime_state["idle_stage"] = 0
+                        runtime_state["assistant_speaking"] = True
+                        runtime_state["conversation_started"] = True
+                        runtime_state["mic_kickoff_sent"] = True
+                        reset_silence_tracking(runtime_state)
+                        if dc is not None:
+                            dc["text_out"] += 1
+                        _debug_logger.debug(
+                            "TEXT sid=%s data=%s",
+                            session_id[:8], str(cleaned)[:120],
+                        )
+                        await _send_json(websocket, {"type": "text", "data": cleaned})
+                        turn_had_output = True
+
+            # --- Turn complete ---
+            if event.turn_complete:
+                # Greeting gate: after first turn, suppress subsequent turns until student speaks
+                if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken"):
+                    runtime_state["assistant_speaking"] = False
+                    _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (greeting gate)", session_id[:8])
+                    logger.info("Suppressed duplicate greeting turn (turn #%d)", turn_count + 1)
+                    audio_response_chunks = 0
+                    continue
+
+                # Ignore no-output synthetic turn_complete bursts when no ticket is available.
+                if int(runtime_state.get("_turn_ticket_count", 0)) <= 0 and not turn_had_output:
+                    _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (no ticket/no output)", session_id[:8])
+                    continue
+
                 turn_count += 1
                 runtime_state["assistant_speaking"] = False
                 runtime_state["last_user_activity_at"] = time.time()
                 runtime_state["idle_stage"] = 0
+                reset_silence_tracking(runtime_state)
                 if dc is not None:
                     dc["turn_complete"] += 1
                 _debug_logger.debug("TURN_COMPLETE sid=%s", session_id[:8])
@@ -1455,22 +1691,37 @@ async def _forward_to_client(
                     "Turn #%d complete — sent %d audio chunks to browser",
                     turn_count, audio_response_chunks,
                 )
+                if report:
+                    report.record_turn_complete(audio_response_chunks)
                 audio_response_chunks = 0
+                completed_with_output = turn_had_output
+                if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
+                    runtime_state["_turn_ticket_count"] = int(runtime_state.get("_turn_ticket_count", 0)) - 1
+                turn_had_output = False
+                # Mark greeting as delivered only after a turn with actual audio/text.
+                # Silent/empty turns (e.g. model acknowledging [SESSION START]) must
+                # not lock the gate — the real audio greeting arrives in a later turn.
+                if not runtime_state.get("_greeting_delivered") and completed_with_output:
+                    runtime_state["_greeting_delivered"] = True
 
-            elif event_type == "interrupted":
+            # --- Interrupted ---
+            if event.interrupted:
                 # Stale interrupt filter: if assistant already stopped speaking
                 # and no audio chunks were sent this turn, skip forwarding to client.
                 if not runtime_state.get("assistant_speaking") and audio_response_chunks == 0:
                     _debug_logger.debug(
                         "INTERRUPTED_STALE sid=%s (already silent, 0 chunks)", session_id[:8],
                     )
+                    if report:
+                        report.record_stale_interruption()
                     continue
                 runtime_state["assistant_speaking"] = False
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
+                _mark_student_activity(runtime_state, unlock_turn=True)
                 if dc is not None:
                     dc["interrupted"] += 1
                 _debug_logger.debug("INTERRUPTED sid=%s", session_id[:8])
+                if report:
+                    report.record_interruption()
                 lat = _latency_state.get(session_id)
                 if lat and lat["last_audio_in"] > 0:
                     delta_ms = (time.time() - lat["last_audio_in"]) * 1000
@@ -1486,11 +1737,103 @@ async def _forward_to_client(
                 )
                 audio_response_chunks = 0
 
-            else:
-                _debug_logger.debug(
-                    "UNKNOWN_EVENT sid=%s type=%s", session_id[:8], event_type,
+            # --- Grounding metadata ---
+            grounding_citations = extract_grounding(event)
+            if grounding_citations:
+                runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
+                for cit in grounding_citations[:1]:  # Only top citation
+                    runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
+                    query = cit.get("query", "")
+                    if query:
+                        queries_list = runtime_state.get("grounding_search_queries", [])
+                        queries_list.append(query)
+                        runtime_state["grounding_search_queries"] = queries_list
+                    logger.info(
+                        "GROUNDING #%d: %s (%s)",
+                        runtime_state["grounding_citations_sent"],
+                        cit["snippet"][:80],
+                        cit["source"],
+                    )
+                    await _send_json(websocket, {"type": "grounding", "data": cit})
+                    if report:
+                        report.record_grounding_citation(cit["source"], cit.get("query", ""))
+
+            # --- Transcription ---
+            if event.input_transcription and event.input_transcription.text and event.input_transcription.finished:
+                student_text = event.input_transcription.text
+                logger.info("STUDENT TRANSCRIPT: %s", student_text)
+                runtime_state["_student_has_spoken"] = True
+                # Echo guard: while tutor output is active, transcription often captures
+                # assistant audio from speakers. In that case, do not unlock another turn.
+                now = time.time()
+                is_echo_window = (
+                    runtime_state.get("assistant_speaking")
+                    or (now - float(runtime_state.get("_last_tutor_audio_at", 0.0))) < 0.8
                 )
-                logger.warning("Unknown event type from Gemini session: '%s'", event_type)
+                if is_echo_window:
+                    _debug_logger.debug("INPUT_TRANSCRIPT_IGNORED sid=%s (echo-window)", session_id[:8])
+                    _mark_student_activity(runtime_state)
+                else:
+                    _mark_student_activity(runtime_state, unlock_turn=True)
+
+                # Guardrail: check student input for off-topic / cheat / inappropriate
+                student_guardrail_events = check_student_input(student_text)
+                for ge in student_guardrail_events:
+                    record_guardrail_event(runtime_state, ge, source="student_speech")
+                    await _send_json(websocket, {
+                        "type": "guardrail_event",
+                        "data": {
+                            "type": ge["guardrail"],
+                            "source": "student_speech",
+                            "detail": ge["detail"],
+                        },
+                    })
+                    if report:
+                        report.record_guardrail_event(ge["guardrail"], ge["severity"], "student_speech")
+                # Inject reinforcement if guardrail triggered
+                reinforce_prompt = select_reinforcement(student_guardrail_events, runtime_state)
+                if reinforce_prompt:
+                    reason = student_guardrail_events[0]["guardrail"] if student_guardrail_events else "unknown"
+                    live_queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)])
+                    )
+                    record_reinforcement(runtime_state, reason)
+                    if report:
+                        report.record_guardrail_reinforcement()
+
+                if report:
+                    report.record_student_transcript(student_text)
+
+            if event.output_transcription and event.output_transcription.text and event.output_transcription.finished:
+                tutor_text = event.output_transcription.text
+                logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
+
+                # Guardrail: check tutor output for answer leaks
+                tutor_guardrail_events = check_tutor_output(tutor_text)
+                for ge in tutor_guardrail_events:
+                    record_guardrail_event(runtime_state, ge, source="tutor_speech")
+                    await _send_json(websocket, {
+                        "type": "guardrail_event",
+                        "data": {
+                            "type": ge["guardrail"],
+                            "source": "tutor_speech",
+                            "detail": ge["detail"],
+                        },
+                    })
+                    if report:
+                        report.record_guardrail_event(ge["guardrail"], ge["severity"], "tutor_speech")
+                # Inject Socratic reinforcement if answer leak detected
+                reinforce_prompt = select_reinforcement(tutor_guardrail_events, runtime_state)
+                if reinforce_prompt:
+                    live_queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)])
+                    )
+                    record_reinforcement(runtime_state, "answer_leak")
+                    if report:
+                        report.record_guardrail_reinforcement()
+
+                if report:
+                    report.record_tutor_transcript(tutor_text)
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_client)")
