@@ -1361,6 +1361,81 @@
       border-color: rgba(234, 67, 53, 0.45);
       color: #f8a7a1;
     }
+
+    .prefs-modal {
+      max-width: 420px;
+      text-align: left;
+      padding: 24px 20px;
+    }
+
+    .prefs-modal h2 {
+      margin-bottom: 6px;
+    }
+
+    .prefs-modal p {
+      margin-bottom: 14px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .preferences-form {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .preference-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .preference-field label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .preference-select {
+      width: 100%;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      padding: 10px 11px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .preference-select:focus {
+      border-color: var(--blue-glow);
+      box-shadow: 0 0 0 1px rgba(66, 133, 244, 0.3);
+    }
+
+    .preferences-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      margin-bottom: 8px;
+    }
+
+    .preferences-actions .modal-btn,
+    .preferences-actions .end-modal-cancel {
+      width: auto;
+      flex: 1;
+      margin: 0;
+    }
+
+    .preferences-status {
+      min-height: 16px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    .preferences-status.error {
+      color: #f8a7a1;
+    }
   </style>
   <!-- Silero VAD via ONNX Runtime — client-side voice activity detection -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
@@ -1414,6 +1489,71 @@
       <h2>Choose student profile</h2>
       <p>Select who is studying now so SeeMe can load the correct backlog and last checkpoint.</p>
       <div class="profile-list" id="profile-list"></div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+     TUTOR PREFERENCES MODAL
+===================================================================== -->
+  <div class="modal-backdrop" id="tutor-preferences-modal">
+    <div class="modal prefs-modal">
+      <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
+        <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
+          <path d="M12 3v18" />
+          <path d="M7 7h10" />
+          <path d="M7 12h10" />
+          <path d="M7 17h6" />
+        </svg>
+      </div>
+      <h2>Tutor preferences</h2>
+      <p>These settings are saved per student profile and applied instantly when changed.</p>
+      <div class="preferences-form">
+        <div class="preference-field">
+          <label for="preference-speech-pace">Speech pace</label>
+          <select class="preference-select" id="preference-speech-pace">
+            <option value="slow">Slow</option>
+            <option value="normal">Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+        </div>
+        <div class="preference-field">
+          <label for="preference-explanation-length">Explanation length</label>
+          <select class="preference-select" id="preference-explanation-length">
+            <option value="short">Short</option>
+            <option value="balanced">Balanced</option>
+            <option value="detailed">Detailed</option>
+          </select>
+        </div>
+        <div class="preference-field">
+          <label for="preference-directness">Directness</label>
+          <select class="preference-select" id="preference-directness">
+            <option value="to_the_point">To the point</option>
+            <option value="balanced">Balanced</option>
+            <option value="exploratory">Exploratory</option>
+          </select>
+        </div>
+        <div class="preference-field">
+          <label for="preference-socratic-intensity">Socratic intensity</label>
+          <select class="preference-select" id="preference-socratic-intensity">
+            <option value="light">Light</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div class="preference-field">
+          <label for="preference-encouragement-level">Encouragement level</label>
+          <select class="preference-select" id="preference-encouragement-level">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+      <div class="preferences-actions">
+        <button class="end-modal-cancel" id="prefs-reset-btn">Reset defaults</button>
+        <button class="modal-btn" id="prefs-close-btn">Done</button>
+      </div>
+      <p class="preferences-status" id="prefs-status"></p>
     </div>
   </div>
 
@@ -1483,7 +1623,9 @@
         </div>
         <div class="logo-tagline">Your AI homework guide · <a href="#" id="privacy-link"
             style="color:var(--text-muted); text-decoration:none;">Privacy</a> · <a href="#" id="switch-profile-link"
-            style="color:var(--text-muted); text-decoration:none;">Switch profile</a></div>
+            style="color:var(--text-muted); text-decoration:none;">Switch profile</a> · <a href="#"
+            id="tutor-preferences-link" style="color:var(--text-muted); text-decoration:none;">Tutor preferences</a>
+        </div>
       </div>
       <div class="status-badge connecting" id="status-badge">
         <div class="status-dot"></div>
@@ -1611,10 +1753,11 @@
       </button>
 
       <!-- TEMP: Step-3 test — screen share toggle (remove after Step 3 validation) -->
-      <button class="ctrl-btn" id="screen-btn" title="[TEST] Screen share" aria-label="Toggle screen share" style="outline:2px dashed #FBBC04;outline-offset:3px;">
+      <button class="ctrl-btn" id="screen-btn" title="[TEST] Screen share" aria-label="Toggle screen share"
+        style="outline:2px dashed #FBBC04;outline-offset:3px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="3" width="20" height="14" rx="2"/>
-          <path d="M8 21h8M12 17v4"/>
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
         </svg>
       </button>
 
@@ -1772,6 +1915,40 @@
     };
     const PROFILE_STORAGE_KEY = 'seeme_profile_id';
     const PROFILE_API_PATH = '/api/profiles';
+    const TUTOR_PREFERENCES_SAVE_DEBOUNCE_MS = 280;
+    const TUTOR_PREFERENCE_FIELDS = [
+      'speech_pace',
+      'explanation_length',
+      'directness',
+      'socratic_intensity',
+      'encouragement_level',
+    ];
+    const DEFAULT_TUTOR_PREFERENCES = {
+      speech_pace: 'normal',
+      explanation_length: 'balanced',
+      directness: 'balanced',
+      socratic_intensity: 'medium',
+      encouragement_level: 'medium',
+    };
+    const TUTOR_PREFERENCE_OPTIONS = {
+      speech_pace: ['slow', 'normal', 'fast'],
+      explanation_length: ['short', 'balanced', 'detailed'],
+      directness: ['to_the_point', 'balanced', 'exploratory'],
+      socratic_intensity: ['light', 'medium', 'high'],
+      encouragement_level: ['low', 'medium', 'high'],
+    };
+    const SPEECH_PACE_ALIASES = {
+      slower: 'slow',
+      faster: 'fast',
+      slow: 'slow',
+      normal: 'normal',
+      fast: 'fast',
+    };
+    const SPEECH_PACE_PLAYBACK_RATE = {
+      slow: 0.85,
+      normal: 1.0,
+      fast: 1.2,
+    };
 
     // =========================================================================
     // STATE
@@ -1793,6 +1970,8 @@
       cameraFacingMode: 'environment',
       commandAttempts: {},
       whiteboardNotes: [],
+      tutorPreferencesSaveError: '',
+      speechPace: 'normal',
       diagnostics: {
         groundingCount: 0,
         guardrailCount: 0,
@@ -1841,8 +2020,18 @@
     const consentDetails = $('consent-details');
     const privacyLink = $('privacy-link');
     const switchProfileLink = $('switch-profile-link');
+    const tutorPreferencesLink = $('tutor-preferences-link');
     const profileModal = $('profile-modal');
     const profileList = $('profile-list');
+    const tutorPreferencesModal = $('tutor-preferences-modal');
+    const prefsSpeechPace = $('preference-speech-pace');
+    const prefsExplanationLength = $('preference-explanation-length');
+    const prefsDirectness = $('preference-directness');
+    const prefsSocraticIntensity = $('preference-socratic-intensity');
+    const prefsEncouragementLevel = $('preference-encouragement-level');
+    const prefsResetBtn = $('prefs-reset-btn');
+    const prefsCloseBtn = $('prefs-close-btn');
+    const prefsStatus = $('prefs-status');
     const profileNamePill = $('profile-name-pill');
     const trackPill = $('track-pill');
     const topicPill = $('topic-pill');
@@ -1862,6 +2051,7 @@
     // =========================================================================
     let ws = null;
     let wsReconnectTimer = null;
+    let tutorPreferencesSaveTimer = null;
     let lastSpeechActivitySentAt = 0;
     let checkpointHintTimer = null;
     let commandRecognition = null;
@@ -2096,6 +2286,15 @@
           appendDiagnosticLog('screen', 'sharing stopped');
           break;
 
+        case 'tutor_preferences_ack': {
+          const updated = setSelectedTutorPreferences(msg.data);
+          if (tutorPreferencesModal.classList.contains('visible')) {
+            renderTutorPreferencesForm(updated);
+            setTutorPreferencesStatus('Applied in this session.');
+          }
+          break;
+        }
+
         default:
           // unknown message type — ignore
           break;
@@ -2126,6 +2325,157 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function getBackendBaseUrl() {
+      const protocol = location.protocol;
+      const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
+      return `${protocol}//${backendHost}`;
+    }
+
+    function buildApiUrl(path) {
+      return `${getBackendBaseUrl()}${path}`;
+    }
+
+    function buildProfilePreferencesPath(profileId) {
+      return `/api/profiles/${encodeURIComponent(profileId)}/preferences`;
+    }
+
+    function normalizeTutorPreferenceChoice(field, value, fallback) {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (field === 'speech_pace') {
+        const canonical = SPEECH_PACE_ALIASES[normalized] || normalized;
+        const fallbackCanonical = SPEECH_PACE_ALIASES[String(fallback || '').trim().toLowerCase()] || 'normal';
+        return TUTOR_PREFERENCE_OPTIONS.speech_pace.includes(canonical) ? canonical : fallbackCanonical;
+      }
+      const allowed = TUTOR_PREFERENCE_OPTIONS[field] || [];
+      return allowed.includes(normalized) ? normalized : fallback;
+    }
+
+    function normalizeTutorPreferences(rawPreferences, fallback = DEFAULT_TUTOR_PREFERENCES) {
+      const source = rawPreferences && typeof rawPreferences === 'object' ? rawPreferences : {};
+      const base = fallback && typeof fallback === 'object' ? fallback : DEFAULT_TUTOR_PREFERENCES;
+      const normalized = {};
+      TUTOR_PREFERENCE_FIELDS.forEach((field) => {
+        const defaultValue = DEFAULT_TUTOR_PREFERENCES[field];
+        const fallbackValue = normalizeTutorPreferenceChoice(field, base[field], defaultValue);
+        normalized[field] = normalizeTutorPreferenceChoice(field, source[field], fallbackValue);
+      });
+      return normalized;
+    }
+
+    function setProfileTutorPreferences(profileId, rawPreferences) {
+      const normalizedId = String(profileId || '').trim().toLowerCase();
+      const profile = state.profiles.find((item) => item.id === normalizedId);
+      const fallback = profile?.tutorPreferences || DEFAULT_TUTOR_PREFERENCES;
+      const normalized = normalizeTutorPreferences(rawPreferences, fallback);
+      if (profile) {
+        profile.tutorPreferences = normalized;
+      }
+      if (state.selectedProfile && state.selectedProfile.id === normalizedId) {
+        state.selectedProfile.tutorPreferences = normalized;
+        state.speechPace = normalized.speech_pace;
+      }
+      return normalized;
+    }
+
+    function setSelectedTutorPreferences(rawPreferences) {
+      const selectedId = state.selectedProfile?.id || state.selectedProfileId || '';
+      if (!selectedId) return normalizeTutorPreferences(rawPreferences, DEFAULT_TUTOR_PREFERENCES);
+      return setProfileTutorPreferences(selectedId, rawPreferences);
+    }
+
+    function getSelectedTutorPreferences() {
+      if (!state.selectedProfile) return normalizeTutorPreferences(null, DEFAULT_TUTOR_PREFERENCES);
+      return setSelectedTutorPreferences(state.selectedProfile.tutorPreferences);
+    }
+
+    function renderTutorPreferencesForm(rawPreferences) {
+      const preferences = normalizeTutorPreferences(rawPreferences, getSelectedTutorPreferences());
+      prefsSpeechPace.value = preferences.speech_pace;
+      prefsExplanationLength.value = preferences.explanation_length;
+      prefsDirectness.value = preferences.directness;
+      prefsSocraticIntensity.value = preferences.socratic_intensity;
+      prefsEncouragementLevel.value = preferences.encouragement_level;
+    }
+
+    function readTutorPreferencesForm() {
+      return normalizeTutorPreferences({
+        speech_pace: prefsSpeechPace.value,
+        explanation_length: prefsExplanationLength.value,
+        directness: prefsDirectness.value,
+        socratic_intensity: prefsSocraticIntensity.value,
+        encouragement_level: prefsEncouragementLevel.value,
+      }, getSelectedTutorPreferences());
+    }
+
+    function setTutorPreferencesStatus(message, isError = false) {
+      prefsStatus.textContent = String(message || '');
+      prefsStatus.classList.toggle('error', !!isError);
+    }
+
+    function openTutorPreferencesModal() {
+      if (!state.selectedProfile) {
+        showToast('Select a profile first to edit tutor preferences.', 2600, true);
+        return;
+      }
+      renderTutorPreferencesForm(getSelectedTutorPreferences());
+      state.tutorPreferencesSaveError = '';
+      setTutorPreferencesStatus('');
+      tutorPreferencesModal.classList.add('visible');
+    }
+
+    function closeTutorPreferencesModal() {
+      tutorPreferencesModal.classList.remove('visible');
+    }
+
+    function pushTutorPreferencesRuntimeUpdate(preferences) {
+      wsSend({ type: 'tutor_preferences_update', data: preferences });
+    }
+
+    async function persistTutorPreferences(profileId, preferences) {
+      if (!profileId) return;
+      try {
+        const response = await fetch(buildApiUrl(buildProfilePreferencesPath(profileId)), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tutor_preferences: preferences }),
+        });
+        if (!response.ok) {
+          throw new Error(`prefs_http_${response.status}`);
+        }
+        const payload = await response.json();
+        const savedPreferences = setProfileTutorPreferences(profileId, payload?.tutor_preferences || preferences);
+        if (state.selectedProfileId === profileId && tutorPreferencesModal.classList.contains('visible')) {
+          renderTutorPreferencesForm(savedPreferences);
+        }
+        state.tutorPreferencesSaveError = '';
+        if (state.selectedProfileId === profileId) {
+          setTutorPreferencesStatus('Saved for this profile.');
+        }
+      } catch (error) {
+        state.tutorPreferencesSaveError = String(error || 'save_failed');
+        if (state.selectedProfileId === profileId) {
+          setTutorPreferencesStatus('Could not save preferences right now.', true);
+          showToast('Could not save tutor preferences.', 3600, true);
+        }
+      }
+    }
+
+    function scheduleTutorPreferencesSave(profileId, preferences) {
+      clearTimeout(tutorPreferencesSaveTimer);
+      tutorPreferencesSaveTimer = setTimeout(() => {
+        void persistTutorPreferences(profileId, preferences);
+      }, TUTOR_PREFERENCES_SAVE_DEBOUNCE_MS);
+    }
+
+    function handleTutorPreferencesChange() {
+      if (!state.selectedProfile) return;
+      const profileId = state.selectedProfile.id;
+      const preferences = setSelectedTutorPreferences(readTutorPreferencesForm());
+      pushTutorPreferencesRuntimeUpdate(preferences);
+      setTutorPreferencesStatus('Applying now…');
+      scheduleTutorPreferencesSave(profileId, preferences);
     }
 
     function renderProfileStatus(message, isError = false) {
@@ -2169,9 +2519,7 @@
     async function loadProfiles() {
       renderProfileStatus('Loading profiles...');
       try {
-        const protocol = location.protocol;
-        const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
-        const apiPath = `${protocol}//${backendHost}${PROFILE_API_PATH}`;
+        const apiPath = buildApiUrl(PROFILE_API_PATH);
         const response = await fetch(apiPath, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`profiles_http_${response.status}`);
@@ -2188,6 +2536,7 @@
               track: String(profile?.track || 'General Learning').trim() || 'General Learning',
               focus: String(profile?.focus || 'Continue learning').trim() || 'Continue learning',
               preferredLanguage: String(profile?.preferred_language || 'en').trim().toLowerCase() || 'en',
+              tutorPreferences: normalizeTutorPreferences(profile?.tutor_preferences),
             };
           })
           .filter(Boolean);
@@ -2205,6 +2554,7 @@
       if (!profile) return false;
       state.selectedProfileId = profile.id;
       state.selectedProfile = profile;
+      setSelectedTutorPreferences(profile.tutorPreferences);
       localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
       profileNamePill.textContent = profile.name;
       trackPill.textContent = `Track: ${profile.track}`;
@@ -2219,6 +2569,12 @@
       const track = context.track_title || state.selectedProfile?.track || '--';
       trackPill.textContent = `Track: ${track}`;
       topicPill.textContent = `Topic: ${topic}`;
+      if (context.tutor_preferences) {
+        const normalized = setSelectedTutorPreferences(context.tutor_preferences);
+        if (tutorPreferencesModal.classList.contains('visible')) {
+          renderTutorPreferencesForm(normalized);
+        }
+      }
       if (topic && topic !== '--') updateWhiteboardTopicHeader(topic);
     }
 
@@ -2760,7 +3116,7 @@
 
       // Pause VAD
       if (vadInstance && vadReady) {
-        vadInstance.pause().catch(() => {});
+        vadInstance.pause().catch(() => { });
       }
 
       if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
@@ -2830,6 +3186,8 @@
 
         const source = ctx.createBufferSource();
         source.buffer = buffer;
+        const playbackRate = SPEECH_PACE_PLAYBACK_RATE[state.speechPace] || 1.0;
+        source.playbackRate.value = playbackRate;
         source.connect(ctx.destination);
 
         activeSources.add(source);
@@ -2841,7 +3199,7 @@
         const now = ctx.currentTime;
         const startTime = Math.max(nextAudioTime, now + 0.02);
         source.start(startTime);
-        nextAudioTime = startTime + buffer.duration;
+        nextAudioTime = startTime + (buffer.duration / playbackRate);
       } catch (e) {
         console.warn('[Audio] Playback error:', e);
       }
@@ -3148,6 +3506,8 @@
       stopVoiceCommandRecognition();
       stopCamera();
       setAwayModeUI(false);
+      closeTutorPreferencesModal();
+      clearTimeout(tutorPreferencesSaveTimer);
       clearTimeout(wsReconnectTimer);
       state.wsAttempts = WS_MAX_ATTEMPTS;
       if (ws) { ws.close(); ws = null; }
@@ -3462,7 +3822,20 @@
       if (matchedCommandId === 'slow_speech') {
         const attempt = nextCommandAttempt('slow_speech');
         markUserActivity('cmd_slow_speech');
-        wsSend({ type: 'speech_pace', pace: 'slow', source: 'voice_command' });
+        if (state.selectedProfile) {
+          const preferences = setSelectedTutorPreferences({
+            ...getSelectedTutorPreferences(),
+            speech_pace: 'slow',
+          });
+          pushTutorPreferencesRuntimeUpdate(preferences);
+          scheduleTutorPreferencesSave(state.selectedProfile.id, preferences);
+          if (tutorPreferencesModal.classList.contains('visible')) {
+            renderTutorPreferencesForm(preferences);
+            setTutorPreferencesStatus('Applying now…');
+          }
+        } else {
+          wsSend({ type: 'speech_pace', pace: 'slow', source: 'voice_command' });
+        }
         emitCommandEvent({
           commandId: 'slow_speech',
           spokenText,
@@ -3740,6 +4113,30 @@
     switchProfileLink.addEventListener('click', (e) => {
       e.preventDefault();
       switchProfile();
+    });
+
+    tutorPreferencesLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      openTutorPreferencesModal();
+    });
+
+    prefsCloseBtn.addEventListener('click', () => {
+      closeTutorPreferencesModal();
+    });
+
+    prefsResetBtn.addEventListener('click', () => {
+      renderTutorPreferencesForm(DEFAULT_TUTOR_PREFERENCES);
+      handleTutorPreferencesChange();
+    });
+
+    [
+      prefsSpeechPace,
+      prefsExplanationLength,
+      prefsDirectness,
+      prefsSocraticIntensity,
+      prefsEncouragementLevel,
+    ].forEach((node) => {
+      node.addEventListener('change', handleTutorPreferencesChange);
     });
 
     // =========================================================================

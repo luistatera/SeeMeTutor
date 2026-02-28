@@ -1,0 +1,1336 @@
+{
+  "session_id": "2c468b0a-1fef-41ab-8989-d206b4310840",
+  "student_id": "luis-german",
+  "started_at": 1772318875.0056052,
+  "ended_at": 1772318979.768318,
+  "duration_seconds": 104.8,
+  "ended_reason": "student_ended",
+  "connection": {
+    "ws_connected": true,
+    "backlog_context_sent": true
+  },
+  "audio": {
+    "chunks_in": 1506,
+    "chunks_out": 166,
+    "first_response_ms": 41.6,
+    "latency_samples_ms": [
+      41.6,
+      28.8,
+      47.3,
+      14.0,
+      9.6,
+      34.4,
+      24.4,
+      13.3,
+      2.2,
+      42.4,
+      29.0,
+      20.9,
+      15.0,
+      55.5,
+      17.7,
+      7.2,
+      3.8,
+      52.5,
+      33.6,
+      7.1,
+      20.0,
+      47.0,
+      42.4,
+      38.2,
+      36.5,
+      11.8,
+      5.2,
+      33.0,
+      26.4,
+      9.1,
+      6.7,
+      43.0,
+      34.4,
+      20.5,
+      12.0,
+      56.6,
+      39.0,
+      31.4,
+      18.7,
+      60.5,
+      63.8,
+      40.2,
+      52.9,
+      25.5,
+      10.9,
+      44.3,
+      32.7,
+      23.5,
+      2.6,
+      57.4,
+      37.4,
+      36.7,
+      23.5,
+      17.3,
+      5.5,
+      63.6,
+      58.6,
+      16.7,
+      11.4,
+      36.8,
+      21.3,
+      49.4,
+      47.9,
+      21.1,
+      8.0,
+      46.8,
+      33.7,
+      19.9,
+      5.0,
+      43.1,
+      32.7,
+      11.6,
+      7.0,
+      12.7,
+      29.2,
+      44.8,
+      39.9,
+      24.7,
+      12.5,
+      60.0,
+      47.3,
+      30.9,
+      34.2,
+      14.8,
+      1.4,
+      1.5,
+      43.6,
+      30.8,
+      16.5,
+      20.1,
+      46.2,
+      61.1,
+      30.1,
+      17.1,
+      3.9,
+      4.4,
+      42.7,
+      24.2,
+      15.0,
+      9.8,
+      10.6,
+      26.8,
+      13.0,
+      64.3,
+      31.1,
+      33.1,
+      22.8,
+      11.0,
+      21.0,
+      58.2,
+      54.7,
+      40.1,
+      26.7,
+      18.3,
+      15.4,
+      56.7,
+      41.4,
+      39.2,
+      62.2,
+      19.0,
+      6.0,
+      4.6,
+      49.6,
+      33.5,
+      31.8,
+      27.3,
+      11.3,
+      10.8,
+      3.7,
+      13.1,
+      21.5,
+      41.9,
+      56.3,
+      26.4,
+      18.7,
+      25.0,
+      9.8
+    ]
+  },
+  "video": {
+    "frames_in": 97
+  },
+  "latency": {
+    "events": [
+      {
+        "metric": "response_start",
+        "value_ms": 41.0,
+        "is_alert": false,
+        "timestamp": 1772318890.613888
+      },
+      {
+        "metric": "first_byte",
+        "value_ms": 41.0,
+        "is_alert": false,
+        "timestamp": 1772318890.613996
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 1835.0,
+        "is_alert": true,
+        "timestamp": 1772318909.623368
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 63.0,
+        "is_alert": false,
+        "timestamp": 1772318937.013153
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 1707.0,
+        "is_alert": true,
+        "timestamp": 1772318947.713163
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 2322.0,
+        "is_alert": true,
+        "timestamp": 1772318972.8025239
+      }
+    ],
+    "latest_report": {
+      "metrics": {
+        "response_start": {
+          "name": "response_start",
+          "count": 5,
+          "current": 2322,
+          "avg": 1194,
+          "min": 41,
+          "max": 2322,
+          "p95": 2322,
+          "target_ms": 500,
+          "alert_ms": 800
+        },
+        "interruption_stop": {
+          "name": "interruption_stop",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 200,
+          "alert_ms": 400
+        },
+        "turn_to_turn": {
+          "name": "turn_to_turn",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 1500,
+          "alert_ms": 2500
+        },
+        "first_byte": {
+          "name": "first_byte",
+          "count": 1,
+          "current": 41,
+          "avg": 41,
+          "min": 41,
+          "max": 41,
+          "p95": 41,
+          "target_ms": 3000,
+          "alert_ms": 5000
+        }
+      },
+      "turns": 6,
+      "alerts": 3
+    },
+    "reports": [
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 1,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 2,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 2,
+            "current": 1835,
+            "avg": 938,
+            "min": 41,
+            "max": 1835,
+            "p95": 1835,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 3,
+        "alerts": 1
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 3,
+            "current": 63,
+            "avg": 646,
+            "min": 41,
+            "max": 1835,
+            "p95": 1835,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 4,
+        "alerts": 1
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 4,
+            "current": 1707,
+            "avg": 912,
+            "min": 41,
+            "max": 1835,
+            "p95": 1835,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 5,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 5,
+            "current": 2322,
+            "avg": 1194,
+            "min": 41,
+            "max": 2322,
+            "p95": 2322,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 41,
+            "avg": 41,
+            "min": 41,
+            "max": 41,
+            "p95": 41,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 6,
+        "alerts": 3
+      }
+    ]
+  },
+  "language": {
+    "events": [],
+    "latest_metric": {
+      "tutor_turns": 5,
+      "purity_rate": 100.0,
+      "mixed_turns": 0,
+      "guided_adherence": 60.0,
+      "guided_expected_turns": 5,
+      "guided_matched_turns": 3,
+      "fallback_triggers": 0,
+      "fallback_latency_turns": [],
+      "confusion_signals": 0,
+      "language_flips": 4,
+      "l1_words": 59,
+      "l2_words": 63,
+      "l2_ratio": 51.6,
+      "recap_triggers": 0,
+      "control_prompts_sent": 0
+    },
+    "metrics_history": [
+      {
+        "tutor_turns": 0,
+        "purity_rate": 0.0,
+        "mixed_turns": 0,
+        "guided_adherence": 0.0,
+        "guided_expected_turns": 0,
+        "guided_matched_turns": 0,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 0,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 1,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 1,
+        "guided_matched_turns": 1,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 28,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 2,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 2,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 1,
+        "l1_words": 28,
+        "l2_words": 14,
+        "l2_ratio": 33.3,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 3,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 66.7,
+        "guided_expected_turns": 3,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 2,
+        "l1_words": 52,
+        "l2_words": 14,
+        "l2_ratio": 21.2,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 4,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 50.0,
+        "guided_expected_turns": 4,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 3,
+        "l1_words": 52,
+        "l2_words": 63,
+        "l2_ratio": 54.8,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 5,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 60.0,
+        "guided_expected_turns": 5,
+        "guided_matched_turns": 3,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 4,
+        "l1_words": 59,
+        "l2_words": 63,
+        "l2_ratio": 51.6,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      }
+    ]
+  },
+  "resilience": {
+    "stream_retry_attempts": 0,
+    "stream_reconnect_successes": 0,
+    "stream_reconnect_failures": 0,
+    "events": []
+  },
+  "tools": {
+    "calls": [
+      {
+        "name": "switch_topic",
+        "args": {
+          "topic_id": "german-accusative-a2",
+          "topic_title": "German Accusative (A2)"
+        },
+        "result_status": "switched",
+        "duration_ms": 122.6,
+        "timestamp": 1772318909.209551
+      },
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "tutoring"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.1,
+        "timestamp": 1772318909.212106
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Accusative Basics",
+          "note_type": "formula"
+        },
+        "result_status": "displayed",
+        "duration_ms": 71.7,
+        "timestamp": 1772318912.213334
+      }
+    ],
+    "total_calls": 3,
+    "unique_tools_used": [
+      "switch_topic",
+      "set_session_phase",
+      "write_notes"
+    ]
+  },
+  "phases": {
+    "transitions": [
+      {
+        "from": "greeting",
+        "to": "tutoring",
+        "timestamp": 1772318909.212113
+      }
+    ],
+    "final_phase": "tutoring"
+  },
+  "whiteboard": {
+    "notes_created": 1,
+    "notes_duplicate_skipped": 0,
+    "status_updates": 0,
+    "clear_events": 0,
+    "notes_delivered": 1,
+    "delivery_latency_ms": [
+      445.7
+    ],
+    "sync_speaking_count": 0,
+    "sync_deadline_count": 1
+  },
+  "interruptions": {
+    "count": 0,
+    "stale_filtered": 1
+  },
+  "turns": {
+    "count": 6,
+    "audio_chunks_per_turn": [
+      0,
+      50,
+      19,
+      19,
+      68,
+      10
+    ]
+  },
+  "conversation": {
+    "awaiting_reply_prompts": 5,
+    "suspected_repetition_loops": 0
+  },
+  "idle": {
+    "checkin_1_count": 0,
+    "checkin_2_count": 0,
+    "away_activated_count": 0,
+    "away_resumed_count": 0
+  },
+  "proactive": {
+    "poke_count": 2,
+    "nudge_count": 0
+  },
+  "transcripts": {
+    "student": [
+      {
+        "text": "a proposittiv bitte",
+        "timestamp": 1772318907.7887082
+      },
+      {
+        "text": "Say repeat please.",
+        "timestamp": 1772318946.006235
+      },
+      {
+        "text": "umm",
+        "timestamp": 1772318970.48008
+      }
+    ],
+    "tutor": [
+      {
+        "text": "Hallo Luis! Willkommen zurück. Du hast das Deutsch-Akkusativ-A2-Thema gemeistert. Jetzt geht es um JavaScript-Debugging. Möchtest du mir neue Hausaufgaben zeigen oder eine Frage stellen?",
+        "timestamp": 1772318893.274355
+      },
+      {
+        "text": "Got it, let's go back to the accusative. Um, welches Thema genau geht es?",
+        "timestamp": 1772318910.628766
+      },
+      {
+        "text": "Ah, okay. I've put a reminder on the board about the basicsbasics, showing how \"der\" and \"ein\" change. Does that help you get started?",
+        "timestamp": 1772318938.028987
+      },
+      {
+        "text": "Sure thing! The core rule is that the accusative case is used for the \"direct object\"—the thing the verb is acting on. For example, if you say \"Ich kaufe einen Ball\" (\"I buy a ball\"), \"Ball\" is the object and goes in the accusative. Does that make sense?",
+        "timestamp": 1772318951.413553
+      },
+      {
+        "text": "Möchtest du einen Beispielsatz mit \"den\" bilden?",
+        "timestamp": 1772318973.3623528
+      }
+    ]
+  },
+  "guardrails": {
+    "refusals_total": 0,
+    "answer_leaks": 0,
+    "content_flags": 0,
+    "prompt_injections": 0,
+    "drift_reinforcements": 0,
+    "events": []
+  },
+  "grounding": {
+    "events": 0,
+    "citations_sent": 0,
+    "search_queries": []
+  },
+  "screen_share": {
+    "source_switches": 0,
+    "stop_sharing_count": 0,
+    "switch_log": []
+  },
+  "errors": [],
+  "manual": {},
+  "prd_scorecard": {
+    "version": "v1",
+    "generated_at": 1772318979.768528,
+    "pocs": {
+      "poc_00_onboarding": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P00.context_retention",
+            "metric": "Context retention baseline",
+            "target": "100%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "connection.backlog_context_sent",
+            "notes": "Proxy for profile/context injection on session start."
+          },
+          {
+            "id": "P00.onboarding_dropoff",
+            "metric": "Onboarding drop-off",
+            "target": "<10%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Requires frontend onboarding funnel instrumentation (post-event POC 00)."
+          }
+        ]
+      },
+      "poc_01_interruption": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P01.interruption_stop_p95",
+            "metric": "Gemini interruption stop p95",
+            "target": "<=500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P01.student_heard_rate",
+            "metric": "Student-heard rate proxy",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "turns.count / transcripts.student",
+            "notes": "Proxy metric: tutor turns relative to student transcripts."
+          },
+          {
+            "id": "P01.interruptions_observed",
+            "metric": "Interruption events observed in run",
+            "target": ">=1 (when testing interruption scenario)",
+            "actual": 0,
+            "status": "not_tested",
+            "source": "interruptions.count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_02_proactive_vision": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P02.proactive_trigger_count",
+            "metric": "Proactive triggers with visual input",
+            "target": ">=1",
+            "actual": 2,
+            "status": "pass",
+            "source": "proactive.poke_count + proactive.nudge_count",
+            "notes": ""
+          },
+          {
+            "id": "P02.question_turn_ratio",
+            "metric": "Question-ending turn ratio",
+            "target": "35-50%",
+            "actual": 100.0,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": "Only meaningful for longer tutoring sessions."
+          },
+          {
+            "id": "P02.question_streak_max",
+            "metric": "Max consecutive question turns",
+            "target": "<=2",
+            "actual": 5,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": ""
+          },
+          {
+            "id": "P02.repetition_loop_suspected",
+            "metric": "Suspected repetitive tutor prompt loops",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "conversation.suspected_repetition_loops",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_03_multilingual": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P03.language_purity_rate",
+            "metric": "Language purity rate",
+            "target": ">=98%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "language.latest_metric.purity_rate",
+            "notes": ""
+          },
+          {
+            "id": "P03.guided_bilingual_adherence",
+            "metric": "Guided bilingual adherence",
+            "target": ">=95%",
+            "actual": 60.0,
+            "status": "fail",
+            "source": "language.latest_metric.guided_adherence",
+            "notes": ""
+          },
+          {
+            "id": "P03.fallback_trigger_latency",
+            "metric": "Fallback trigger latency (turns)",
+            "target": "<=1 turn",
+            "actual": null,
+            "status": "not_tested",
+            "source": "language.latest_metric.fallback_latency_turns",
+            "notes": ""
+          },
+          {
+            "id": "P03.l2_distribution",
+            "metric": "L2 word ratio",
+            "target": ">=70%",
+            "actual": 51.6,
+            "status": "fail",
+            "source": "language.latest_metric.l2_ratio",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_04_whiteboard_sync": {
+        "status": "pass",
+        "checks": [
+          {
+            "id": "P04.whiteboard_usage_rate",
+            "metric": "Notes created",
+            "target": ">=1 note/session",
+            "actual": 1,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P04.note_delivery_latency_p95",
+            "metric": "Whiteboard delivery latency p95",
+            "target": "<=500ms",
+            "actual": 445.7,
+            "status": "pass",
+            "source": "whiteboard.delivery_latency_ms",
+            "notes": ""
+          },
+          {
+            "id": "P04.audio_continuity_proxy",
+            "metric": "Audio continuity while using whiteboard",
+            "target": "audio_out > 0 when notes created",
+            "actual": 166,
+            "status": "pass",
+            "source": "audio.chunks_out",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_05_search_grounding": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P05.grounding_event_count",
+            "metric": "Grounding events on factual/search turns",
+            "target": ">=1 when factual search tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.citation_render_rate",
+            "metric": "Citation render rate",
+            "target": "100%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.citations_sent / grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.search_queries_logged",
+            "metric": "Grounding search query logs",
+            "target": ">=1 query when grounding occurs",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.search_queries",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_06_session_resilience": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P06.reconnect_success_rate",
+            "metric": "Backend stream reconnect success rate",
+            "target": "100% (for transient drops)",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes / stream_retry_attempts",
+            "notes": ""
+          },
+          {
+            "id": "P06.retry_attempt_cap",
+            "metric": "Retry attempts capped",
+            "target": "<=3",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_retry_attempts",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_07_latency": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P07.response_start_avg",
+            "metric": "Response start avg latency",
+            "target": "<=500ms",
+            "actual": 1194,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.avg",
+            "notes": ""
+          },
+          {
+            "id": "P07.response_start_p95",
+            "metric": "Response start p95 latency",
+            "target": "<=800ms",
+            "actual": 2322,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.interruption_stop_p95",
+            "metric": "Interruption stop p95 latency",
+            "target": "<=400ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.turn_to_turn_p95",
+            "metric": "Turn-to-turn p95 latency",
+            "target": "<=2500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.turn_to_turn.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.first_byte_p95",
+            "metric": "First-byte p95 latency",
+            "target": "<=5000ms",
+            "actual": 41,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.first_byte.p95",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_08_tool_action_moment": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P08.a2a_summary_pipeline",
+            "metric": "A2A summary pipeline",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; requires reflection agent pipeline instrumentation."
+          }
+        ]
+      },
+      "poc_09_safety_guardrails": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P09.direct_answer_leak_rate",
+            "metric": "Direct answer leak count",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "guardrails.answer_leaks",
+            "notes": ""
+          },
+          {
+            "id": "P09.socratic_compliance_rate",
+            "metric": "Socratic compliance rate",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "(turns.count - guardrails.answer_leaks) / turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P09.prompt_injection_detection",
+            "metric": "Prompt-injection detection events",
+            "target": ">=1 when injection test is run",
+            "actual": null,
+            "status": "not_tested",
+            "source": "guardrails.prompt_injections",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_10_screen_share_toggle": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P10.source_switch_count",
+            "metric": "Source switches observed",
+            "target": ">=1 when screen-share flow tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.source_switches",
+            "notes": ""
+          },
+          {
+            "id": "P10.switch_session_continuity",
+            "metric": "Switching without fatal backend errors",
+            "target": "errors == 0",
+            "actual": null,
+            "status": "not_tested",
+            "source": "errors",
+            "notes": ""
+          },
+          {
+            "id": "P10.stop_sharing_path",
+            "metric": "Stop sharing events",
+            "target": ">=1 when stop-sharing tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.stop_sharing_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_11_idle_orchestration": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P11.gentle_check_nag_limit",
+            "metric": "Gentle check count",
+            "target": "<=1",
+            "actual": 0,
+            "status": "pass",
+            "source": "idle.checkin_1_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.options_check_nag_limit",
+            "metric": "Options check count",
+            "target": "<=1",
+            "actual": 0,
+            "status": "pass",
+            "source": "idle.checkin_2_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.away_resume_flow_observed",
+            "metric": "Away/resume flow observed",
+            "target": "away_activated >=1 and away_resumed >=1 when tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "idle.away_activated_count + idle.away_resumed_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_12_final_student_report": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P12.final_report_pipeline",
+            "metric": "Final student report generation",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; not part of current live backend runtime path."
+          }
+        ]
+      },
+      "poc_13_memory_management": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P13.memory_recall_pipeline",
+            "metric": "Long-horizon memory recall",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; requires memory ingestion + retrieval pipeline."
+          }
+        ]
+      },
+      "poc_99_hero_flow_rehearsal": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P99.proactive_vision_checkpoint",
+            "metric": "Checklist: proactive vision",
+            "target": "triggered",
+            "actual": 2,
+            "status": "pass",
+            "source": "proactive.*",
+            "notes": ""
+          },
+          {
+            "id": "P99.whiteboard_checkpoint",
+            "metric": "Checklist: whiteboard note",
+            "target": ">=1 note",
+            "actual": 1,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P99.interruption_checkpoint",
+            "metric": "Checklist: interruption handled",
+            "target": ">=1 interruption",
+            "actual": 0,
+            "status": "fail",
+            "source": "interruptions.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.grounding_checkpoint",
+            "metric": "Checklist: search citation shown",
+            "target": ">=1 citation",
+            "actual": 0,
+            "status": "fail",
+            "source": "grounding.citations_sent",
+            "notes": ""
+          },
+          {
+            "id": "P99.action_moment_checkpoint",
+            "metric": "Checklist: action moment (3+ exchanges)",
+            "target": "turns >= 3",
+            "actual": 6,
+            "status": "pass",
+            "source": "turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.reconnect_checkpoint",
+            "metric": "Checklist: reconnect survived",
+            "target": ">=1 successful reconnect",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes",
+            "notes": ""
+          }
+        ],
+        "checklist_completed": 3,
+        "checklist_total": 6
+      }
+    },
+    "summary": {
+      "checks_passed": 19,
+      "checks_failed": 8,
+      "checks_not_tested": 17,
+      "checks_total": 44,
+      "auto_checks_total": 40,
+      "auto_checks_passed": 19,
+      "auto_checks_failed": 8,
+      "auto_checks_not_tested": 13,
+      "auto_pass_rate_percent": 47.5,
+      "poc_status_counts": {
+        "pass": 1,
+        "partial": 4,
+        "fail": 4,
+        "not_tested": 6
+      }
+    },
+    "derived_metrics": {
+      "student_turns": 3,
+      "tutor_turns": 6,
+      "question_turns": 5,
+      "question_turn_ratio_percent": 100.0,
+      "max_question_streak": 5,
+      "student_heard_rate_percent": 100.0,
+      "socratic_compliance_percent": 100.0,
+      "whiteboard_delivery_p95_ms": 445.7,
+      "proactive_trigger_total": 2
+    }
+  }
+}

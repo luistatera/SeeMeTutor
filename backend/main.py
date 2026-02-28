@@ -6,13 +6,14 @@ Audio and video frames flow from the browser to Gemini; audio responses
 and text transcripts flow back to the browser.
 """
 
+import array
 import asyncio
-import audioop
 import base64
 import binascii
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -58,6 +59,8 @@ from modules.screen_share import (
 )
 from modules.whiteboard import (
     init_whiteboard_state,
+    normalize_content,
+    normalize_title,
     whiteboard_dispatcher,
 )
 from modules.guardrails import (
@@ -98,8 +101,17 @@ from modules.security import (
     extract_client_ip,
     parse_allowed_origins,
 )
-from modules.conversation import expects_student_reply, is_near_duplicate
-from modules.conversation import is_question_like_turn
+from modules.conversation import (
+    build_example_note,
+    build_question_answer_note,
+    expects_student_reply,
+    extract_example_from_turn,
+    is_near_duplicate,
+    is_question_like_turn,
+    is_student_question,
+    is_study_related_question,
+    normalize_for_similarity,
+)
 from modules.search_intent import (
     build_force_search_control_prompt,
     detect_explicit_search_request,
@@ -173,6 +185,7 @@ ANTI_QUESTION_LOOP_CONTROL_PROMPT = (
     "then at most one question. Do not ask multiple consecutive questions. "
     "Apply silently and do not produce a standalone response to this control message."
 )
+QUESTION_NOTE_MAX_AGE_S = 120.0
 
 # Per-session latency tracking: session_id -> {"last_audio_in": float, "awaiting_first_response": bool}
 _latency_state: dict[str, dict] = {}
@@ -297,6 +310,105 @@ _SEARCH_NON_EDU_PATTERNS = [
     r"\b(price\s+of|buy|shopping|amazon|netflix|celebrity|gossip|weather|bitcoin|crypto|stock|iphone|samsung)\b",
 ]
 
+_TUTOR_PREFERENCE_OPTIONS: dict[str, set[str]] = {
+    "speech_pace": {"slow", "normal", "fast"},
+    "explanation_length": {"short", "balanced", "detailed"},
+    "directness": {"to_the_point", "balanced", "exploratory"},
+    "socratic_intensity": {"light", "medium", "high"},
+    "encouragement_level": {"low", "medium", "high"},
+}
+_SPEECH_PACE_ALIASES: dict[str, str] = {
+    "slower": "slow",
+    "faster": "fast",
+    "slow": "slow",
+    "normal": "normal",
+    "fast": "fast",
+}
+
+_DEFAULT_TUTOR_PREFERENCES: dict[str, str] = {
+    "speech_pace": "normal",
+    "explanation_length": "balanced",
+    "directness": "balanced",
+    "socratic_intensity": "medium",
+    "encouragement_level": "medium",
+}
+
+
+def _normalize_preference_choice(
+    value,
+    allowed: set[str],
+    fallback: str,
+    *,
+    field: str | None = None,
+) -> str:
+    token = str(value or "").strip().lower()
+    normalized_fallback = fallback
+    if field == "speech_pace":
+        token = _SPEECH_PACE_ALIASES.get(token, token)
+        fallback_token = str(fallback or "").strip().lower()
+        normalized_fallback = _SPEECH_PACE_ALIASES.get(fallback_token, "normal")
+    if token in allowed:
+        return token
+    return normalized_fallback
+
+
+def _default_tutor_preferences() -> dict:
+    return dict(_DEFAULT_TUTOR_PREFERENCES)
+
+
+def _normalize_tutor_preferences(preferences: dict | None, fallback: dict | None = None) -> dict:
+    source = preferences if isinstance(preferences, dict) else {}
+    base = dict(fallback) if isinstance(fallback, dict) else _default_tutor_preferences()
+    normalized: dict[str, str] = {}
+    for key, allowed in _TUTOR_PREFERENCE_OPTIONS.items():
+        default_value = _DEFAULT_TUTOR_PREFERENCES[key]
+        fallback_value = _normalize_preference_choice(
+            base.get(key), allowed, default_value, field=key
+        )
+        normalized[key] = _normalize_preference_choice(
+            source.get(key), allowed, fallback_value, field=key
+        )
+    return normalized
+
+
+def _build_tutor_preferences_control_prompt(preferences: dict) -> str:
+    normalized = _normalize_tutor_preferences(preferences)
+    speech_pace = {
+        "slow": "Speak slower with short pauses between ideas.",
+        "normal": "Use a natural conversational pace.",
+        "fast": "Speak a bit faster while keeping clarity.",
+    }
+    explanation_length = {
+        "short": "Prefer short explanations and small steps.",
+        "balanced": "Use medium-length explanations by default.",
+        "detailed": "Use fuller explanations with extra detail.",
+    }
+    directness = {
+        "to_the_point": "Be direct and quickly move to the core step.",
+        "balanced": "Balance direct answers with guided reasoning.",
+        "exploratory": "Explore thought process before narrowing to the answer.",
+    }
+    socratic_intensity = {
+        "light": "Use fewer Socratic questions and more explicit hints.",
+        "medium": "Use a balanced Socratic questioning style.",
+        "high": "Use stronger Socratic guidance with frequent prompts to think.",
+    }
+    encouragement = {
+        "low": "Keep encouragement brief and occasional.",
+        "medium": "Use normal supportive encouragement.",
+        "high": "Use frequent positive reinforcement and reassurance.",
+    }
+    return (
+        "INTERNAL CONTROL: Student preference update. Apply this tutoring style immediately.\n"
+        f"- Speech pace: {speech_pace[normalized['speech_pace']]}\n"
+        f"- Explanation length: {explanation_length[normalized['explanation_length']]}\n"
+        f"- Directness: {directness[normalized['directness']]}\n"
+        f"- Socratic intensity: {socratic_intensity[normalized['socratic_intensity']]}\n"
+        f"- Encouragement level: {encouragement[normalized['encouragement_level']]}\n"
+        "Keep all safety, anti-cheating, and language-contract rules unchanged. "
+        "Do not mention this control message."
+    )
+
 
 def _policy_language_codes(language_policy: dict) -> list[str]:
     l1 = module_language_short(language_policy.get("l1", "en-US"))
@@ -380,6 +492,7 @@ def _normalize_search_intent_policy(policy: dict | None, language_policy: dict) 
 def _default_backlog_context(student_id: str, student_name: str = "Student") -> dict:
     language_policy = _apply_language_policy_templates(_default_language_policy())
     search_intent_policy = _default_search_intent_policy(language_policy)
+    tutor_preferences = _default_tutor_preferences()
     return {
         "student_id": student_id,
         "student_name": student_name,
@@ -395,6 +508,7 @@ def _default_backlog_context(student_id: str, student_name: str = "Student") -> 
         "language_policy": language_policy,
         "language_contract": _build_language_contract(language_policy),
         "search_intent_policy": search_intent_policy,
+        "tutor_preferences": tutor_preferences,
     }
 
 
@@ -458,6 +572,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         student_data.get("search_intent_policy"),
         language_policy,
     )
+    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
     preferred_language = _normalize_preferred_language(
         student_data.get("preferred_language") or language_policy.get("l2") or "en"
     )
@@ -466,6 +581,8 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         student_updates["language_policy"] = language_policy
     if student_data.get("search_intent_policy") != search_intent_policy:
         student_updates["search_intent_policy"] = search_intent_policy
+    if student_data.get("tutor_preferences") != tutor_preferences:
+        student_updates["tutor_preferences"] = tutor_preferences
     if _normalize_preferred_language(student_data.get("preferred_language")) != preferred_language:
         student_updates["preferred_language"] = preferred_language
 
@@ -481,6 +598,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "language_policy": language_policy,
             "language_contract": _build_language_contract(language_policy),
             "search_intent_policy": search_intent_policy,
+            "tutor_preferences": tutor_preferences,
         })
         return context
 
@@ -543,6 +661,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "language_policy": language_policy,
             "language_contract": _build_language_contract(language_policy),
             "search_intent_policy": search_intent_policy,
+            "tutor_preferences": tutor_preferences,
         })
         return context
 
@@ -608,6 +727,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         "language_policy": language_policy,
         "language_contract": _build_language_contract(language_policy),
         "search_intent_policy": search_intent_policy,
+        "tutor_preferences": tutor_preferences,
     }
 
 
@@ -619,6 +739,7 @@ async def _build_profile_summary(student_snapshot) -> dict:
     student_name = str(student_data.get("name") or student_id)
     language_policy = _normalize_language_policy(student_data.get("language_policy"), _default_language_policy())
     language_policy = _apply_language_policy_templates(language_policy)
+    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
     preferred_language = _normalize_preferred_language(
         student_data.get("preferred_language") or language_policy.get("l2")
     )
@@ -669,6 +790,7 @@ async def _build_profile_summary(student_snapshot) -> dict:
         "track": chosen_track["title"] if chosen_track else "General Learning",
         "focus": focus,
         "preferred_language": preferred_language,
+        "tutor_preferences": tutor_preferences,
     }
 
 # Firestore client for session logging (optional — works without it for local dev)
@@ -826,6 +948,51 @@ async def list_profiles() -> dict:
     return {"profiles": profiles}
 
 
+@app.post("/api/profiles/{student_id}/preferences")
+async def save_profile_preferences(student_id: str, request: Request) -> dict:
+    """Persist tutor preferences for one student profile."""
+    if not firestore_client:
+        raise HTTPException(status_code=503, detail="Profile storage unavailable. Configure Firestore first.")
+
+    normalized_student_id = str(student_id or "").strip().lower()
+    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
+        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload.")
+
+    raw_preferences = payload.get("tutor_preferences", payload)
+    if raw_preferences is None:
+        raw_preferences = {}
+    if not isinstance(raw_preferences, dict):
+        raise HTTPException(status_code=400, detail="tutor_preferences must be an object.")
+
+    student_ref = firestore_client.collection("students").document(normalized_student_id)
+    student_snapshot = await student_ref.get()
+    if not student_snapshot.exists:
+        raise HTTPException(status_code=404, detail="Profile not found.")
+    student_data = student_snapshot.to_dict() or {}
+
+    existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
+    normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
+
+    await student_ref.set(
+        {
+            "tutor_preferences": normalized_preferences,
+            "updated_at": time.time(),
+        },
+        merge=True,
+    )
+    return {
+        "student_id": normalized_student_id,
+        "tutor_preferences": normalized_preferences,
+    }
+
+
 class _StudentEndedSession(Exception):
     """Raised by _forward_to_gemini when the student explicitly ends the session."""
 
@@ -929,6 +1096,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "language_policy": backlog_context.get("language_policy"),
         "language_contract": backlog_context.get("language_contract"),
         "search_intent_policy": backlog_context.get("search_intent_policy"),
+        "tutor_preferences": backlog_context.get("tutor_preferences"),
         "previous_notes": backlog_context.get("previous_notes", []),
         "resume_message": backlog_context.get("resume_message"),
         "session_phase": "greeting",
@@ -991,9 +1159,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "last_tutor_prompt_activity_count": -1,
         "suspected_repetition_count": 0,
         "question_like_streak": 0,
+        "pending_study_question": None,
+        "question_note_counter": 0,
+        "question_note_signatures": set(),
+        "example_note_counter": 0,
+        "example_note_signatures": set(),
         "last_forced_search_query": "",
         "last_forced_search_at": 0.0,
         "search_intent_policy": backlog_context.get("search_intent_policy"),
+        "tutor_preferences": backlog_context.get("tutor_preferences"),
         "resume_message": backlog_context.get("resume_message"),
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
@@ -1036,6 +1210,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "topic_title": session_state.get("topic_title"),
                 "topic_status": session_state.get("topic_status"),
                 "language_contract": session_state.get("language_contract"),
+                "tutor_preferences": session_state.get("tutor_preferences"),
                 "previous_notes_count": len(session_state.get("previous_notes", [])),
             }
             import json as _json
@@ -1058,7 +1233,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 name="forward_to_gemini",
             )
             receive_task = asyncio.create_task(
-                _forward_to_client(websocket, runner, live_queue, session_id, runtime_state, topic_queue, report),
+                _forward_to_client(
+                    websocket,
+                    runner,
+                    live_queue,
+                    session_id,
+                    runtime_state,
+                    wb_queue,
+                    topic_queue,
+                    report,
+                ),
                 name="forward_to_client",
             )
             timer_task = asyncio.create_task(
@@ -1296,8 +1480,13 @@ def _is_probable_speech_pcm16(raw_bytes: bytes) -> bool:
     if not raw_bytes or len(raw_bytes) < 160:
         return False
     try:
-        rms = audioop.rms(raw_bytes, 2)
-        peak = audioop.max(raw_bytes, 2)
+        samples = array.array('h', raw_bytes)
+        if not samples:
+            return False
+            
+        peak = max(abs(s) for s in samples)
+        sum_squares = sum(s * s for s in samples)
+        rms = math.isqrt(sum_squares // len(samples))
     except Exception:
         return False
     return rms >= 420 or peak >= 1700
@@ -1546,6 +1735,29 @@ async def _forward_to_gemini(
                         "data": "Nice work. Marked as resolved in your backlog.",
                     })
                 continue
+            if msg_type == "tutor_preferences_update":
+                raw_preferences = message.get("data", {})
+                if not isinstance(raw_preferences, dict):
+                    logger.warning("Session %s: invalid tutor_preferences_update payload", session_id)
+                    continue
+                current_preferences = _normalize_tutor_preferences(runtime_state.get("tutor_preferences"))
+                updated_preferences = _normalize_tutor_preferences(raw_preferences, current_preferences)
+                runtime_state["tutor_preferences"] = updated_preferences
+                _mark_student_activity(runtime_state, unlock_turn=True)
+                control_prompt = _build_tutor_preferences_control_prompt(updated_preferences)
+                try:
+                    queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
+                    )
+                    runtime_state["last_hidden_prompt_at"] = time.time()
+                except Exception:
+                    logger.warning(
+                        "Session %s: failed to forward tutor preferences update",
+                        session_id,
+                        exc_info=True,
+                    )
+                await _send_json(websocket, {"type": "tutor_preferences_ack", "data": updated_preferences})
+                continue
             if msg_type == "speech_pace":
                 pace = str(message.get("pace", "")).strip().lower()
                 instruction = PACE_CONTROL_INSTRUCTIONS.get(pace)
@@ -1787,12 +1999,185 @@ async def _iter_runner_events_with_retry(
             await asyncio.sleep(ADK_STREAM_RETRY_BACKOFF_S * attempt)
 
 
+def _question_answer_signature(question: str, answer: str) -> str:
+    q = normalize_for_similarity(question)[:220]
+    a = normalize_for_similarity(answer)[:320]
+    return f"{q}||{a}"
+
+
+def _example_signature(example_text: str) -> str:
+    return normalize_for_similarity(example_text)[:380]
+
+
+async def _maybe_store_question_answer_note(
+    session_id: str,
+    runtime_state: dict,
+    turn_text: str,
+    wb_queue: asyncio.Queue | None,
+    report: "SessionReport | None" = None,
+) -> None:
+    pending = runtime_state.get("pending_study_question")
+    if not isinstance(pending, dict):
+        return
+
+    question = str(pending.get("text") or "").strip()
+    if not question:
+        runtime_state["pending_study_question"] = None
+        return
+
+    now = time.time()
+    asked_at = float(pending.get("asked_at", 0.0) or 0.0)
+    if asked_at <= 0 or (now - asked_at) > QUESTION_NOTE_MAX_AGE_S:
+        runtime_state["pending_study_question"] = None
+        return
+
+    answer = str(turn_text or "").strip()
+    if not answer:
+        return
+
+    signature = _question_answer_signature(question, answer)
+    signatures = runtime_state.setdefault("question_note_signatures", set())
+    if signature in signatures:
+        runtime_state["pending_study_question"] = None
+        return
+    signatures.add(signature)
+    if len(signatures) > 200:
+        signatures.clear()
+        signatures.add(signature)
+
+    sequence = int(runtime_state.get("question_note_counter", 0)) + 1
+    runtime_state["question_note_counter"] = sequence
+    title, content = build_question_answer_note(question, answer, sequence)
+    title = normalize_title(title)
+    content = normalize_content(content)
+    note_id = f"note-{int(now * 1000)}-qa-{sequence}"
+    note = {
+        "id": note_id,
+        "title": title,
+        "content": content,
+        "note_type": "summary",
+        "status": "pending",
+    }
+
+    if wb_queue is not None:
+        wb_queue.put_nowait(note)
+        if report:
+            report.record_whiteboard_note_created()
+            report.record_whiteboard_note_queued(str(note_id))
+
+    if firestore_client:
+        try:
+            await (
+                firestore_client.collection("sessions")
+                .document(session_id)
+                .collection("notes")
+                .document(note_id)
+                .set(
+                    {
+                        "title": title,
+                        "content": content,
+                        "note_type": "summary",
+                        "status": "pending",
+                        "student_id": runtime_state.get("student_id"),
+                        "track_id": runtime_state.get("track_id"),
+                        "topic_id": runtime_state.get("topic_id"),
+                        "source": "auto_qa_note",
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Session %s: failed to persist auto question note",
+                session_id,
+                exc_info=True,
+            )
+
+    runtime_state["pending_study_question"] = None
+    logger.info("Session %s: auto My note saved from student question", session_id)
+
+
+async def _maybe_store_example_note(
+    session_id: str,
+    runtime_state: dict,
+    turn_text: str,
+    wb_queue: asyncio.Queue | None,
+    report: "SessionReport | None" = None,
+) -> None:
+    example_text = extract_example_from_turn(turn_text)
+    if not example_text:
+        return
+
+    signature = _example_signature(example_text)
+    signatures = runtime_state.setdefault("example_note_signatures", set())
+    if signature in signatures:
+        return
+    signatures.add(signature)
+    if len(signatures) > 200:
+        signatures.clear()
+        signatures.add(signature)
+
+    sequence = int(runtime_state.get("example_note_counter", 0)) + 1
+    runtime_state["example_note_counter"] = sequence
+    title, content = build_example_note(example_text, sequence)
+    title = normalize_title(title)
+    content = normalize_content(content)
+    now = time.time()
+    note_id = f"note-{int(now * 1000)}-ex-{sequence}"
+    note = {
+        "id": note_id,
+        "title": title,
+        "content": content,
+        "note_type": "summary",
+        "status": "pending",
+    }
+
+    if wb_queue is not None:
+        wb_queue.put_nowait(note)
+        if report:
+            report.record_whiteboard_note_created()
+            report.record_whiteboard_note_queued(str(note_id))
+
+    if firestore_client:
+        try:
+            await (
+                firestore_client.collection("sessions")
+                .document(session_id)
+                .collection("notes")
+                .document(note_id)
+                .set(
+                    {
+                        "title": title,
+                        "content": content,
+                        "note_type": "summary",
+                        "status": "pending",
+                        "student_id": runtime_state.get("student_id"),
+                        "track_id": runtime_state.get("track_id"),
+                        "topic_id": runtime_state.get("topic_id"),
+                        "source": "auto_example_note",
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                )
+            )
+        except Exception:
+            logger.warning(
+                "Session %s: failed to persist auto example note",
+                session_id,
+                exc_info=True,
+            )
+
+    logger.info("Session %s: auto My note saved from tutor example", session_id)
+
+
 async def _forward_to_client(
     websocket: WebSocket,
     adk_runner: Runner,
     live_queue: LiveRequestQueue,
     session_id: str = "",
     runtime_state: dict | None = None,
+    wb_queue: asyncio.Queue | None = None,
     topic_queue: asyncio.Queue | None = None,
     report: "SessionReport | None" = None,
 ) -> None:
@@ -2082,6 +2467,21 @@ async def _forward_to_client(
                 # near-duplicate prompt loops when no new student activity happened.
                 turn_text = str(lang_turn.get("turn_text") or "").strip()
                 if completed_with_output and turn_text:
+                    await _maybe_store_question_answer_note(
+                        session_id,
+                        runtime_state,
+                        turn_text,
+                        wb_queue,
+                        report,
+                    )
+                    await _maybe_store_example_note(
+                        session_id,
+                        runtime_state,
+                        turn_text,
+                        wb_queue,
+                        report,
+                    )
+                if completed_with_output and turn_text:
                     runtime_state["awaiting_student_reply"] = expects_student_reply(turn_text)
                     if report and runtime_state["awaiting_student_reply"]:
                         report.record_awaiting_reply_prompt()
@@ -2321,6 +2721,24 @@ async def _forward_to_client(
                     record_reinforcement(runtime_state, reason)
                     if report:
                         report.record_guardrail_reinforcement()
+
+                # Capture the latest on-topic study question for "My notes".
+                if student_guardrail_events:
+                    runtime_state["pending_study_question"] = None
+                else:
+                    topic_title = str(runtime_state.get("topic_title") or "")
+                    if is_study_related_question(student_text, topic_title):
+                        runtime_state["pending_study_question"] = {
+                            "text": student_text,
+                            "asked_at": now,
+                            "topic_title": topic_title,
+                        }
+                        logger.info(
+                            "Session %s: queued study question for auto-note",
+                            session_id,
+                        )
+                    elif is_student_question(student_text):
+                        runtime_state["pending_study_question"] = None
 
                 if report:
                     report.record_student_transcript(student_text)
