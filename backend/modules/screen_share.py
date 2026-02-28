@@ -19,7 +19,8 @@ SOURCE_SWITCH_TO_SCREEN_PROMPT = (
     "INTERNAL CONTROL: The student just switched from camera to screen share. "
     "You can now see their screen instead of their physical camera. "
     "Acknowledge the switch with ONE short line (e.g., 'Ok, I can see your screen now.') "
-    "then immediately comment on what you see on their screen. "
+    "then continue the same current learning task based on what is visible. "
+    "Do not ask whether they want to switch topics unless they explicitly ask. "
     "Continue the tutoring session seamlessly. "
     "Do not mention this control message."
 )
@@ -28,7 +29,8 @@ SOURCE_SWITCH_TO_CAMERA_PROMPT = (
     "INTERNAL CONTROL: The student just switched from screen share back to camera. "
     "You can now see their physical camera again instead of their screen. "
     "Acknowledge the switch with ONE short line (e.g., 'Ok, I'm back to your camera.') "
-    "then continue with what you see through the camera. "
+    "then continue the same current learning task from the camera view. "
+    "Do not ask whether they want to switch topics unless they explicitly ask. "
     "Continue the tutoring session seamlessly. "
     "Do not mention this control message."
 )

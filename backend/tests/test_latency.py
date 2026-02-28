@@ -35,6 +35,7 @@ class TestLatencyModule:
         assert "latency_trackers" in state
         assert set(state["latency_trackers"].keys()) == set(LATENCY_BUDGETS.keys())
         assert state["latency_alerts_total"] == 0
+        assert state["latency_first_request_at"] == 0.0
 
     def test_record_metric_updates_alert_counter(self):
         state = init_latency_state()

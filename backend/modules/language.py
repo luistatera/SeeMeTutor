@@ -18,50 +18,20 @@ from typing import Any
 
 
 SUPPORTED_LANGUAGE_MODES = frozenset({"guided_bilingual", "immersion", "auto"})
-SUPPORTED_LANGS = frozenset({"en", "pt", "de"})
+RECAP_STRATEGIES = frozenset({"adaptive", "fixed"})
 
 WORD_RE = re.compile(r"[A-Za-zÀ-ÿ']+")
 SPACES_RE = re.compile(r"\s+")
 
-LANG_MARKERS: dict[str, set[str]] = {
-    "en": {
-        "the", "this", "that", "with", "what", "why", "how", "because", "are",
-        "is", "you", "your", "can", "could", "would", "should", "understand",
-        "practice",
-    },
-    "pt": {
-        "nao", "não", "voce", "você", "porque", "como", "para", "com", "isso",
-        "estou", "uma", "que", "de", "do", "da", "entendi", "explicar",
-    },
-    "de": {
-        "ich", "nicht", "und", "ist", "der", "die", "das", "du", "wir", "fur",
-        "für", "ein", "eine", "den", "dem", "bitte", "kann", "warum",
-        "verstanden", "erklaren", "erklären",
-    },
+LANGUAGE_DISPLAY_NAMES = {
+    "en": "English",
+    "pt": "Portuguese",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "it": "Italian",
+    "nl": "Dutch",
 }
-
-SPECIAL_DE_CHARS = set("äöüß")
-SPECIAL_PT_CHARS = set("ãõáàâéêíóôúç")
-
-CONFUSION_PATTERNS = [
-    re.compile(
-        r"\b(i\s*(?:do\s*not|don't)\s*(?:get|understand)|"
-        r"i\s*(?:am|'m)\s*(?:still\s*)?confused|"
-        r"i\s*(?:am|'m)\s*(?:still\s*)?lost|"
-        r"not\s*sure|can\s*you\s*explain|what\s*does\s*that\s*mean)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(ich\s*verstehe\s*(?:das\s*)?nicht|ich\s*bin\s*verwirrt|"
-        r"keine\s*ahnung|ich\s*komme\s*nicht\s*mit|was\s*bedeutet\s*das)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(n[aã]o\s*entendi|nao\s*entendi|n[aã]o\s*percebi|nao\s*percebi|"
-        r"estou\s*confus|pode\s*explicar|n[aã]o\s*sei|nao\s*sei|estou\s*perdid)\b",
-        re.IGNORECASE,
-    ),
-]
 
 
 def parse_int(value: Any, fallback: int, minimum: int = 1, maximum: int = 8) -> int:
@@ -75,36 +45,29 @@ def parse_int(value: Any, fallback: int, minimum: int = 1, maximum: int = 8) -> 
 
 def language_label(code: str) -> str:
     """Return display label for a language code."""
-    normalized = str(code or "").strip().lower()
-    if normalized.startswith("en"):
-        return "English"
-    if normalized.startswith("pt"):
-        return "Portuguese"
-    if normalized.startswith("de"):
-        return "German"
-    return code or "English"
+    short = language_short(code)
+    return LANGUAGE_DISPLAY_NAMES.get(short, code or "English")
 
 
 def language_short(code: str) -> str:
-    """Return short language key (en/pt/de) with English fallback."""
-    normalized = str(code or "").strip().lower()
-    if normalized.startswith("pt"):
-        return "pt"
-    if normalized.startswith("de"):
-        return "de"
+    """Return short language key (IETF primary subtag) with English fallback."""
+    normalized = str(code or "").strip().lower().replace("_", "-")
+    if not normalized:
+        return "en"
+    match = re.match(r"^[a-z]{2,3}", normalized)
+    if match:
+        return match.group(0)
     return "en"
 
 
 def normalize_preferred_language(value: str | None) -> str:
-    """Normalize user preferred language to supported short keys."""
-    normalized = str(value or "").strip().lower()
-    if normalized.startswith("de"):
-        return "de"
-    if normalized.startswith("pt"):
-        return "pt"
-    if normalized.startswith("en"):
+    """Normalize user preferred language to canonical lowercase BCP47-like format."""
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    if not normalized:
         return "en"
-    return normalized or "en"
+    if re.match(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$", normalized):
+        return normalized
+    return normalized
 
 
 def default_language_policy() -> dict[str, Any]:
@@ -118,12 +81,46 @@ def default_language_policy() -> dict[str, Any]:
         "practice_language": "l2",
         "no_mixed_language_same_turn": True,
         "max_l2_turns_before_recap": 3,
+        "recap_policy": {
+            "strategy": "adaptive",
+            "base_l2_streak": 3,
+            "min_l2_streak": 2,
+            "max_l2_streak": 6,
+        },
+        "guided_phase_min_turns": 2,
+        "detection_patterns": {},
         "confusion_fallback": {
             "after_confusions": 2,
             "fallback_language": "l1",
             "fallback_turns": 2,
+            "signal_patterns": [],
         },
     }
+
+
+def _normalize_pattern_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    patterns: list[str] = []
+    for item in value:
+        token = str(item or "").strip()
+        if token:
+            patterns.append(token)
+    return patterns
+
+
+def _normalize_pattern_map(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for key, patterns in value.items():
+        lang = language_short(str(key or ""))
+        if not lang:
+            continue
+        cleaned = _normalize_pattern_list(patterns)
+        if cleaned:
+            normalized[lang] = cleaned
+    return normalized
 
 
 def normalize_language_policy(policy: dict | None, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -139,10 +136,39 @@ def normalize_language_policy(policy: dict | None, fallback: dict[str, Any]) -> 
         if isinstance(source.get("confusion_fallback"), dict)
         else {}
     )
+    fallback_recap = (
+        fallback.get("recap_policy", {})
+        if isinstance(fallback.get("recap_policy"), dict)
+        else {}
+    )
+    source_recap = (
+        source.get("recap_policy", {})
+        if isinstance(source.get("recap_policy"), dict)
+        else {}
+    )
 
     mode = str(source.get("mode") or fallback.get("mode") or "auto").strip().lower()
     if mode not in SUPPORTED_LANGUAGE_MODES:
         mode = str(fallback.get("mode") or "auto")
+
+    recap_strategy = str(
+        source_recap.get("strategy") or fallback_recap.get("strategy") or "adaptive"
+    ).strip().lower()
+    if recap_strategy not in RECAP_STRATEGIES:
+        recap_strategy = str(fallback_recap.get("strategy") or "adaptive")
+
+    fallback_max_l2 = parse_int(
+        fallback.get("max_l2_turns_before_recap"),
+        3,
+        minimum=1,
+        maximum=12,
+    )
+    source_max_l2 = parse_int(
+        source.get("max_l2_turns_before_recap"),
+        fallback_max_l2,
+        minimum=1,
+        maximum=12,
+    )
 
     normalized = {
         "policy_version": str(
@@ -162,11 +188,42 @@ def normalize_language_policy(policy: dict | None, fallback: dict[str, Any]) -> 
             if source.get("no_mixed_language_same_turn") is not None
             else fallback.get("no_mixed_language_same_turn", True)
         ),
-        "max_l2_turns_before_recap": parse_int(
-            source.get("max_l2_turns_before_recap"),
-            parse_int(fallback.get("max_l2_turns_before_recap"), 3, minimum=1, maximum=6),
+        "max_l2_turns_before_recap": source_max_l2,
+        "recap_policy": {
+            "strategy": recap_strategy,
+            "base_l2_streak": parse_int(
+                source_recap.get("base_l2_streak"),
+                parse_int(
+                    fallback_recap.get("base_l2_streak"),
+                    source_max_l2,
+                    minimum=1,
+                    maximum=12,
+                ),
+                minimum=1,
+                maximum=12,
+            ),
+            "min_l2_streak": parse_int(
+                source_recap.get("min_l2_streak"),
+                parse_int(fallback_recap.get("min_l2_streak"), 2, minimum=1, maximum=10),
+                minimum=1,
+                maximum=10,
+            ),
+            "max_l2_streak": parse_int(
+                source_recap.get("max_l2_streak"),
+                parse_int(fallback_recap.get("max_l2_streak"), 6, minimum=1, maximum=12),
+                minimum=1,
+                maximum=12,
+            ),
+        },
+        "guided_phase_min_turns": parse_int(
+            source.get("guided_phase_min_turns"),
+            parse_int(fallback.get("guided_phase_min_turns"), 2, minimum=1, maximum=4),
             minimum=1,
-            maximum=6,
+            maximum=4,
+        ),
+        "detection_patterns": (
+            _normalize_pattern_map(source.get("detection_patterns"))
+            or _normalize_pattern_map(fallback.get("detection_patterns"))
         ),
         "confusion_fallback": {
             "after_confusions": parse_int(
@@ -186,9 +243,139 @@ def normalize_language_policy(policy: dict | None, fallback: dict[str, Any]) -> 
                 minimum=1,
                 maximum=6,
             ),
+            "signal_patterns": (
+                _normalize_pattern_list(source_confusion.get("signal_patterns"))
+                or _normalize_pattern_list(fallback_confusion.get("signal_patterns"))
+            ),
         },
     }
+    recap_min = int(normalized["recap_policy"]["min_l2_streak"])
+    recap_max = int(normalized["recap_policy"]["max_l2_streak"])
+    if recap_max < recap_min:
+        normalized["recap_policy"]["max_l2_streak"] = recap_min
+    recap_base = int(normalized["recap_policy"]["base_l2_streak"])
+    normalized["recap_policy"]["base_l2_streak"] = max(
+        recap_min,
+        min(int(normalized["recap_policy"]["max_l2_streak"]), recap_base),
+    )
     return normalized
+
+
+def _session_language_set(runtime_state: dict) -> set[str]:
+    langs = set(runtime_state.get("language_session_langs") or [])
+    l1 = language_short(runtime_state.get("language_l1_short") or "")
+    l2 = language_short(runtime_state.get("language_l2_short") or "")
+    if l1:
+        langs.add(l1)
+    if l2:
+        langs.add(l2)
+    return {lang for lang in langs if lang}
+
+
+def _candidate_language_set(
+    candidate_langs: set[str] | None,
+    runtime_state: dict | None = None,
+) -> set[str]:
+    if not candidate_langs:
+        if isinstance(runtime_state, dict):
+            session_langs = _session_language_set(runtime_state)
+            if session_langs:
+                return session_langs
+        return {"en"}
+    normalized = {language_short(lang) for lang in candidate_langs if str(lang or "").strip()}
+    return {lang for lang in normalized if lang}
+
+
+def _compiled_signal_patterns(patterns: list[str]) -> list[re.Pattern]:
+    compiled: list[re.Pattern] = []
+    for pattern in patterns:
+        try:
+            compiled.append(re.compile(pattern, re.IGNORECASE))
+        except re.error:
+            continue
+    return compiled
+
+
+def _language_detection_patterns(
+    runtime_state: dict | None,
+) -> dict[str, list[re.Pattern]]:
+    if not isinstance(runtime_state, dict):
+        return {}
+    policy = runtime_state.get("language_policy", {})
+    raw_patterns = (
+        policy.get("detection_patterns", {})
+        if isinstance(policy.get("detection_patterns"), dict)
+        else {}
+    )
+    normalized = _normalize_pattern_map(raw_patterns)
+    compiled: dict[str, list[re.Pattern]] = {}
+    for lang, patterns in normalized.items():
+        compiled_patterns = _compiled_signal_patterns(patterns)
+        if compiled_patterns:
+            compiled[lang] = compiled_patterns
+    return compiled
+
+
+def resolve_recap_turn_limit(
+    language_policy: dict[str, Any],
+    runtime_state: dict | None = None,
+) -> int:
+    """Resolve L2 streak limit before recap. Adaptive by default."""
+    recap_cfg = (
+        language_policy.get("recap_policy", {})
+        if isinstance(language_policy.get("recap_policy"), dict)
+        else {}
+    )
+    strategy = str(recap_cfg.get("strategy") or "adaptive").strip().lower()
+    if strategy not in RECAP_STRATEGIES:
+        strategy = "adaptive"
+
+    fixed_limit = parse_int(
+        language_policy.get("max_l2_turns_before_recap"),
+        3,
+        minimum=1,
+        maximum=12,
+    )
+    if strategy == "fixed":
+        return parse_int(
+            recap_cfg.get("base_l2_streak"),
+            fixed_limit,
+            minimum=1,
+            maximum=12,
+        )
+
+    min_streak = parse_int(recap_cfg.get("min_l2_streak"), 2, minimum=1, maximum=10)
+    max_streak = parse_int(recap_cfg.get("max_l2_streak"), 6, minimum=1, maximum=12)
+    if max_streak < min_streak:
+        max_streak = min_streak
+    base_streak = parse_int(
+        recap_cfg.get("base_l2_streak"),
+        fixed_limit,
+        minimum=min_streak,
+        maximum=max_streak,
+    )
+    dynamic = base_streak
+
+    if runtime_state:
+        metrics = runtime_state.get("language_metrics", {})
+        confusion_streak = int(runtime_state.get("language_confusion_streak", 0))
+        tutor_turns = int(metrics.get("tutor_turns", 0))
+        fallback_triggers = int(metrics.get("fallback_triggers", 0))
+        guided_expected = int(metrics.get("guided_expected_turns", 0))
+        guided_matched = int(metrics.get("guided_matched_turns", 0))
+
+        if confusion_streak > 0:
+            dynamic -= 1
+        if tutor_turns > 0 and (fallback_triggers / max(1, tutor_turns)) >= 0.12:
+            dynamic -= 1
+        if guided_expected >= 4:
+            adherence = guided_matched / max(1, guided_expected)
+            if adherence >= 0.85:
+                dynamic += 1
+            elif adherence < 0.55:
+                dynamic -= 1
+
+    return max(min_streak, min(max_streak, dynamic))
 
 
 def build_language_contract(language_policy: dict[str, Any]) -> str:
@@ -199,11 +386,20 @@ def build_language_contract(language_policy: dict[str, Any]) -> str:
     l1_label = language_label(l1)
     l2_label = language_label(l2)
     no_mix = bool(language_policy.get("no_mixed_language_same_turn", True))
-    max_l2_turns = parse_int(
-        language_policy.get("max_l2_turns_before_recap"),
-        3,
+    max_l2_turns = resolve_recap_turn_limit(language_policy)
+    recap_cfg = (
+        language_policy.get("recap_policy", {})
+        if isinstance(language_policy.get("recap_policy"), dict)
+        else {}
+    )
+    recap_strategy = str(recap_cfg.get("strategy") or "adaptive").strip().lower()
+    recap_min = parse_int(recap_cfg.get("min_l2_streak"), 2, minimum=1, maximum=10)
+    recap_max = parse_int(recap_cfg.get("max_l2_streak"), 6, minimum=1, maximum=12)
+    guided_phase_min_turns = parse_int(
+        language_policy.get("guided_phase_min_turns"),
+        2,
         minimum=1,
-        maximum=6,
+        maximum=4,
     )
     confusion = (
         language_policy.get("confusion_fallback", {})
@@ -226,7 +422,7 @@ def build_language_contract(language_policy: dict[str, Any]) -> str:
                 f"Use {l1_label} for explanations and strategy coaching.",
                 f"Use {l2_label} for practice drills and output exercises.",
                 "When switching languages, say a short transition sentence first.",
-                f"After at most {max_l2_turns} consecutive L2 practice turns, return to a short L1 recap.",
+                f"Stay in each guided phase for at least {guided_phase_min_turns} tutor turns before switching.",
             ]
         )
     elif mode == "immersion":
@@ -243,6 +439,14 @@ def build_language_contract(language_policy: dict[str, Any]) -> str:
                 "If language preference is ambiguous, default to L1.",
             ]
         )
+    if recap_strategy == "adaptive":
+        contract_parts.append(
+            f"Recap cadence is adaptive (target L2 streak between {recap_min} and {recap_max} turns based on confusion/progress)."
+        )
+    else:
+        contract_parts.append(
+            f"After at most {max_l2_turns} consecutive L2 practice turns, return to a short L1 recap."
+        )
     if no_mix:
         contract_parts.append("Never mix two languages in the same tutor response.")
     contract_parts.append(
@@ -255,51 +459,54 @@ def _tokens(text: str) -> list[str]:
     return [t.lower() for t in WORD_RE.findall(str(text or ""))]
 
 
-def _lang_score_from_tokens(tokens: list[str], original_text: str) -> dict[str, float]:
-    scores = {"en": 0.0, "pt": 0.0, "de": 0.0}
-    for token in tokens:
-        for lang, markers in LANG_MARKERS.items():
-            if token in markers:
-                scores[lang] += 1.0
-    lowered = str(original_text or "").lower()
-    if any(ch in lowered for ch in SPECIAL_DE_CHARS):
-        scores["de"] += 1.5
-    if any(ch in lowered for ch in SPECIAL_PT_CHARS):
-        scores["pt"] += 1.5
-    return scores
-
-
-def detect_language(text: str) -> str:
-    """Detect language of short transcript text using marker heuristics."""
+def detect_language(
+    text: str,
+    *,
+    candidate_langs: set[str] | None = None,
+    runtime_state: dict | None = None,
+) -> str:
+    """Detect language from policy-defined intent patterns and session context."""
     candidate = str(text or "").strip()
     if not candidate:
         return "unknown"
 
-    tokens = _tokens(candidate)
-    if not tokens:
+    allowed = _candidate_language_set(candidate_langs, runtime_state)
+    if len(allowed) == 1:
+        return next(iter(allowed))
+
+    detection_patterns = _language_detection_patterns(runtime_state)
+    matched: set[str] = set()
+    for lang in sorted(allowed):
+        for pattern in detection_patterns.get(lang, []):
+            if pattern.search(candidate):
+                matched.add(lang)
+                break
+
+    if len(matched) == 1:
+        return next(iter(matched))
+    if len(matched) > 1:
         return "unknown"
 
-    scores = _lang_score_from_tokens(tokens, candidate)
-    best_lang = max(scores, key=scores.get)
-    best_score = scores[best_lang]
-    if best_score < 1.0:
-        return "unknown"
-
-    sorted_scores = sorted(scores.values(), reverse=True)
-    if len(sorted_scores) >= 2 and (sorted_scores[0] - sorted_scores[1]) < 0.35:
-        return "unknown"
-    return best_lang
+    return "unknown"
 
 
-def analyze_turn_language(text: str) -> dict[str, Any]:
+def analyze_turn_language(
+    text: str,
+    *,
+    candidate_langs: set[str] | None = None,
+    runtime_state: dict | None = None,
+) -> dict[str, Any]:
     """Analyze a full tutor turn for dominant language and mixed-language use."""
+    allowed = _candidate_language_set(candidate_langs, runtime_state)
+    ordered_allowed = sorted(allowed)
+
     clean = SPACES_RE.sub(" ", str(text or "")).strip()
     if not clean:
         return {
             "primary": "unknown",
             "mixed": False,
             "lang_set": [],
-            "word_counts": {"en": 0, "pt": 0, "de": 0},
+            "word_counts": {lang: 0 for lang in ordered_allowed},
             "total_words": 0,
         }
 
@@ -307,35 +514,37 @@ def analyze_turn_language(text: str) -> dict[str, Any]:
     if not pieces:
         pieces = [clean]
 
-    lang_votes = {"en": 0, "pt": 0, "de": 0}
-    word_counts = {"en": 0, "pt": 0, "de": 0}
+    lang_votes = {lang: 0 for lang in ordered_allowed}
+    word_counts = {lang: 0 for lang in ordered_allowed}
     has_piece_level_mixing = False
+    unresolved_words = 0
+    total_words = 0
 
     for piece in pieces:
         piece_tokens = _tokens(piece)
         piece_words = len(piece_tokens)
         if piece_words == 0:
             continue
+        total_words += piece_words
 
-        lang = detect_language(piece)
-        if lang in SUPPORTED_LANGS:
-            candidate_langs = {lang}
+        lang = detect_language(piece, candidate_langs=allowed, runtime_state=runtime_state)
+        if lang in allowed:
+            piece_langs = {lang}
         else:
-            marker_scores = _lang_score_from_tokens(piece_tokens, piece)
-            candidate_langs = {
-                code for code, score in marker_scores.items() if score >= 1.0
-            }
+            piece_langs = set()
 
-        if len(candidate_langs) > 1:
+        if len(piece_langs) > 1:
             has_piece_level_mixing = True
-            for candidate in candidate_langs:
+            for candidate in piece_langs:
                 lang_votes[candidate] += 1
             continue
 
-        if len(candidate_langs) == 1:
-            only_lang = next(iter(candidate_langs))
+        if len(piece_langs) == 1:
+            only_lang = next(iter(piece_langs))
             lang_votes[only_lang] += 1
             word_counts[only_lang] += piece_words
+        else:
+            unresolved_words += piece_words
 
     lang_set = [lang for lang, count in lang_votes.items() if count > 0]
     mixed = has_piece_level_mixing or len(lang_set) > 1
@@ -343,8 +552,19 @@ def analyze_turn_language(text: str) -> dict[str, Any]:
     primary = "unknown"
     if lang_set:
         primary = max(lang_votes, key=lang_votes.get)
+        if unresolved_words > 0:
+            word_counts[primary] += unresolved_words
+    elif unresolved_words > 0:
+        fallback_lang = "unknown"
+        if isinstance(runtime_state, dict):
+            fallback_lang = expected_language(runtime_state)
+        elif len(allowed) == 1:
+            fallback_lang = next(iter(allowed))
+        if fallback_lang in allowed:
+            primary = fallback_lang
+            lang_set = [fallback_lang]
+            word_counts[fallback_lang] += unresolved_words
 
-    total_words = sum(word_counts.values())
     return {
         "primary": primary,
         "mixed": mixed,
@@ -354,12 +574,32 @@ def analyze_turn_language(text: str) -> dict[str, Any]:
     }
 
 
-def is_confusion_signal(text: str) -> bool:
+def is_confusion_signal(text: str, runtime_state: dict | None = None) -> bool:
     """Return True when learner transcript indicates confusion."""
     candidate = str(text or "").strip()
     if not candidate:
         return False
-    return any(pattern.search(candidate) for pattern in CONFUSION_PATTERNS)
+
+    if runtime_state:
+        policy = runtime_state.get("language_policy", {})
+        confusion_cfg = (
+            policy.get("confusion_fallback", {})
+            if isinstance(policy.get("confusion_fallback"), dict)
+            else {}
+        )
+        signal_patterns = _normalize_pattern_list(confusion_cfg.get("signal_patterns"))
+        if any(pattern.search(candidate) for pattern in _compiled_signal_patterns(signal_patterns)):
+            return True
+
+    token_count = len(_tokens(candidate))
+    question_marks = candidate.count("?")
+    if question_marks >= 2:
+        return True
+    if question_marks >= 1 and token_count <= 8:
+        return True
+    if token_count <= 3 and candidate.endswith("..."):
+        return True
+    return False
 
 
 def init_language_state(
@@ -369,15 +609,26 @@ def init_language_state(
     """Return initial language runtime keys for session runtime_state."""
     policy = normalize_language_policy(language_policy, default_language_policy())
     preferred = normalize_preferred_language(preferred_language or policy.get("l1"))
+    l1_short = language_short(policy.get("l1", "en-US"))
+    l2_short = language_short(policy.get("l2", "en-US"))
+    session_langs = sorted({l1_short, l2_short})
+    preferred_short = language_short(preferred)
+    initial_student_lang = (
+        preferred_short
+        if preferred_short in session_langs
+        else (l2_short if l2_short in session_langs else l1_short)
+    )
     return {
         "language_policy": policy,
-        "language_l1_short": language_short(policy.get("l1", "en-US")),
-        "language_l2_short": language_short(policy.get("l2", "en-US")),
+        "language_l1_short": l1_short,
+        "language_l2_short": l2_short,
+        "language_session_langs": session_langs,
         "language_guided_phase": "explain",
+        "language_guided_phase_turns": 0,
         "language_force_language_key": None,
         "language_force_turns_remaining": 0,
         "language_l2_streak": 0,
-        "language_last_student_lang": preferred if preferred in SUPPORTED_LANGS else "unknown",
+        "language_last_student_lang": initial_student_lang,
         "language_last_tutor_lang": "unknown",
         "language_confusion_streak": 0,
         "language_confusion_grace_remaining": 0,
@@ -424,24 +675,26 @@ def append_tutor_text_part(runtime_state: dict, text: str, *, source: str = "tex
 
 
 def _resolve_language_key(key: str, runtime_state: dict) -> str:
+    session_langs = _session_language_set(runtime_state)
     policy = runtime_state.get("language_policy", {})
     normalized = str(key or "").strip().lower()
     if normalized == "l1":
-        return runtime_state.get("language_l1_short", "en")
+        return language_short(runtime_state.get("language_l1_short", "en"))
     if normalized == "l2":
-        return runtime_state.get("language_l2_short", "en")
-    if normalized in SUPPORTED_LANGS:
+        return language_short(runtime_state.get("language_l2_short", "en"))
+    if normalized in session_langs:
         return normalized
     if policy.get("mode") == "auto":
         student_lang = runtime_state.get("language_last_student_lang", "unknown")
-        if student_lang in SUPPORTED_LANGS:
+        if student_lang in session_langs:
             return student_lang
-    return runtime_state.get("language_l1_short", "en")
+    return language_short(runtime_state.get("language_l1_short", "en"))
 
 
 def expected_language(runtime_state: dict) -> str:
     """Return expected tutor output language for next turn."""
     policy = runtime_state.get("language_policy", {})
+    session_langs = _session_language_set(runtime_state)
     if runtime_state.get("language_force_turns_remaining", 0) > 0:
         return _resolve_language_key(
             runtime_state.get("language_force_language_key", "l1"),
@@ -450,7 +703,7 @@ def expected_language(runtime_state: dict) -> str:
 
     mode = str(policy.get("mode") or "auto")
     if mode == "immersion":
-        return runtime_state.get("language_l2_short", "en")
+        return language_short(runtime_state.get("language_l2_short", "en"))
     if mode == "guided_bilingual":
         phase = runtime_state.get("language_guided_phase", "explain")
         key = (
@@ -461,9 +714,9 @@ def expected_language(runtime_state: dict) -> str:
         return _resolve_language_key(str(key), runtime_state)
 
     student_lang = runtime_state.get("language_last_student_lang", "unknown")
-    if student_lang in SUPPORTED_LANGS:
+    if student_lang in session_langs:
         return student_lang
-    return runtime_state.get("language_l1_short", "en")
+    return language_short(runtime_state.get("language_l1_short", "en"))
 
 
 def build_internal_control(runtime_state: dict, reason: str) -> str:
@@ -483,6 +736,7 @@ def build_internal_control(runtime_state: dict, reason: str) -> str:
         f"L1={l1_label}, L2={l2_label}.",
         f"For the next tutor response, use {expected_label} only.",
         "Do not mix languages in one turn.",
+        "Apply this silently and do not produce a standalone response to this control message.",
     ]
 
     if mode == "guided_bilingual":
@@ -525,15 +779,35 @@ def handle_student_transcript(text: str, runtime_state: dict) -> dict[str, Any]:
     """Update language runtime from student transcript and return prompt/events."""
     result: dict[str, Any] = {"control_prompt": None, "events": []}
     metrics = runtime_state.setdefault("language_metrics", {})
+    session_langs = _session_language_set(runtime_state)
 
-    student_lang = detect_language(text)
-    if student_lang in SUPPORTED_LANGS:
+    student_lang = detect_language(
+        text,
+        candidate_langs=session_langs,
+        runtime_state=runtime_state,
+    )
+    if student_lang == "unknown":
+        previous = str(runtime_state.get("language_last_student_lang") or "unknown")
+        if previous in session_langs:
+            student_lang = previous
+
+    if student_lang in session_langs:
         runtime_state["language_last_student_lang"] = student_lang
+        policy = runtime_state.get("language_policy", {})
+        if str(policy.get("mode") or "auto") == "guided_bilingual":
+            l1_short = runtime_state.get("language_l1_short", "en")
+            l2_short = runtime_state.get("language_l2_short", "en")
+            if student_lang == l1_short:
+                runtime_state["language_guided_phase"] = "explain"
+                runtime_state["language_guided_phase_turns"] = 0
+            elif student_lang == l2_short:
+                runtime_state["language_guided_phase"] = "practice"
+                runtime_state["language_guided_phase_turns"] = 0
     result["student_language"] = student_lang
 
     now = time.time()
     normalized = str(text or "").strip().lower()
-    confusion = is_confusion_signal(text)
+    confusion = is_confusion_signal(text, runtime_state)
 
     if confusion:
         if (
@@ -576,6 +850,7 @@ def handle_student_transcript(text: str, runtime_state: dict) -> dict[str, Any]:
             runtime_state["language_force_language_key"] = fallback_key
             runtime_state["language_force_turns_remaining"] = fallback_turns
             runtime_state["language_guided_phase"] = "explain"
+            runtime_state["language_guided_phase_turns"] = 0
 
             metrics["fallback_triggers"] = int(metrics.get("fallback_triggers", 0)) + 1
             metrics["fallback_pending_turn"] = int(metrics.get("tutor_turns", 0)) + 1
@@ -604,14 +879,7 @@ def handle_student_transcript(text: str, runtime_state: dict) -> dict[str, Any]:
 
     expected = expected_language(runtime_state)
     result["expected_language"] = expected
-    if expected != runtime_state.get("language_last_announced_expected"):
-        if result["control_prompt"] is None:
-            result["control_prompt"] = _maybe_control_prompt(
-                runtime_state,
-                "student_language_update",
-                force=False,
-            )
-        runtime_state["language_last_announced_expected"] = expected
+    runtime_state["language_last_announced_expected"] = expected
 
     return result
 
@@ -642,11 +910,23 @@ def finalize_tutor_turn(runtime_state: dict) -> dict[str, Any]:
     metrics = runtime_state.setdefault("language_metrics", {})
     policy = runtime_state.get("language_policy", {})
     mode = str(policy.get("mode") or "auto")
+    session_langs = _session_language_set(runtime_state)
     expected = expected_language(runtime_state)
 
-    analysis = analyze_turn_language(turn_text)
+    analysis = analyze_turn_language(
+        turn_text,
+        candidate_langs=session_langs,
+        runtime_state=runtime_state,
+    )
     primary = analysis["primary"]
     mixed = bool(analysis["mixed"])
+    if primary == "unknown" and (not mixed) and expected in session_langs:
+        primary = expected
+        analysis["primary"] = expected
+        if not analysis["lang_set"]:
+            analysis["lang_set"] = [expected]
+        if analysis["word_counts"].get(expected, 0) <= 0:
+            analysis["word_counts"][expected] = int(analysis.get("total_words", 0))
 
     metrics["tutor_turns"] = int(metrics.get("tutor_turns", 0)) + 1
     if mixed:
@@ -670,17 +950,17 @@ def finalize_tutor_turn(runtime_state: dict) -> dict[str, Any]:
 
     last_tutor_lang = runtime_state.get("language_last_tutor_lang", "unknown")
     if (
-        primary in SUPPORTED_LANGS
-        and last_tutor_lang in SUPPORTED_LANGS
+        primary in session_langs
+        and last_tutor_lang in session_langs
         and primary != last_tutor_lang
     ):
         metrics["language_flips"] = int(metrics.get("language_flips", 0)) + 1
-    if primary in SUPPORTED_LANGS:
+    if primary in session_langs:
         runtime_state["language_last_tutor_lang"] = primary
 
     pending_turn = metrics.get("fallback_pending_turn")
     target_lang = str(metrics.get("fallback_target_lang") or "")
-    if pending_turn is not None and target_lang in SUPPORTED_LANGS and primary == target_lang:
+    if pending_turn is not None and target_lang in session_langs and primary == target_lang:
         delta_turns = int(metrics["tutor_turns"]) - int(pending_turn)
         latencies = metrics.setdefault("fallback_latency_turns", [])
         latencies.append(float(max(0, delta_turns)))
@@ -697,18 +977,13 @@ def finalize_tutor_turn(runtime_state: dict) -> dict[str, Any]:
 
     if primary == l2_short and not mixed:
         runtime_state["language_l2_streak"] = int(runtime_state.get("language_l2_streak", 0)) + 1
-    elif primary in SUPPORTED_LANGS:
+    elif primary in session_langs:
         runtime_state["language_l2_streak"] = 0
 
     control_prompt = None
     events: list[dict[str, Any]] = []
 
-    max_l2 = parse_int(
-        policy.get("max_l2_turns_before_recap"),
-        3,
-        minimum=1,
-        maximum=8,
-    )
+    max_l2 = resolve_recap_turn_limit(policy, runtime_state)
     if (
         mode in {"immersion", "guided_bilingual"}
         and runtime_state.get("language_l2_streak", 0) >= max_l2
@@ -732,18 +1007,33 @@ def finalize_tutor_turn(runtime_state: dict) -> dict[str, Any]:
         )
 
     if mode == "guided_bilingual" and runtime_state.get("language_force_turns_remaining", 0) == 0:
-        runtime_state["language_guided_phase"] = (
-            "practice"
-            if runtime_state.get("language_guided_phase") == "explain"
-            else "explain"
+        phase_turns = int(runtime_state.get("language_guided_phase_turns", 0))
+        if (not mixed) and primary == expected and primary in session_langs:
+            phase_turns += 1
+        else:
+            phase_turns = 0
+        runtime_state["language_guided_phase_turns"] = phase_turns
+
+        guided_min_turns = parse_int(
+            policy.get("guided_phase_min_turns"),
+            2,
+            minimum=1,
+            maximum=4,
         )
-        next_prompt = _maybe_control_prompt(
-            runtime_state,
-            "guided_phase_switch",
-            force=True,
-        )
-        if control_prompt is None:
-            control_prompt = next_prompt
+        if phase_turns >= guided_min_turns:
+            runtime_state["language_guided_phase"] = (
+                "practice"
+                if runtime_state.get("language_guided_phase") == "explain"
+                else "explain"
+            )
+            runtime_state["language_guided_phase_turns"] = 0
+            next_prompt = _maybe_control_prompt(
+                runtime_state,
+                "guided_phase_switch",
+                force=True,
+            )
+            if control_prompt is None:
+                control_prompt = next_prompt
 
     return {
         "control_prompt": control_prompt,

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 NOTE_MAX_LINES = 6
 NOTE_MAX_CHARS = 460
 NOTE_TITLE_MAX_CHARS = 72
-WHITEBOARD_SYNC_WAIT_S = 2.4       # Max wait for speaking window before deadline dispatch
+WHITEBOARD_SYNC_WAIT_S = 0.5       # Max wait for speaking window before deadline dispatch
 WHITEBOARD_DISPATCH_POLL_S = 0.05   # How often the dispatcher checks for ready notes
 
 VALID_NOTE_TYPES = {"insight", "checklist_item", "formula", "summary", "vocabulary"}
@@ -228,6 +228,10 @@ async def whiteboard_dispatcher(
                     payload = {k: v for k, v in note.items() if not k.startswith("_")}
                     await _send_ws(websocket, {"type": "whiteboard", "data": payload})
                     runtime_state["wb_notes_sent"] = runtime_state.get("wb_notes_sent", 0) + 1
+                    rpt = runtime_state.get("_report")
+                    if rpt:
+                        sync_mode = "speech" if speaking_now else "deadline"
+                        rpt.record_whiteboard_note_delivered(payload.get("id"), sync_mode)
 
                     logger.info(
                         "Whiteboard note sent: '%s' [sync=%s, sent=%d]",

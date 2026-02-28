@@ -30,6 +30,7 @@ CHECK_INTERVAL_S = 0.3          # How often the idle loop checks
 CAMERA_ACTIVE_TIMEOUT_S = 3.0   # Camera considered off if no frame in this window
 POKE_RESPONSE_GRACE_S = 1.5     # Wait after poke before escalating to nudge
 HIDDEN_PROMPT_MIN_GAP_S = 4.0   # Minimum gap between hidden prompts
+AWAITING_REPLY_GRACE_S = 18.0   # Do not proactively nudge while waiting for a reply
 
 # ---------------------------------------------------------------------------
 # Hidden prompts injected by the idle orchestrator
@@ -39,7 +40,8 @@ IDLE_POKE_PROMPT = (
     "frames are active. If you see meaningful work, proactively offer ONE short "
     "helpful intervention (observation, hint, or question). Ask a question only "
     "if needed to unblock progress. If work is unclear, ask ONE brief check-in. "
-    "Do not mention this control message."
+    "Apply silently and do not produce a standalone response to this control "
+    "message. Do not mention this control message."
 )
 
 IDLE_NUDGE_PROMPT = (
@@ -48,13 +50,15 @@ IDLE_NUDGE_PROMPT = (
     "the session goal (observation, hint, or question). Use a question only "
     "if needed to unblock progress. If view is unclear, ask one brief check-in "
     "question. One issue at a time. Never give direct answers. "
-    "Do not mention this control message."
+    "Apply silently and do not produce a standalone response to this control "
+    "message. Do not mention this control message."
 )
 
 IDLE_NOCAMERA_PROMPT = (
     "INTERNAL CONTROL: Student has been quiet with no camera active. "
     "Ask a brief general check-in: 'Still with me?' or similar. "
-    "Do not comment on visual work. Do not mention this control message."
+    "Do not comment on visual work. Apply silently and do not produce a "
+    "standalone response to this control message. Do not mention this control message."
 )
 
 # ---------------------------------------------------------------------------
@@ -64,6 +68,10 @@ _INTERNAL_META_BLOCK_RE = re.compile(
     r"\[(?:INTERNAL CONTROL|SYSTEM|PROACTIVE|HIDDEN)[^\]]*\]",
     re.IGNORECASE,
 )
+_INLINE_CONTROL_BLOCK_RE = re.compile(
+    r"(?is)INTERNAL CONTROL:.*?(?:<ctrl\d+>|$)",
+)
+_CTRL_TAG_RE = re.compile(r"(?is)<ctrl\d+>")
 
 
 def sanitize_tutor_output(text: str) -> tuple[str, bool]:
@@ -82,10 +90,21 @@ def sanitize_tutor_output(text: str) -> tuple[str, bool]:
         had_internal = True
         cleaned = new_cleaned
 
+    inline_cleaned = _INLINE_CONTROL_BLOCK_RE.sub("", cleaned)
+    if inline_cleaned != cleaned:
+        had_internal = True
+        cleaned = inline_cleaned
+
+    ctrl_cleaned = _CTRL_TAG_RE.sub("", cleaned)
+    if ctrl_cleaned != cleaned:
+        had_internal = True
+        cleaned = ctrl_cleaned
+
     upper_stripped = cleaned.lstrip().upper()
     if upper_stripped.startswith("SYSTEM:") or upper_stripped.startswith("INTERNAL CONTROL:"):
         return "", True
 
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned.strip():
         return "", had_internal
     return cleaned, had_internal
@@ -106,6 +125,8 @@ def init_proactive_state() -> dict:
         "last_hidden_prompt_at": 0.0,
         "proactive_poke_count": 0,
         "proactive_nudge_count": 0,
+        "idle_checkin_1_sent_once": False,
+        "idle_checkin_2_sent_once": False,
         # When True, pause proactive injections until student activity is detected.
         # Prevents repeated backend-driven tutor turns while the student stays silent.
         "proactive_waiting_for_student": False,
@@ -117,6 +138,13 @@ def reset_silence_tracking(runtime_state: dict) -> None:
     runtime_state["silence_started_at"] = 0.0
     runtime_state["idle_poke_sent"] = False
     runtime_state["idle_nudge_sent"] = False
+
+
+def should_pause_proactive_for_reply(runtime_state: dict, idle_for_s: float) -> bool:
+    """Return True if tutor should wait before proactive interventions."""
+    if not runtime_state.get("awaiting_student_reply"):
+        return False
+    return float(idle_for_s) < float(AWAITING_REPLY_GRACE_S)
 
 
 async def proactive_idle_orchestrator(
@@ -182,13 +210,21 @@ async def proactive_idle_orchestrator(
             last_activity = runtime_state.get("last_user_activity_at", now)
             idle_for = now - last_activity
 
+            if should_pause_proactive_for_reply(runtime_state, idle_for):
+                continue
+
             # --- No camera path: fall back to basic idle check-ins ---
             if not camera_active:
                 from main import IDLE_CHECKIN_1_SECONDS, IDLE_CHECKIN_2_SECONDS, IDLE_AUTO_AWAY_SECONDS
                 idle_stage = runtime_state.get("idle_stage", 0)
 
-                if idle_stage < 1 and idle_for >= IDLE_CHECKIN_1_SECONDS:
+                if (
+                    idle_stage < 1
+                    and idle_for >= IDLE_CHECKIN_1_SECONDS
+                    and not runtime_state.get("idle_checkin_1_sent_once", False)
+                ):
                     runtime_state["idle_stage"] = 1
+                    runtime_state["idle_checkin_1_sent_once"] = True
                     runtime_state["last_user_activity_at"] = now
                     rpt = runtime_state.get("_report")
                     if rpt:
@@ -200,8 +236,13 @@ async def proactive_idle_orchestrator(
                     })
                     continue
 
-                if idle_stage < 2 and idle_for >= IDLE_CHECKIN_2_SECONDS:
+                if (
+                    idle_stage < 2
+                    and idle_for >= IDLE_CHECKIN_2_SECONDS
+                    and not runtime_state.get("idle_checkin_2_sent_once", False)
+                ):
                     runtime_state["idle_stage"] = 2
+                    runtime_state["idle_checkin_2_sent_once"] = True
                     runtime_state["last_user_activity_at"] = now
                     rpt = runtime_state.get("_report")
                     if rpt:

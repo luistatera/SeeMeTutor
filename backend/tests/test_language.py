@@ -12,13 +12,58 @@ from modules.language import (
 
 class TestDetectLanguage:
     def test_detects_english(self):
-        assert detect_language("What is your answer?") == "en"
+        state = init_language_state(
+            {
+                "l1": "en-US",
+                "l2": "de-DE",
+                "detection_patterns": {
+                    "en": [r"\bwhat\b"],
+                    "de": [r"\bich\b"],
+                },
+            },
+            preferred_language="en",
+        )
+        assert detect_language(
+            "What is your answer?",
+            candidate_langs={"en", "de"},
+            runtime_state=state,
+        ) == "en"
 
     def test_detects_portuguese(self):
-        assert detect_language("Nao entendi, pode explicar?") == "pt"
+        state = init_language_state(
+            {
+                "l1": "pt-BR",
+                "l2": "en-US",
+                "detection_patterns": {
+                    "pt": [r"\bnao\b"],
+                    "en": [r"\bwhat\b"],
+                },
+            },
+            preferred_language="pt",
+        )
+        assert detect_language(
+            "Nao entendi, pode explicar?",
+            candidate_langs={"pt", "en"},
+            runtime_state=state,
+        ) == "pt"
 
     def test_detects_german(self):
-        assert detect_language("Ich verstehe das nicht, bitte.") == "de"
+        state = init_language_state(
+            {
+                "l1": "de-DE",
+                "l2": "en-US",
+                "detection_patterns": {
+                    "de": [r"\bich\b"],
+                    "en": [r"\bwhat\b"],
+                },
+            },
+            preferred_language="de",
+        )
+        assert detect_language(
+            "Ich verstehe das nicht, bitte.",
+            candidate_langs={"de", "en"},
+            runtime_state=state,
+        ) == "de"
 
     def test_empty_returns_unknown(self):
         assert detect_language("") == "unknown"
@@ -34,6 +79,7 @@ class TestHandleStudentTranscript:
                 "after_confusions": 1,
                 "fallback_language": "l1",
                 "fallback_turns": 2,
+                "signal_patterns": [r"\bi\s+don't\s+understand\b"],
             },
         }
         state = init_language_state(policy, preferred_language="de")
@@ -56,6 +102,7 @@ class TestHandleStudentTranscript:
                 "after_confusions": 3,
                 "fallback_language": "l1",
                 "fallback_turns": 2,
+                "signal_patterns": [r"\bi\s+don't\s+understand\b"],
             },
         }
         state = init_language_state(policy, preferred_language="de")
@@ -67,25 +114,47 @@ class TestHandleStudentTranscript:
         assert second["events"] == []
         assert state["language_metrics"]["confusion_signals"] == 1
 
+    def test_guided_mode_student_language_update_does_not_force_control_prompt(self):
+        policy = {
+            "mode": "guided_bilingual",
+            "l1": "en-US",
+            "l2": "de-DE",
+            "detection_patterns": {
+                "de": [r"\bich\b"],
+                "en": [r"\bwhat\b"],
+            },
+        }
+        state = init_language_state(policy, preferred_language="en")
+
+        update = handle_student_transcript("Ich verstehe das.", state)
+
+        assert update["student_language"] == "de"
+        assert update["expected_language"] == "de"
+        assert update["control_prompt"] is None
+
 
 class TestFinalizeTutorTurn:
-    def test_guided_mode_switches_phase(self):
+    def test_guided_mode_switches_phase_after_min_turns(self):
         policy = {
             "mode": "guided_bilingual",
             "l1": "en-US",
             "l2": "de-DE",
             "explain_language": "l1",
             "practice_language": "l2",
+            "guided_phase_min_turns": 2,
         }
         state = init_language_state(policy, preferred_language="en")
-        append_tutor_text_part(state, "Let's break this down together.", source="transcript")
+        append_tutor_text_part(state, "This is your first strategy step.", source="transcript")
 
-        result = finalize_tutor_turn(state)
+        first = finalize_tutor_turn(state)
+        append_tutor_text_part(state, "This is your second strategy step.", source="transcript")
+        second = finalize_tutor_turn(state)
 
-        assert result["control_prompt"] is not None
+        assert first["control_prompt"] is None
+        assert second["control_prompt"] is not None
         assert state["language_guided_phase"] == "practice"
-        assert state["language_metrics"]["tutor_turns"] == 1
-        assert state["language_metrics"]["guided_expected_turns"] == 1
+        assert state["language_metrics"]["tutor_turns"] == 2
+        assert state["language_metrics"]["guided_expected_turns"] == 2
 
     def test_immersion_triggers_recap_after_l2_streak(self):
         policy = {
@@ -103,6 +172,16 @@ class TestFinalizeTutorTurn:
         assert result["control_prompt"] is not None
         assert state["language_force_language_key"] == "l1"
         assert state["language_force_turns_remaining"] == 1
+
+    def test_generic_l1_locale_is_preserved_in_runtime(self):
+        policy = {
+            "mode": "guided_bilingual",
+            "l1": "es-MX",
+            "l2": "de-DE",
+        }
+        state = init_language_state(policy, preferred_language="es-MX")
+        assert state["language_l1_short"] == "es"
+        assert "es" in state["language_session_langs"]
 
     def test_metric_snapshot_computed(self):
         policy = {

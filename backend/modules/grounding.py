@@ -6,6 +6,7 @@ citation dicts that can be sent to the browser as {type: "grounding"} events.
 """
 
 import logging
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -21,6 +22,7 @@ def init_grounding_state() -> dict:
         "grounding_events": 0,
         "grounding_citations_sent": 0,
         "grounding_search_queries": [],
+        "grounding_seen_urls": set(),
     }
 
 
@@ -96,4 +98,33 @@ def extract_grounding(event) -> list[dict[str, Any]]:
         if citations:
             break
 
+    return citations
+
+
+_URL_RE = re.compile(r"(https?://[^\s)\]>\"']+)", re.IGNORECASE)
+
+
+def extract_inline_url_citations(text: str, query: str = "") -> list[dict[str, Any]]:
+    """Extract citations from plain tutor text containing explicit URLs."""
+    candidate = str(text or "").strip()
+    if not candidate:
+        return []
+
+    citations: list[dict[str, Any]] = []
+    for match in _URL_RE.findall(candidate):
+        url = str(match).rstrip(".,;:")
+        if not url:
+            continue
+        try:
+            source = urlparse(url).netloc.replace("www.", "")
+        except Exception:
+            source = ""
+        citations.append(
+            {
+                "snippet": candidate[:300],
+                "source": source or "web",
+                "url": url,
+                "query": str(query or ""),
+            }
+        )
     return citations

@@ -3277,12 +3277,27 @@
       console.info('[VoiceCommand]', payload);
     }
 
+    function normalizeLocaleTag(value) {
+      const raw = String(value || '').trim().replace(/_/g, '-');
+      if (!raw) return '';
+      const lowered = raw.toLowerCase();
+      if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(lowered)) return '';
+      const parts = lowered.split('-');
+      if (parts.length === 1) return parts[0];
+      const [primary, region, ...rest] = parts;
+      return [primary, region.toUpperCase(), ...rest].join('-');
+    }
+
     function getRecognitionLang() {
       const profile = state.selectedProfile;
       if (!profile) return 'en-US';
-      const preferredLanguage = String(profile.preferredLanguage || '').toLowerCase();
-      if (preferredLanguage.startsWith('de')) return 'de-DE';
-      if (preferredLanguage.startsWith('pt')) return 'pt-BR';
+      const preferredLocale = normalizeLocaleTag(profile.preferredLanguage);
+      if (preferredLocale) {
+        if (preferredLocale === 'pt') return 'pt-BR';
+        if (preferredLocale === 'de') return 'de-DE';
+        if (preferredLocale === 'en') return 'en-US';
+        return preferredLocale;
+      }
       const track = (profile.track || '').toLowerCase();
       if (track.includes('german')) return 'de-DE';
       if (track.includes('portug')) return 'pt-BR';

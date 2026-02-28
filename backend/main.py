@@ -7,6 +7,7 @@ and text transcripts flow back to the browser.
 """
 
 import asyncio
+import audioop
 import base64
 import binascii
 import hashlib
@@ -70,6 +71,7 @@ from modules.guardrails import (
 from modules.grounding import (
     init_grounding_state,
     extract_grounding,
+    extract_inline_url_citations,
 )
 from modules.language import (
     init_language_state,
@@ -77,6 +79,12 @@ from modules.language import (
     handle_student_transcript as handle_language_student_transcript,
     finalize_tutor_turn as finalize_language_tutor_turn,
     build_language_metric_snapshot,
+    language_label as module_language_label,
+    language_short as module_language_short,
+    normalize_preferred_language as module_normalize_preferred_language,
+    default_language_policy as module_default_language_policy,
+    normalize_language_policy as module_normalize_language_policy,
+    build_language_contract as module_build_language_contract,
 )
 from modules.latency import (
     init_latency_state,
@@ -89,6 +97,15 @@ from modules.security import (
     build_security_headers,
     extract_client_ip,
     parse_allowed_origins,
+)
+from modules.conversation import expects_student_reply, is_near_duplicate
+from modules.conversation import is_question_like_turn
+from modules.search_intent import (
+    build_force_search_control_prompt,
+    detect_explicit_search_request,
+    extract_search_query,
+    is_likely_educational_search,
+    SEARCH_INTENT_SIGNAL_WINDOW_S,
 )
 
 load_dotenv()
@@ -145,6 +162,17 @@ PACE_CONTROL_INSTRUCTIONS: dict[str, str] = {
         "Keep the same warm tutoring style unless the student asks to change pace again."
     ),
 }
+ANTI_REPEAT_CONTROL_PROMPT = (
+    "INTERNAL CONTROL: You repeated substantially the same tutor prompt without "
+    "new student input. Stop repeating. Acknowledge briefly and provide a different "
+    "next micro-step or hint for the same learning goal. Do not mention this control message."
+)
+ANTI_QUESTION_LOOP_CONTROL_PROMPT = (
+    "INTERNAL CONTROL: Recent tutor turns were too question-heavy. "
+    "Next response must start with one short declarative hint/explanation, "
+    "then at most one question. Do not ask multiple consecutive questions. "
+    "Apply silently and do not produce a standalone response to this control message."
+)
 
 # Per-session latency tracking: session_id -> {"last_audio_in": float, "awaiting_first_response": bool}
 _latency_state: dict[str, dict] = {}
@@ -154,7 +182,6 @@ _active_student_sessions: dict[str, dict] = {}
 _active_student_sessions_lock = asyncio.Lock()
 
 _STUDENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
-_SUPPORTED_LANGUAGE_MODES = {"guided_bilingual", "immersion", "auto"}
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -203,14 +230,7 @@ def _anonymize_ip(ip: str) -> str:
 
 
 def _language_label(code: str) -> str:
-    normalized = str(code or "").strip().lower()
-    if normalized.startswith("en"):
-        return "English"
-    if normalized.startswith("pt"):
-        return "Portuguese"
-    if normalized.startswith("de"):
-        return "German"
-    return code or "English"
+    return module_language_label(code)
 
 
 def _parse_int(value, fallback: int, minimum: int = 1, maximum: int = 8) -> int:
@@ -229,131 +249,137 @@ def _safe_order_index(value, fallback: int = 9999) -> int:
 
 
 def _normalize_preferred_language(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized.startswith("de"):
-        return "de"
-    if normalized.startswith("pt"):
-        return "pt"
-    if normalized.startswith("en"):
-        return "en"
-    return normalized or "en"
+    return module_normalize_preferred_language(value)
 
 
 def _default_language_policy() -> dict:
-    return {
-        "policy_version": "v1",
-        "mode": "auto",
-        "l1": "en-US",
-        "l2": "en-US",
-        "explain_language": "l1",
-        "practice_language": "l2",
-        "no_mixed_language_same_turn": True,
-        "max_l2_turns_before_recap": 3,
-        "confusion_fallback": {
-            "after_confusions": 2,
-            "fallback_language": "l1",
-            "fallback_turns": 2,
-        },
-    }
+    return module_default_language_policy()
 
 
 def _normalize_language_policy(policy: dict | None, fallback: dict) -> dict:
-    source = policy if isinstance(policy, dict) else {}
-    fallback_confusion = fallback.get("confusion_fallback", {})
-    source_confusion = source.get("confusion_fallback", {}) if isinstance(source.get("confusion_fallback"), dict) else {}
-
-    mode = str(source.get("mode") or fallback.get("mode") or "auto").strip().lower()
-    if mode not in _SUPPORTED_LANGUAGE_MODES:
-        mode = str(fallback.get("mode") or "auto")
-
-    normalized = {
-        "policy_version": str(source.get("policy_version") or fallback.get("policy_version") or "v1"),
-        "mode": mode,
-        "l1": str(source.get("l1") or fallback.get("l1") or "en-US"),
-        "l2": str(source.get("l2") or fallback.get("l2") or "en-US"),
-        "explain_language": str(source.get("explain_language") or fallback.get("explain_language") or "l1"),
-        "practice_language": str(source.get("practice_language") or fallback.get("practice_language") or "l2"),
-        "no_mixed_language_same_turn": bool(
-            source.get("no_mixed_language_same_turn")
-            if source.get("no_mixed_language_same_turn") is not None
-            else fallback.get("no_mixed_language_same_turn", True)
-        ),
-        "max_l2_turns_before_recap": _parse_int(
-            source.get("max_l2_turns_before_recap"),
-            _parse_int(fallback.get("max_l2_turns_before_recap"), 3),
-            minimum=1,
-            maximum=6,
-        ),
-        "confusion_fallback": {
-            "after_confusions": _parse_int(
-                source_confusion.get("after_confusions"),
-                _parse_int(fallback_confusion.get("after_confusions"), 2),
-                minimum=1,
-                maximum=5,
-            ),
-            "fallback_language": str(
-                source_confusion.get("fallback_language")
-                or fallback_confusion.get("fallback_language")
-                or "l1"
-            ),
-            "fallback_turns": _parse_int(
-                source_confusion.get("fallback_turns"),
-                _parse_int(fallback_confusion.get("fallback_turns"), 2),
-                minimum=1,
-                maximum=6,
-            ),
-        },
-    }
-    return normalized
+    return module_normalize_language_policy(policy, fallback)
 
 
 def _build_language_contract(language_policy: dict) -> str:
-    mode = language_policy.get("mode", "auto")
-    l1 = language_policy.get("l1", "en-US")
-    l2 = language_policy.get("l2", "en-US")
-    l1_label = _language_label(l1)
-    l2_label = _language_label(l2)
-    no_mix = bool(language_policy.get("no_mixed_language_same_turn", True))
-    max_l2_turns = _parse_int(language_policy.get("max_l2_turns_before_recap"), 3, minimum=1, maximum=6)
-    confusion = language_policy.get("confusion_fallback", {}) if isinstance(language_policy.get("confusion_fallback"), dict) else {}
-    after_confusions = _parse_int(confusion.get("after_confusions"), 2, minimum=1, maximum=5)
-    fallback_turns = _parse_int(confusion.get("fallback_turns"), 2, minimum=1, maximum=6)
-    fallback_language_key = str(confusion.get("fallback_language") or "l1").lower()
-    fallback_language = l1_label if fallback_language_key == "l1" else l2_label
+    return module_build_language_contract(language_policy)
 
-    contract_parts = [
-        f"Mode: {mode}.",
-        f"L1: {l1_label}.",
-        f"L2: {l2_label}.",
-    ]
-    if mode == "guided_bilingual":
-        contract_parts.extend([
-            f"Use {l1_label} for explanations and strategy coaching.",
-            f"Use {l2_label} for practice drills and output exercises.",
-            "When switching languages, say a short transition sentence first.",
-            f"After at most {max_l2_turns} consecutive L2 practice turns, return to a short L1 recap.",
-        ])
-    elif mode == "immersion":
-        contract_parts.extend([
-            f"Default to {l2_label} for almost all tutor turns.",
-            f"Use {l1_label} only if the learner requests it or shows repeated confusion.",
-        ])
-    else:
-        contract_parts.extend([
-            "Follow the learner's active language preference naturally.",
-            "If language preference is ambiguous, default to L1.",
-        ])
 
-    if no_mix:
-        contract_parts.append("Never mix two languages in the same tutor response.")
-    contract_parts.append(
-        f"If confusion appears {after_confusions} times in a row, force {fallback_language} for the next {fallback_turns} turns before retrying."
-    )
-    return " ".join(contract_parts)
+_LANGUAGE_DETECTION_PATTERNS: dict[str, list[str]] = {
+    "en": [
+        r"\b(what|why|how|can you|please|answer|explain|help)\b",
+    ],
+    "pt": [
+        r"\b(nao|não|porque|como|pode|explicar|ajuda|entendi)\b",
+    ],
+    "de": [
+        r"\b(ich|nicht|warum|wie|kannst|bitte|verstehe|erklar|erklär)\b",
+    ],
+    "es": [
+        r"\b(que|qué|como|cómo|puedes|explica|ayuda|entiendo|por que|por qué)\b",
+    ],
+}
+
+_SEARCH_REQUEST_PATTERNS_BY_LANG: dict[str, list[str]] = {
+    "en": [r"\b(search|google|look\s*up|lookup|find)\b"],
+    "pt": [r"\b(pesquis|buscar|procura|google)\b"],
+    "de": [r"\b(suche|such\s+nach|suchen|recherchier|google)\b"],
+    "es": [r"\b(busca|buscar|buscarlo|google|investiga|consulta)\b"],
+}
+
+_SEARCH_EDU_HINT_PATTERNS_BY_LANG: dict[str, list[str]] = {
+    "en": [r"\b(math|science|history|geography|grammar|exam|course|formula|equation|homework|lesson|school)\b"],
+    "pt": [r"\b(matematica|matemática|ciencia|ciência|historia|história|geografia|gramatica|gramática|exame|curso|formula|fórmula|equacao|equação|licao|lição|escola)\b"],
+    "de": [r"\b(mathe|mathematik|wissenschaft|geschichte|geografie|grammatik|prufung|prüfung|kurs|formel|gleichung|hausaufgabe|schule)\b"],
+    "es": [r"\b(matematic|ciencia|historia|geografia|gramatica|examen|curso|formula|ecuacion|ecuación|tarea|escuela)\b"],
+}
+
+_SEARCH_NON_EDU_PATTERNS = [
+    r"\b(price\s+of|buy|shopping|amazon|netflix|celebrity|gossip|weather|bitcoin|crypto|stock|iphone|samsung)\b",
+]
+
+
+def _policy_language_codes(language_policy: dict) -> list[str]:
+    l1 = module_language_short(language_policy.get("l1", "en-US"))
+    l2 = module_language_short(language_policy.get("l2", "en-US"))
+    ordered: list[str] = []
+    for lang in (l1, l2):
+        if lang and lang not in ordered:
+            ordered.append(lang)
+    if not ordered:
+        ordered.append("en")
+    return ordered
+
+
+def _dedupe_patterns(patterns: list[str]) -> list[str]:
+    deduped: list[str] = []
+    for pattern in patterns:
+        token = str(pattern or "").strip()
+        if token and token not in deduped:
+            deduped.append(token)
+    return deduped
+
+
+def _default_detection_patterns(language_policy: dict) -> dict[str, list[str]]:
+    template: dict[str, list[str]] = {}
+    for lang in _policy_language_codes(language_policy):
+        patterns = _LANGUAGE_DETECTION_PATTERNS.get(lang, [])
+        if patterns:
+            template[lang] = list(patterns)
+    if not template:
+        template["en"] = list(_LANGUAGE_DETECTION_PATTERNS.get("en", []))
+    return template
+
+
+def _apply_language_policy_templates(language_policy: dict) -> dict:
+    normalized = dict(language_policy or {})
+    detection = normalized.get("detection_patterns", {})
+    detection_map = detection if isinstance(detection, dict) else {}
+    merged = {
+        str(lang): _dedupe_patterns(list(patterns))
+        for lang, patterns in detection_map.items()
+        if isinstance(patterns, list)
+    }
+    for lang, patterns in _default_detection_patterns(normalized).items():
+        if not merged.get(lang):
+            merged[lang] = list(patterns)
+    normalized["detection_patterns"] = merged
+    return normalized
+
+
+def _default_search_intent_policy(language_policy: dict) -> dict:
+    request_patterns: list[str] = []
+    educational_patterns: list[str] = []
+    for lang in _policy_language_codes(language_policy):
+        request_patterns.extend(_SEARCH_REQUEST_PATTERNS_BY_LANG.get(lang, []))
+        educational_patterns.extend(_SEARCH_EDU_HINT_PATTERNS_BY_LANG.get(lang, []))
+    if not request_patterns:
+        request_patterns.extend(_SEARCH_REQUEST_PATTERNS_BY_LANG.get("en", []))
+    if not educational_patterns:
+        educational_patterns.extend(_SEARCH_EDU_HINT_PATTERNS_BY_LANG.get("en", []))
+    return {
+        "request_patterns": _dedupe_patterns(request_patterns),
+        "non_educational_patterns": list(_SEARCH_NON_EDU_PATTERNS),
+        "educational_hint_patterns": _dedupe_patterns(educational_patterns),
+    }
+
+
+def _normalize_search_intent_policy(policy: dict | None, language_policy: dict) -> dict:
+    template = _default_search_intent_policy(language_policy)
+    source = policy if isinstance(policy, dict) else {}
+    normalized: dict[str, list[str]] = {}
+    for key, fallback in template.items():
+        value = source.get(key)
+        if isinstance(value, list):
+            cleaned = _dedupe_patterns([str(item or "").strip() for item in value])
+            normalized[key] = cleaned or list(fallback)
+        else:
+            normalized[key] = list(fallback)
+    return normalized
 
 
 def _default_backlog_context(student_id: str, student_name: str = "Student") -> dict:
-    language_policy = _default_language_policy()
+    language_policy = _apply_language_policy_templates(_default_language_policy())
+    search_intent_policy = _default_search_intent_policy(language_policy)
     return {
         "student_id": student_id,
         "student_name": student_name,
@@ -368,6 +394,7 @@ def _default_backlog_context(student_id: str, student_name: str = "Student") -> 
         "resume_message": "Let's continue where we left off.",
         "language_policy": language_policy,
         "language_contract": _build_language_contract(language_policy),
+        "search_intent_policy": search_intent_policy,
     }
 
 
@@ -426,12 +453,19 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         })
 
     language_policy = _normalize_language_policy(student_data.get("language_policy"), _default_language_policy())
+    language_policy = _apply_language_policy_templates(language_policy)
+    search_intent_policy = _normalize_search_intent_policy(
+        student_data.get("search_intent_policy"),
+        language_policy,
+    )
     preferred_language = _normalize_preferred_language(
         student_data.get("preferred_language") or language_policy.get("l2") or "en"
     )
     student_updates: dict = {}
     if student_data.get("language_policy") != language_policy:
         student_updates["language_policy"] = language_policy
+    if student_data.get("search_intent_policy") != search_intent_policy:
+        student_updates["search_intent_policy"] = search_intent_policy
     if _normalize_preferred_language(student_data.get("preferred_language")) != preferred_language:
         student_updates["preferred_language"] = preferred_language
 
@@ -446,6 +480,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "resume_message": f"Welcome back, {student_name}. Let's set your first learning track.",
             "language_policy": language_policy,
             "language_contract": _build_language_contract(language_policy),
+            "search_intent_policy": search_intent_policy,
         })
         return context
 
@@ -507,6 +542,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "resume_message": f"Welcome back, {student_name}. Let's choose your next topic.",
             "language_policy": language_policy,
             "language_contract": _build_language_contract(language_policy),
+            "search_intent_policy": search_intent_policy,
         })
         return context
 
@@ -571,6 +607,7 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         "resume_message": resume_message,
         "language_policy": language_policy,
         "language_contract": _build_language_contract(language_policy),
+        "search_intent_policy": search_intent_policy,
     }
 
 
@@ -581,6 +618,7 @@ async def _build_profile_summary(student_snapshot) -> dict:
     student_ref = student_snapshot.reference
     student_name = str(student_data.get("name") or student_id)
     language_policy = _normalize_language_policy(student_data.get("language_policy"), _default_language_policy())
+    language_policy = _apply_language_policy_templates(language_policy)
     preferred_language = _normalize_preferred_language(
         student_data.get("preferred_language") or language_policy.get("l2")
     )
@@ -890,6 +928,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "available_topics": backlog_context.get("available_topics", []),
         "language_policy": backlog_context.get("language_policy"),
         "language_contract": backlog_context.get("language_contract"),
+        "search_intent_policy": backlog_context.get("search_intent_policy"),
         "previous_notes": backlog_context.get("previous_notes", []),
         "resume_message": backlog_context.get("resume_message"),
         "session_phase": "greeting",
@@ -946,6 +985,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "_student_has_spoken": False,   # True after first input_transcription
         "_turn_ticket_count": 1,        # Allow one tutor turn per student/proactive trigger
         "_last_tutor_audio_at": 0.0,    # For echo-guard around input_transcription
+        "awaiting_student_reply": False,
+        "student_activity_count": 0,
+        "last_tutor_prompt_text": "",
+        "last_tutor_prompt_activity_count": -1,
+        "suspected_repetition_count": 0,
+        "question_like_streak": 0,
+        "last_forced_search_query": "",
+        "last_forced_search_at": 0.0,
+        "search_intent_policy": backlog_context.get("search_intent_policy"),
         "resume_message": backlog_context.get("resume_message"),
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
@@ -1226,6 +1274,8 @@ def _mark_student_activity(runtime_state: dict, *, unlock_turn: bool = False) ->
     runtime_state["conversation_started"] = True
     runtime_state["mic_kickoff_sent"] = True
     runtime_state["proactive_waiting_for_student"] = False
+    runtime_state["awaiting_student_reply"] = False
+    runtime_state["student_activity_count"] = int(runtime_state.get("student_activity_count", 0)) + 1
     reset_silence_tracking(runtime_state)
     if unlock_turn:
         runtime_state["_turn_ticket_count"] = max(
@@ -1239,6 +1289,18 @@ def _mark_proactive_response_seen(runtime_state: dict, *, source: str) -> None:
         if not runtime_state.get("proactive_waiting_for_student"):
             logger.info("Proactive cycle locked after tutor %s output; waiting for student activity", source)
         runtime_state["proactive_waiting_for_student"] = True
+
+
+def _is_probable_speech_pcm16(raw_bytes: bytes) -> bool:
+    """Heuristic speech detection for 16kHz PCM16 mono chunks."""
+    if not raw_bytes or len(raw_bytes) < 160:
+        return False
+    try:
+        rms = audioop.rms(raw_bytes, 2)
+        peak = audioop.max(raw_bytes, 2)
+    except Exception:
+        return False
+    return rms >= 420 or peak >= 1700
 
 
 async def _resume_from_away(websocket: WebSocket, runtime_state: dict) -> None:
@@ -1337,7 +1399,13 @@ async def _log_command_event(session_id: str, runtime_state: dict, payload: dict
         "action_status": str(payload.get("action_status", "unknown")),
         "detail": str(payload.get("detail", "")),
         "attempt": int(payload.get("attempt", 0) or 0),
+        "intent": str(payload.get("intent", "")),
     }
+    intent = str(command_event.get("intent") or "").strip().lower()
+    if intent == "search_request":
+        runtime_state["search_intent_signal_until"] = (
+            time.time() + float(SEARCH_INTENT_SIGNAL_WINDOW_S)
+        )
     logger.info(
         "CMD session=%s command=%s match=%s action=%s detail=%s attempt=%s normalized='%s'",
         session_id,
@@ -1495,6 +1563,9 @@ async def _forward_to_gemini(
                 continue
             if msg_type == "barge_in":
                 _mark_student_activity(runtime_state, unlock_turn=True)
+                runtime_state["_student_has_spoken"] = True
+                if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
+                    runtime_state["latency_first_request_at"] = time.time()
                 runtime_state["assistant_speaking"] = False
                 runtime_state["latency_last_barge_in_at"] = time.time()
                 await _send_json(websocket, {"type": "interrupted"})
@@ -1528,7 +1599,7 @@ async def _forward_to_gemini(
                 runtime_state["active_source"] = new_source
                 runtime_state["source_switches"] = runtime_state.get("source_switches", 0) + 1
                 runtime_state["last_switch_at"] = now
-                _mark_student_activity(runtime_state)
+                _mark_student_activity(runtime_state, unlock_turn=True)
                 logger.info(
                     "SOURCE SWITCH #%d: %s -> %s",
                     runtime_state["source_switches"], old_source, new_source,
@@ -1554,7 +1625,7 @@ async def _forward_to_gemini(
                 old_source = runtime_state.get("active_source", "camera")
                 runtime_state["active_source"] = "none"
                 runtime_state["stop_sharing_count"] = runtime_state.get("stop_sharing_count", 0) + 1
-                _mark_student_activity(runtime_state)
+                _mark_student_activity(runtime_state, unlock_turn=True)
                 logger.info("STOP SHARING #%d: was=%s", runtime_state["stop_sharing_count"], old_source)
                 if report:
                     report.record_stop_sharing(old_source)
@@ -1593,7 +1664,7 @@ async def _forward_to_gemini(
                 if (
                     runtime_state.get("_greeting_delivered")
                     and not runtime_state.get("_student_has_spoken")
-                    and any(raw_bytes)
+                    and _is_probable_speech_pcm16(raw_bytes)
                 ):
                     runtime_state["_student_has_spoken"] = True
                     runtime_state["proactive_waiting_for_student"] = False
@@ -1649,6 +1720,8 @@ async def _forward_to_gemini(
     except Exception as exc:
         logger.exception("Unexpected error in forward_to_gemini: %s", exc)
         queue.close()
+        if report:
+            report.record_error(f"forward_to_gemini: {exc}")
         await _send_json(websocket, {
             "type": "error",
             "data": "The connection to the tutor was interrupted. Please refresh to start a new session.",
@@ -1661,6 +1734,7 @@ async def _iter_runner_events_with_retry(
     user_id: str,
     session_id: str,
     live_queue: LiveRequestQueue,
+    report: "SessionReport | None" = None,
 ):
     """Yield ADK stream events with a single reconnect retry on stream errors."""
     attempt = 0
@@ -1682,14 +1756,20 @@ async def _iter_runner_events_with_retry(
                             "data": {"state": "active", "reason": "reconnected", "attempt": attempt},
                         },
                     )
+                    if report:
+                        report.record_stream_reconnect_success(attempt)
                 yield event
             return
         except WebSocketDisconnect:
             raise
         except Exception as exc:
             if attempt >= ADK_STREAM_MAX_RETRIES:
+                if report:
+                    report.record_stream_reconnect_failure(attempt, str(exc))
                 raise
             attempt += 1
+            if report:
+                report.record_stream_retry_attempt(attempt, str(exc))
             logger.warning(
                 "Session %s: ADK stream error (attempt %d/%d), retrying: %s",
                 session_id,
@@ -1737,6 +1817,7 @@ async def _forward_to_client(
             user_id=user_id,
             session_id=session_id,
             live_queue=live_queue,
+            report=report,
         ):
             # Whiteboard notes are dispatched by the whiteboard_dispatcher task
             # (modules/whiteboard.py) which handles speech-sync timing and dedupe.
@@ -1822,13 +1903,22 @@ async def _forward_to_client(
                                         websocket,
                                         {"type": "latency_event", "data": latency_event},
                                     )
+                                    if report:
+                                        report.record_latency_event(
+                                            latency_event.get("metric", ""),
+                                            latency_event.get("value_ms", 0),
+                                            bool(latency_event.get("is_alert", False)),
+                                        )
                             if not runtime_state.get("latency_first_byte_recorded", False):
                                 runtime_state["latency_first_byte_recorded"] = True
                                 runtime_state["latency_first_audio_out_at"] = now_audio_out
-                                first_ref = (
-                                    float(runtime_state.get("latency_session_start_at", 0.0))
-                                    or now_audio_out
-                                )
+                                first_ref = float(runtime_state.get("latency_first_request_at", 0.0))
+                                if first_ref <= 0:
+                                    first_ref = float(runtime_state.get("latency_last_audio_in_at", 0.0))
+                                if first_ref <= 0:
+                                    first_ref = float(runtime_state.get("latency_session_start_at", 0.0))
+                                if first_ref <= 0:
+                                    first_ref = now_audio_out
                                 first_byte_ms = (now_audio_out - first_ref) * 1000
                                 first_byte_event = record_latency_metric(
                                     runtime_state,
@@ -1840,6 +1930,12 @@ async def _forward_to_client(
                                         websocket,
                                         {"type": "latency_event", "data": first_byte_event},
                                     )
+                                    if report:
+                                        report.record_latency_event(
+                                            first_byte_event.get("metric", ""),
+                                            first_byte_event.get("value_ms", 0),
+                                            bool(first_byte_event.get("is_alert", False)),
+                                        )
                         lat = _latency_state.get(session_id)
                         if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
                             delta_ms = (time.time() - lat["last_audio_in"]) * 1000
@@ -1892,6 +1988,29 @@ async def _forward_to_client(
                             session_id[:8], str(cleaned)[:120],
                         )
                         await _send_json(websocket, {"type": "text", "data": cleaned})
+                        inline_citations = extract_inline_url_citations(
+                            cleaned,
+                            runtime_state.get("last_forced_search_query", ""),
+                        )
+                        if inline_citations:
+                            seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
+                            for cit in inline_citations[:1]:
+                                url = str(cit.get("url", "")).strip()
+                                if url and url in seen_urls:
+                                    continue
+                                if url:
+                                    seen_urls.add(url)
+                                runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
+                                runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
+                                query = cit.get("query", "")
+                                if query:
+                                    queries_list = runtime_state.get("grounding_search_queries", [])
+                                    queries_list.append(query)
+                                    runtime_state["grounding_search_queries"] = queries_list
+                                await _send_json(websocket, {"type": "grounding", "data": cit})
+                                if report:
+                                    report.record_grounding_citation(cit.get("source", ""), query)
+                                break
                         turn_had_output = True
 
             # --- Turn complete ---
@@ -1927,6 +2046,8 @@ async def _forward_to_client(
                 runtime_state["latency_last_turn_complete_at"] = time.time()
                 latency_report = build_latency_report(runtime_state, turns=turn_count)
                 await _send_json(websocket, {"type": "latency_report", "data": latency_report})
+                if report:
+                    report.record_latency_report(latency_report)
                 audio_response_chunks = 0
                 completed_with_output = turn_had_output
                 if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
@@ -1939,18 +2060,82 @@ async def _forward_to_client(
                             websocket,
                             {"type": "language_event", "data": language_event},
                         )
+                        if report:
+                            report.record_language_event(language_event)
                 control_prompt = lang_turn.get("control_prompt")
                 if control_prompt:
                     live_queue.send_content(
                         types.Content(role="user", parts=[types.Part(text=control_prompt)])
                     )
+                language_metric = build_language_metric_snapshot(runtime_state)
                 await _send_json(
                     websocket,
                     {
                         "type": "language_metric",
-                        "data": build_language_metric_snapshot(runtime_state),
+                        "data": language_metric,
                     },
                 )
+                if report:
+                    report.record_language_metric(language_metric)
+
+                # Track whether the tutor is waiting on a student reply and detect
+                # near-duplicate prompt loops when no new student activity happened.
+                turn_text = str(lang_turn.get("turn_text") or "").strip()
+                if completed_with_output and turn_text:
+                    runtime_state["awaiting_student_reply"] = expects_student_reply(turn_text)
+                    if report and runtime_state["awaiting_student_reply"]:
+                        report.record_awaiting_reply_prompt()
+                    activity_count = int(runtime_state.get("student_activity_count", 0))
+                    last_turn_text = str(runtime_state.get("last_tutor_prompt_text") or "")
+                    last_activity_count = int(runtime_state.get("last_tutor_prompt_activity_count", -1))
+                    if (
+                        last_turn_text
+                        and activity_count == last_activity_count
+                        and is_near_duplicate(last_turn_text, turn_text)
+                    ):
+                        runtime_state["suspected_repetition_count"] = int(
+                            runtime_state.get("suspected_repetition_count", 0)
+                        ) + 1
+                        if report:
+                            report.record_repetition_suspected()
+                        logger.warning(
+                            "Session %s: suspected repetitive tutor prompt loop (count=%d)",
+                            session_id,
+                            runtime_state["suspected_repetition_count"],
+                        )
+                        # Nudge the model away from repeating the same prompt pattern.
+                        now = time.time()
+                        if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
+                            live_queue.send_content(
+                                types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=ANTI_REPEAT_CONTROL_PROMPT)],
+                                )
+                            )
+                            runtime_state["last_hidden_prompt_at"] = now
+
+                    if is_question_like_turn(turn_text):
+                        runtime_state["question_like_streak"] = int(
+                            runtime_state.get("question_like_streak", 0)
+                        ) + 1
+                    else:
+                        runtime_state["question_like_streak"] = 0
+
+                    if runtime_state.get("question_like_streak", 0) >= 3:
+                        now = time.time()
+                        if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
+                            live_queue.send_content(
+                                types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=ANTI_QUESTION_LOOP_CONTROL_PROMPT)],
+                                )
+                            )
+                            runtime_state["last_hidden_prompt_at"] = now
+                    runtime_state["last_tutor_prompt_text"] = turn_text
+                    runtime_state["last_tutor_prompt_activity_count"] = activity_count
+                else:
+                    runtime_state["awaiting_student_reply"] = False
+
                 # Mark greeting as delivered only after a turn with actual audio/text.
                 # Silent/empty turns (e.g. model acknowledging [SESSION START]) must
                 # not lock the gate — the real audio greeting arrives in a later turn.
@@ -1997,6 +2182,12 @@ async def _forward_to_client(
                             websocket,
                             {"type": "latency_event", "data": latency_event},
                         )
+                        if report:
+                            report.record_latency_event(
+                                latency_event.get("metric", ""),
+                                latency_event.get("value_ms", 0),
+                                bool(latency_event.get("is_alert", False)),
+                            )
                 await _send_json(websocket, {"type": "interrupted"})
                 logger.info(
                     "INTERRUPTED by student (had sent %d audio chunks before interruption)",
@@ -2007,8 +2198,14 @@ async def _forward_to_client(
             # --- Grounding metadata ---
             grounding_citations = extract_grounding(event)
             if grounding_citations:
-                runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
+                seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
                 for cit in grounding_citations[:1]:  # Only top citation
+                    url = str(cit.get("url", "")).strip()
+                    if url and url in seen_urls:
+                        continue
+                    if url:
+                        seen_urls.add(url)
+                    runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
                     runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
                     query = cit.get("query", "")
                     if query:
@@ -2029,7 +2226,6 @@ async def _forward_to_client(
             if event.input_transcription and event.input_transcription.text and event.input_transcription.finished:
                 student_text = event.input_transcription.text
                 logger.info("STUDENT TRANSCRIPT: %s", student_text)
-                runtime_state["_student_has_spoken"] = True
                 # Echo guard: while tutor output is active, transcription often captures
                 # assistant audio from speakers. In that case, do not unlock another turn.
                 now = time.time()
@@ -2039,39 +2235,67 @@ async def _forward_to_client(
                 )
                 if is_echo_window:
                     _debug_logger.debug("INPUT_TRANSCRIPT_IGNORED sid=%s (echo-window)", session_id[:8])
-                    _mark_student_activity(runtime_state)
-                else:
-                    _mark_student_activity(runtime_state, unlock_turn=True)
-                    runtime_state["latency_last_student_transcript_at"] = now
-                    last_turn_complete_at = float(runtime_state.get("latency_last_turn_complete_at", 0.0))
-                    if last_turn_complete_at > 0:
-                        turn_gap_ms = (now - last_turn_complete_at) * 1000
-                        if turn_gap_ms <= TURN_TO_TURN_MAX_GAP_MS:
-                            turn_to_turn_event = record_latency_metric(
-                                runtime_state,
-                                "turn_to_turn",
-                                turn_gap_ms,
+                    continue
+
+                _mark_student_activity(runtime_state, unlock_turn=True)
+                runtime_state["_student_has_spoken"] = True
+                runtime_state["latency_last_student_transcript_at"] = now
+                if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
+                    runtime_state["latency_first_request_at"] = now
+                last_turn_complete_at = float(runtime_state.get("latency_last_turn_complete_at", 0.0))
+                if last_turn_complete_at > 0:
+                    turn_gap_ms = (now - last_turn_complete_at) * 1000
+                    if turn_gap_ms <= TURN_TO_TURN_MAX_GAP_MS:
+                        turn_to_turn_event = record_latency_metric(
+                            runtime_state,
+                            "turn_to_turn",
+                            turn_gap_ms,
+                        )
+                        if turn_to_turn_event:
+                            await _send_json(
+                                websocket,
+                                {"type": "latency_event", "data": turn_to_turn_event},
                             )
-                            if turn_to_turn_event:
-                                await _send_json(
-                                    websocket,
-                                    {"type": "latency_event", "data": turn_to_turn_event},
+                            if report:
+                                report.record_latency_event(
+                                    turn_to_turn_event.get("metric", ""),
+                                    turn_to_turn_event.get("value_ms", 0),
+                                    bool(turn_to_turn_event.get("is_alert", False)),
                                 )
 
-                    language_update = handle_language_student_transcript(
-                        student_text,
-                        runtime_state,
+                # Force search-grounding behavior for explicit educational search requests.
+                if detect_explicit_search_request(student_text, runtime_state) and is_likely_educational_search(student_text, runtime_state):
+                    search_query = extract_search_query(student_text)
+                    last_query = str(runtime_state.get("last_forced_search_query") or "")
+                    last_forced_at = float(runtime_state.get("last_forced_search_at", 0.0))
+                    should_force = search_query and (
+                        search_query.lower() != last_query.lower() or (now - last_forced_at) > 20.0
                     )
-                    for language_event in language_update.get("events", []):
-                        await _send_json(
-                            websocket,
-                            {"type": "language_event", "data": language_event},
-                        )
-                    control_prompt = language_update.get("control_prompt")
-                    if control_prompt:
+                    if should_force:
+                        forced_prompt = build_force_search_control_prompt(search_query)
                         live_queue.send_content(
-                            types.Content(role="user", parts=[types.Part(text=control_prompt)])
+                            types.Content(role="user", parts=[types.Part(text=forced_prompt)])
                         )
+                        runtime_state["last_forced_search_query"] = search_query
+                        runtime_state["last_forced_search_at"] = now
+                        runtime_state["last_hidden_prompt_at"] = now
+
+                language_update = handle_language_student_transcript(
+                    student_text,
+                    runtime_state,
+                )
+                for language_event in language_update.get("events", []):
+                    await _send_json(
+                        websocket,
+                        {"type": "language_event", "data": language_event},
+                    )
+                    if report:
+                        report.record_language_event(language_event)
+                control_prompt = language_update.get("control_prompt")
+                if control_prompt:
+                    live_queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
+                    )
 
                 # Guardrail: check student input for off-topic / cheat / inappropriate
                 student_guardrail_events = check_student_input(student_text)
@@ -2102,12 +2326,18 @@ async def _forward_to_client(
                     report.record_student_transcript(student_text)
 
             if event.output_transcription and event.output_transcription.text and event.output_transcription.finished:
-                tutor_text = event.output_transcription.text
+                tutor_text_raw = event.output_transcription.text
+                tutor_text, had_internal = sanitize_tutor_output(tutor_text_raw)
+                if had_internal:
+                    logger.info("Sanitized leaked internal text from tutor transcript")
+                if not tutor_text:
+                    continue
+
                 logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
                 append_tutor_text_part(runtime_state, tutor_text, source="transcript")
 
                 # Guardrail: check tutor output for answer leaks
-                tutor_guardrail_events = check_tutor_output(tutor_text)
+                tutor_guardrail_events = check_tutor_output(tutor_text, runtime_state)
                 for ge in tutor_guardrail_events:
                     record_guardrail_event(runtime_state, ge, source="tutor_speech")
                     await _send_json(websocket, {
@@ -2137,6 +2367,8 @@ async def _forward_to_client(
         logger.info("Browser disconnected (forward_to_client)")
     except Exception as exc:
         logger.exception("Unexpected error in forward_to_client: %s", exc)
+        if report:
+            report.record_error(f"forward_to_client: {exc}")
         await _send_json(websocket, {
             "type": "error",
             "data": "The tutor connection was interrupted. Please refresh to start a new session.",

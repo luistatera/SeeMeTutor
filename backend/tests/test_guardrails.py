@@ -92,7 +92,7 @@ class TestSelectReinforcement:
         state = init_guardrails_state()
         prompt = select_reinforcement(events, state)
         assert prompt is not None
-        assert "Guardrail check" in prompt
+        assert "Socratic integrity check" in prompt
 
     def test_prompt_injection_returns_dedicated_prompt(self):
         events = [{"guardrail": "prompt_injection", "severity": "high"}]

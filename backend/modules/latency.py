@@ -93,6 +93,7 @@ def init_latency_state(session_start_at: float | None = None) -> dict:
         "latency_trackers": trackers,
         "latency_alerts_total": 0,
         "latency_session_start_at": float(session_start_at or time.time()),
+        "latency_first_request_at": 0.0,
         "latency_last_audio_in_at": 0.0,
         "latency_last_student_transcript_at": 0.0,
         "latency_last_turn_complete_at": 0.0,
