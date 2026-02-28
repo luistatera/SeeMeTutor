@@ -122,6 +122,11 @@ class SessionReport:
                 "citations_sent": 0,
                 "search_queries": [],
             },
+            "screen_share": {
+                "source_switches": 0,
+                "stop_sharing_count": 0,
+                "switch_log": [],
+            },
             "errors": [],
             "manual": {},
         }
@@ -269,6 +274,24 @@ class SessionReport:
         self.data["grounding"]["citations_sent"] += 1
         if query:
             self.data["grounding"]["search_queries"].append(query)
+
+    # --- Screen share ---
+
+    def record_source_switch(self, old_source: str, new_source: str):
+        self.data["screen_share"]["source_switches"] += 1
+        self.data["screen_share"]["switch_log"].append({
+            "from": old_source,
+            "to": new_source,
+            "timestamp": time.time(),
+        })
+
+    def record_stop_sharing(self, old_source: str):
+        self.data["screen_share"]["stop_sharing_count"] += 1
+        self.data["screen_share"]["switch_log"].append({
+            "from": old_source,
+            "to": "none",
+            "timestamp": time.time(),
+        })
 
     # --- Errors ---
 

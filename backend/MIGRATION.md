@@ -117,7 +117,7 @@ Replace raw Gemini Live API with ADK Runner. Same features, new plumbing.
 | D | Rewrite WebSocket handler with upstream/downstream | ✅ |
 | E | Delete old code (`gemini_live.py` session, `tutor_agent/`) | ✅ |
 | F | Validate: audio, video, tools | ✅ |
-| G | Security hardening (CORS, headers, rate limit) | ⬜ |
+| G | Security hardening (CORS, headers, rate limit) | ✅ |
 
 #### Step 0F — Validation Test Plan
 
@@ -144,6 +144,11 @@ Open `http://localhost:8000`, select a student profile, grant mic + camera.
 - `backend/debug.log` — `HEARTBEAT` counters every 3s, `SPEAKING_START`, `TURN_COMPLETE`
 - Browser console — WS messages (`backlog_context`, `whiteboard`, `audio`, `turn_complete`, `interrupted`)
 - Firestore `sessions/{id}` — `started_at`, `ended_reason`, `duration_seconds`
+
+**Step 0G implementation notes (2026-02-28):**
+- CORS is now allowlist-based via `CORS_ALLOWED_ORIGINS` env (defaults to localhost dev origins); wildcard + credentials is blocked.
+- Security headers middleware added (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `COOP`, `CORP`, optional CSP).
+- In-memory sliding-window rate limiting added for HTTP and WebSocket connect attempts with env-configurable budgets.
 
 ---
 
@@ -202,12 +207,17 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 
 | # | Test | Expected | Result |
 |---|---|---|---|
-| 3.1 | Toggle camera → screen | Frames arrive as `screen_frame`, audio continues | |
-| 3.2 | Toggle screen → camera | Frames arrive as `video`, audio continues | |
-| 3.3 | Toggle 5 times rapidly | No crash, no audio gap > 1s | |
-| 3.4 | Stop sharing | No more frames sent, audio continues | |
+| 3.1 | Toggle camera → screen | Frames arrive as `screen_frame`, audio continues | ✅ tutor acknowledged screen content |
+| 3.2 | Toggle screen → camera | Frames arrive as `video`, audio continues | ✅ tutor transitioned back smoothly |
+| 3.3 | Toggle 5 times rapidly | No crash, no audio gap > 1s | ✅ 10 switches logged, 0 disconnects |
+| 3.4 | Stop sharing | No more frames sent, audio continues | ✅ stop_sharing_count=3, session continued |
 
-**Pass gate:** 3.1–3.4 all pass.
+**Pass gate:** 3.1–3.4 all pass. ✅ **Step 3 complete** (2026-02-28)
+
+**Notes:**
+- Added `screen_share` section to `test_report.py` + `record_source_switch` / `record_stop_sharing` methods
+- Wired calls in `main.py` upstream handler
+- Temp test button added to `frontend/index.html` (remove in Step 8)
 
 ---
 
@@ -256,9 +266,9 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 | `grounding` WS messages to browser | ✅ |
 
 **Implementation notes:**
-- `modules/guardrails.py`: three-layer safety — regex patterns for student input (off-topic, cheat, inappropriate) and tutor output (answer leak), reinforcement prompt selection with cooldown, metrics recording
+- `modules/guardrails.py`: hard-safety checks for student input (inappropriate content + prompt-injection attempts) and tutor output (answer leak), reinforcement prompt selection with cooldown, metrics recording
 - `modules/grounding.py`: grounding metadata extraction from ADK events (checks `event.grounding_metadata` and `event.server_content.grounding_metadata`), sends top citation to browser
-- System prompt `_BASE_INSTRUCTION` in `agent.py` updated: Safety section now has four "Absolute Rules" with explicit refusal templates matching PoC 09's patterns
+- System prompt `_BASE_INSTRUCTION` in `agent.py` updated: Safety section now has explicit "Absolute Rules" including prompt-injection resistance and refusal templates
 - Guardrail checks wired in `_forward_to_client`: student transcripts checked on every `input_transcription`, tutor transcripts checked on every `output_transcription`
 - Reinforcement injection via `live_queue.send_content()` with 4s cooldown between prompts
 - `guardrail_event` and `grounding` WS message types forwarded to browser
@@ -280,9 +290,16 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 
 | Item | Status |
 |---|---|
-| Create `modules/language.py` | ⬜ |
-| `handle_student_transcript` hook | ⬜ |
-| `finalize_tutor_turn` hook | ⬜ |
+| Create `modules/language.py` | ✅ |
+| `handle_student_transcript` hook | ✅ |
+| `finalize_tutor_turn` hook | ✅ |
+
+**Implementation notes (2026-02-28):**
+- `modules/language.py` added with policy normalization, language heuristics, confusion fallback logic, turn-level language analysis, and internal control prompt generation.
+- Runtime language state now initialized in `main.py` via `init_language_state(...)`.
+- Student transcript path now calls `handle_student_transcript(...)` and can inject hidden language-control prompts into `live_queue`.
+- Tutor turn completion now calls `finalize_tutor_turn(...)`, emits `language_event` / `language_metric`, and injects guided-phase/recap control prompts when needed.
+- Unit tests added: `backend/tests/test_language.py`.
 
 | # | Test | Expected | Result |
 |---|---|---|---|
@@ -301,9 +318,21 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 
 | Item | Status |
 |---|---|
-| Create `modules/latency.py` | ⬜ |
-| Timestamp hooks in upstream/downstream | ⬜ |
-| Basic reconnect (single retry) | ⬜ |
+| Create `modules/latency.py` | ✅ |
+| Timestamp hooks in upstream/downstream | ✅ |
+| Basic reconnect (single retry) | ✅ |
+
+**Implementation notes (2026-02-28):**
+- `modules/latency.py` added with `LatencyStats`, per-metric budgets/alerts, `record_latency_metric`, `build_latency_report`, and summary formatter.
+- Runtime latency state now initialized in `main.py` via `init_latency_state(...)`.
+- Upstream/downstream timestamp hooks added for:
+  - `response_start` (student speech -> first tutor audio)
+  - `first_byte` (session start -> first tutor audio)
+  - `interruption_stop` (barge-in -> interrupted)
+  - `turn_to_turn` (turn complete -> next student transcript)
+- Backend now sends `latency_event` and `latency_report` WS messages.
+- ADK stream resilience: `_iter_runner_events_with_retry(...)` added with one reconnect attempt and backoff.
+- Unit tests added: `backend/tests/test_latency.py`.
 
 | # | Test | Expected | Result |
 |---|---|---|---|
@@ -319,13 +348,13 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 
 | Item | Status |
 |---|---|
-| Core audio/video pipe | ⬜ |
-| Silero VAD + audio gate (PoC 01) | ⬜ |
-| Screen share toggle (PoC 10) | ⬜ |
-| Whiteboard cards (PoC 04) | ⬜ |
-| Citation toasts (PoC 05) | ⬜ |
-| Connection state banner (PoC 06) | ⬜ |
-| Latency HUD (PoC 07) | ⬜ |
+| Core audio/video pipe | ✅ |
+| Silero VAD + audio gate (PoC 01) | ✅ |
+| Screen share toggle (PoC 10) | ✅ |
+| Whiteboard cards (PoC 04) | ✅ |
+| Citation toasts (PoC 05) | ✅ |
+| Connection state banner (PoC 06) | ✅ |
+| Latency HUD (PoC 07) | ✅ |
 
 ---
 

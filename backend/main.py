@@ -24,9 +24,9 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from google.adk.agents.live_request_queue import LiveRequestQueue
@@ -70,6 +70,25 @@ from modules.guardrails import (
 from modules.grounding import (
     init_grounding_state,
     extract_grounding,
+)
+from modules.language import (
+    init_language_state,
+    append_tutor_text_part,
+    handle_student_transcript as handle_language_student_transcript,
+    finalize_tutor_turn as finalize_language_tutor_turn,
+    build_language_metric_snapshot,
+)
+from modules.latency import (
+    init_latency_state,
+    record_latency_metric,
+    build_latency_report,
+    format_latency_summary,
+)
+from modules.security import (
+    SlidingWindowRateLimiter,
+    build_security_headers,
+    extract_client_ip,
+    parse_allowed_origins,
 )
 
 load_dotenv()
@@ -115,6 +134,10 @@ IDLE_CHECKIN_1_SECONDS = 10
 IDLE_CHECKIN_2_SECONDS = 25
 IDLE_AUTO_AWAY_SECONDS = 90
 MIC_KICKOFF_SECONDS = 5
+ADK_STREAM_MAX_RETRIES = 1
+ADK_STREAM_RETRY_BACKOFF_S = 0.6
+TURN_TO_TURN_MAX_GAP_MS = 3000
+RESPONSE_REF_MAX_AGE_MS = 2500
 PACE_CONTROL_INSTRUCTIONS: dict[str, str] = {
     "slow": (
         "Preference update: from now on, speak noticeably slower. "
@@ -132,6 +155,46 @@ _active_student_sessions_lock = asyncio.Lock()
 
 _STUDENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 _SUPPORTED_LANGUAGE_MODES = {"guided_bilingual", "immersion", "auto"}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 10000) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+_DEFAULT_CORS_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
+CORS_ALLOWED_ORIGINS = parse_allowed_origins(
+    os.environ.get("CORS_ALLOWED_ORIGINS"),
+    defaults=_DEFAULT_CORS_ORIGINS,
+)
+CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", True)
+if "*" in CORS_ALLOWED_ORIGINS and CORS_ALLOW_CREDENTIALS:
+    logger.warning("CORS allow_credentials disabled because allow_origins includes '*'.")
+    CORS_ALLOW_CREDENTIALS = False
+
+SECURITY_CSP_ENABLED = _env_bool("SECURITY_CSP_ENABLED", True)
+SECURITY_HEADERS = build_security_headers(csp_enabled=SECURITY_CSP_ENABLED)
+
+HTTP_RATE_LIMIT_MAX = _env_int("HTTP_RATE_LIMIT_MAX", 120, minimum=10, maximum=10000)
+HTTP_RATE_LIMIT_WINDOW_S = _env_int("HTTP_RATE_LIMIT_WINDOW_S", 60, minimum=1, maximum=3600)
+WS_CONNECT_RATE_LIMIT_MAX = _env_int("WS_CONNECT_RATE_LIMIT_MAX", 20, minimum=1, maximum=1000)
+WS_CONNECT_RATE_LIMIT_WINDOW_S = _env_int("WS_CONNECT_RATE_LIMIT_WINDOW_S", 60, minimum=1, maximum=3600)
+
+_http_rate_limiter = SlidingWindowRateLimiter()
+_ws_rate_limiter = SlidingWindowRateLimiter()
 
 
 def _anonymize_ip(ip: str) -> str:
@@ -630,11 +693,55 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+logger.info(
+    "Security config: cors_origins=%s cors_credentials=%s csp_enabled=%s http_rate=%d/%ss ws_rate=%d/%ss",
+    CORS_ALLOWED_ORIGINS,
+    CORS_ALLOW_CREDENTIALS,
+    SECURITY_CSP_ENABLED,
+    HTTP_RATE_LIMIT_MAX,
+    HTTP_RATE_LIMIT_WINDOW_S,
+    WS_CONNECT_RATE_LIMIT_MAX,
+    WS_CONNECT_RATE_LIMIT_WINDOW_S,
+)
+
+
+def _should_rate_limit_http(path: str) -> bool:
+    if path == "/health":
+        return False
+    if path.startswith("/static/"):
+        return False
+    return True
+
+
+@app.middleware("http")
+async def http_security_middleware(request: Request, call_next):
+    path = request.url.path
+    if _should_rate_limit_http(path):
+        client_ip = extract_client_ip(
+            request.headers.get("x-forwarded-for"),
+            request.client.host if request.client else None,
+        )
+        allowed = await _http_rate_limiter.allow(
+            f"http:{client_ip}",
+            limit=HTTP_RATE_LIMIT_MAX,
+            window_seconds=HTTP_RATE_LIMIT_WINDOW_S,
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please retry shortly."},
+                headers={"Retry-After": str(HTTP_RATE_LIMIT_WINDOW_S)},
+            )
+
+    response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
 
 if FRONTEND_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -702,6 +809,20 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "session_limit"}
         {"type": "error", "data": "<description>"}
     """
+    client_host = extract_client_ip(
+        websocket.headers.get("x-forwarded-for"),
+        websocket.client.host if websocket.client else None,
+    )
+    ws_allowed = await _ws_rate_limiter.allow(
+        f"ws:{client_host}",
+        limit=WS_CONNECT_RATE_LIMIT_MAX,
+        window_seconds=WS_CONNECT_RATE_LIMIT_WINDOW_S,
+    )
+    if not ws_allowed:
+        logger.warning("Rejected WebSocket from %s: rate limit exceeded", client_host)
+        await websocket.close(code=1013)
+        return
+
     await websocket.accept()
 
     if DEMO_ACCESS_CODE:
@@ -735,8 +856,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=1008)
         return
 
-    raw_ip = websocket.headers.get("x-forwarded-for", websocket.client.host if websocket.client else "unknown")
-    client_host = raw_ip.split(",")[0].strip()
     session_id = str(uuid.uuid4())
     session_start = time.time()
     logger.info("Session %s accepted from %s", session_id, client_host)
@@ -836,6 +955,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         **init_whiteboard_state(),
         **init_guardrails_state(),
         **init_grounding_state(),
+        **init_language_state(
+            backlog_context.get("language_policy"),
+            backlog_context.get("preferred_language"),
+        ),
+        **init_latency_state(session_start),
         "topic_id": backlog_context.get("topic_id"),
         "topic_title": backlog_context.get("topic_title"),
         "_report": report,
@@ -1003,6 +1127,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 logger.warning("Session %s: failed to copy notes to student backlog", session_id, exc_info=True)
 
         logger.info("Session %s ended after %ds (reason: %s)", session_id, duration, ended_reason)
+        try:
+            logger.info(
+                "Session %s %s",
+                session_id,
+                format_latency_summary(
+                    runtime_state,
+                    turns=int(report.data["turns"]["count"]) if report else 0,
+                ),
+            )
+        except Exception:
+            logger.debug("Session %s: failed to format latency summary", session_id, exc_info=True)
 
         # Save test report
         if report:
@@ -1361,6 +1496,7 @@ async def _forward_to_gemini(
             if msg_type == "barge_in":
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 runtime_state["assistant_speaking"] = False
+                runtime_state["latency_last_barge_in_at"] = time.time()
                 await _send_json(websocket, {"type": "interrupted"})
                 continue
             if msg_type == "command_event":
@@ -1397,6 +1533,8 @@ async def _forward_to_gemini(
                     "SOURCE SWITCH #%d: %s -> %s",
                     runtime_state["source_switches"], old_source, new_source,
                 )
+                if report:
+                    report.record_source_switch(old_source, new_source)
                 prompt = get_switch_prompt(new_source)
                 if prompt:
                     try:
@@ -1418,6 +1556,8 @@ async def _forward_to_gemini(
                 runtime_state["stop_sharing_count"] = runtime_state.get("stop_sharing_count", 0) + 1
                 _mark_student_activity(runtime_state)
                 logger.info("STOP SHARING #%d: was=%s", runtime_state["stop_sharing_count"], old_source)
+                if report:
+                    report.record_stop_sharing(old_source)
                 try:
                     queue.send_content(
                         types.Content(role="user", parts=[types.Part(text=STOP_SHARING_PROMPT)])
@@ -1466,6 +1606,7 @@ async def _forward_to_gemini(
                 if lat is not None:
                     lat["last_audio_in"] = now
                     lat["awaiting_first_response"] = True
+                runtime_state["latency_last_audio_in_at"] = now
                 dc = _debug_counters.get(session_id)
                 if dc is not None:
                     dc["audio_in"] += 1
@@ -1514,6 +1655,58 @@ async def _forward_to_gemini(
         })
 
 
+async def _iter_runner_events_with_retry(
+    websocket: WebSocket,
+    adk_runner: Runner,
+    user_id: str,
+    session_id: str,
+    live_queue: LiveRequestQueue,
+):
+    """Yield ADK stream events with a single reconnect retry on stream errors."""
+    attempt = 0
+    while True:
+        sent_reconnected = False
+        try:
+            async for event in adk_runner.run_live(
+                user_id=user_id,
+                session_id=session_id,
+                live_request_queue=live_queue,
+                run_config=ADK_RUN_CONFIG,
+            ):
+                if attempt > 0 and not sent_reconnected:
+                    sent_reconnected = True
+                    await _send_json(
+                        websocket,
+                        {
+                            "type": "assistant_state",
+                            "data": {"state": "active", "reason": "reconnected", "attempt": attempt},
+                        },
+                    )
+                yield event
+            return
+        except WebSocketDisconnect:
+            raise
+        except Exception as exc:
+            if attempt >= ADK_STREAM_MAX_RETRIES:
+                raise
+            attempt += 1
+            logger.warning(
+                "Session %s: ADK stream error (attempt %d/%d), retrying: %s",
+                session_id,
+                attempt,
+                ADK_STREAM_MAX_RETRIES,
+                exc,
+            )
+            await _send_json(
+                websocket,
+                {
+                    "type": "assistant_state",
+                    "data": {"state": "reconnecting", "reason": "stream_error", "attempt": attempt},
+                },
+            )
+            await asyncio.sleep(ADK_STREAM_RETRY_BACKOFF_S * attempt)
+
+
 async def _forward_to_client(
     websocket: WebSocket,
     adk_runner: Runner,
@@ -1538,11 +1731,12 @@ async def _forward_to_client(
         runtime_state = runtime_state or {}
         user_id = runtime_state.get("student_id", "unknown")
 
-        async for event in adk_runner.run_live(
+        async for event in _iter_runner_events_with_retry(
+            websocket=websocket,
+            adk_runner=adk_runner,
             user_id=user_id,
             session_id=session_id,
-            live_request_queue=live_queue,
-            run_config=ADK_RUN_CONFIG,
+            live_queue=live_queue,
         ):
             # Whiteboard notes are dispatched by the whiteboard_dispatcher task
             # (modules/whiteboard.py) which handles speech-sync timing and dedupe.
@@ -1610,6 +1804,42 @@ async def _forward_to_client(
                                 "SPEAKING_START sid=%s (was silent, now audio)",
                                 session_id[:8],
                             )
+                            now_audio_out = time.time()
+                            ref_time = float(runtime_state.get("latency_last_student_transcript_at", 0.0))
+                            if ref_time > 0 and ((now_audio_out - ref_time) * 1000) > RESPONSE_REF_MAX_AGE_MS:
+                                ref_time = 0.0
+                            if ref_time <= 0:
+                                ref_time = float(runtime_state.get("latency_last_audio_in_at", 0.0))
+                            if ref_time > 0:
+                                response_ms = (now_audio_out - ref_time) * 1000
+                                latency_event = record_latency_metric(
+                                    runtime_state,
+                                    "response_start",
+                                    response_ms,
+                                )
+                                if latency_event:
+                                    await _send_json(
+                                        websocket,
+                                        {"type": "latency_event", "data": latency_event},
+                                    )
+                            if not runtime_state.get("latency_first_byte_recorded", False):
+                                runtime_state["latency_first_byte_recorded"] = True
+                                runtime_state["latency_first_audio_out_at"] = now_audio_out
+                                first_ref = (
+                                    float(runtime_state.get("latency_session_start_at", 0.0))
+                                    or now_audio_out
+                                )
+                                first_byte_ms = (now_audio_out - first_ref) * 1000
+                                first_byte_event = record_latency_metric(
+                                    runtime_state,
+                                    "first_byte",
+                                    first_byte_ms,
+                                )
+                                if first_byte_event:
+                                    await _send_json(
+                                        websocket,
+                                        {"type": "latency_event", "data": first_byte_event},
+                                    )
                         lat = _latency_state.get(session_id)
                         if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
                             delta_ms = (time.time() - lat["last_audio_in"]) * 1000
@@ -1647,6 +1877,7 @@ async def _forward_to_client(
                             logger.info("Sanitized leaked internal text from tutor output")
                         if not cleaned:
                             continue
+                        append_tutor_text_part(runtime_state, cleaned, source="text")
                         logger.info("TUTOR TEXT: %s", cleaned)
                         runtime_state["last_user_activity_at"] = time.time()
                         runtime_state["idle_stage"] = 0
@@ -1693,11 +1924,33 @@ async def _forward_to_client(
                 )
                 if report:
                     report.record_turn_complete(audio_response_chunks)
+                runtime_state["latency_last_turn_complete_at"] = time.time()
+                latency_report = build_latency_report(runtime_state, turns=turn_count)
+                await _send_json(websocket, {"type": "latency_report", "data": latency_report})
                 audio_response_chunks = 0
                 completed_with_output = turn_had_output
                 if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
                     runtime_state["_turn_ticket_count"] = int(runtime_state.get("_turn_ticket_count", 0)) - 1
                 turn_had_output = False
+                lang_turn = finalize_language_tutor_turn(runtime_state)
+                if lang_turn.get("events"):
+                    for language_event in lang_turn["events"]:
+                        await _send_json(
+                            websocket,
+                            {"type": "language_event", "data": language_event},
+                        )
+                control_prompt = lang_turn.get("control_prompt")
+                if control_prompt:
+                    live_queue.send_content(
+                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
+                    )
+                await _send_json(
+                    websocket,
+                    {
+                        "type": "language_metric",
+                        "data": build_language_metric_snapshot(runtime_state),
+                    },
+                )
                 # Mark greeting as delivered only after a turn with actual audio/text.
                 # Silent/empty turns (e.g. model acknowledging [SESSION START]) must
                 # not lock the gate — the real audio greeting arrives in a later turn.
@@ -1730,6 +1983,20 @@ async def _forward_to_client(
                         session_id, delta_ms,
                     )
                     lat["awaiting_first_response"] = False
+                barge_in_at = float(runtime_state.get("latency_last_barge_in_at", 0.0))
+                if barge_in_at > 0:
+                    interruption_stop_ms = (time.time() - barge_in_at) * 1000
+                    runtime_state["latency_last_barge_in_at"] = 0.0
+                    latency_event = record_latency_metric(
+                        runtime_state,
+                        "interruption_stop",
+                        interruption_stop_ms,
+                    )
+                    if latency_event:
+                        await _send_json(
+                            websocket,
+                            {"type": "latency_event", "data": latency_event},
+                        )
                 await _send_json(websocket, {"type": "interrupted"})
                 logger.info(
                     "INTERRUPTED by student (had sent %d audio chunks before interruption)",
@@ -1775,6 +2042,36 @@ async def _forward_to_client(
                     _mark_student_activity(runtime_state)
                 else:
                     _mark_student_activity(runtime_state, unlock_turn=True)
+                    runtime_state["latency_last_student_transcript_at"] = now
+                    last_turn_complete_at = float(runtime_state.get("latency_last_turn_complete_at", 0.0))
+                    if last_turn_complete_at > 0:
+                        turn_gap_ms = (now - last_turn_complete_at) * 1000
+                        if turn_gap_ms <= TURN_TO_TURN_MAX_GAP_MS:
+                            turn_to_turn_event = record_latency_metric(
+                                runtime_state,
+                                "turn_to_turn",
+                                turn_gap_ms,
+                            )
+                            if turn_to_turn_event:
+                                await _send_json(
+                                    websocket,
+                                    {"type": "latency_event", "data": turn_to_turn_event},
+                                )
+
+                    language_update = handle_language_student_transcript(
+                        student_text,
+                        runtime_state,
+                    )
+                    for language_event in language_update.get("events", []):
+                        await _send_json(
+                            websocket,
+                            {"type": "language_event", "data": language_event},
+                        )
+                    control_prompt = language_update.get("control_prompt")
+                    if control_prompt:
+                        live_queue.send_content(
+                            types.Content(role="user", parts=[types.Part(text=control_prompt)])
+                        )
 
                 # Guardrail: check student input for off-topic / cheat / inappropriate
                 student_guardrail_events = check_student_input(student_text)
@@ -1807,6 +2104,7 @@ async def _forward_to_client(
             if event.output_transcription and event.output_transcription.text and event.output_transcription.finished:
                 tutor_text = event.output_transcription.text
                 logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
+                append_tutor_text_part(runtime_state, tutor_text, source="transcript")
 
                 # Guardrail: check tutor output for answer leaks
                 tutor_guardrail_events = check_tutor_output(tutor_text)

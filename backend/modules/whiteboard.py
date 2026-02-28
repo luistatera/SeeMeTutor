@@ -143,8 +143,9 @@ async def whiteboard_dispatcher(
     - The tutor is currently speaking (synchronized delivery), OR
     - The deadline expires (deadline fallback — ensures notes are never lost).
 
-    Special action messages (clear, update_status, update_topic) are forwarded
-    immediately without sync delay.
+    Special action messages (clear, update_status) are forwarded immediately
+    without sync delay. The clear_dedupe action resets the content-based
+    dedupe set (used on topic switch) without sending anything to the browser.
     """
     pending: list[dict] = []
 
@@ -157,15 +158,26 @@ async def whiteboard_dispatcher(
                 except asyncio.QueueEmpty:
                     break
 
-                # Action messages (clear, update_status, update_topic) pass through immediately
+                # Action messages pass through immediately
                 if "action" in item:
-                    await _send_ws(websocket, {"type": "whiteboard", "data": item})
+                    action = item["action"]
+                    if action == "clear_dedupe":
+                        runtime_state["wb_dedupe_keys"] = set()
+                        logger.info("Whiteboard dedupe keys reset (topic switch)")
+                    elif action == "guardrail_event":
+                        await _send_ws(websocket, {
+                            "type": "guardrail_event",
+                            "data": {
+                                "type": item.get("drift_type", "drift"),
+                                "source": "model_drift",
+                                "detail": item.get("reason", ""),
+                            },
+                        })
+                    else:
+                        await _send_ws(websocket, {"type": "whiteboard", "data": item})
                     continue
 
-                # Regular note — apply content normalization
-                item["title"] = normalize_title(item.get("title", ""))
-                item["content"] = normalize_content(item.get("content", ""))
-                item["note_type"] = normalize_note_type(item.get("note_type", "insight"))
+                # Notes arrive pre-normalized from write_notes tool
 
                 # Content-based dedupe
                 key = dedupe_key(item["title"], item["content"])
