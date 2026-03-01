@@ -1,9 +1,9 @@
 {
-  "session_id": "f9f19afd-2f52-4cbe-bd67-8264146029a3",
+  "session_id": "b765030b-0f3d-4f6f-9283-2aa854403f39",
   "student_id": "luis-german",
-  "started_at": 1772364165.504521,
-  "ended_at": 1772364358.945908,
-  "duration_seconds": 193.4,
+  "started_at": 1772388469.032972,
+  "ended_at": 1772388510.97491,
+  "duration_seconds": 41.9,
   "ended_reason": "student_ended",
   "connection": {
     "ws_connected": true,
@@ -17,116 +17,111 @@
     "resumption_requested": false
   },
   "audio": {
-    "chunks_in": 1254,
-    "chunks_out": 134,
-    "first_response_ms": 54.5,
+    "chunks_in": 444,
+    "chunks_out": 74,
+    "first_response_ms": 44.2,
     "latency_samples_ms": [
-      54.5,
-      2.6,
-      44.5,
-      14.9,
-      3.1,
-      2.1,
-      1.0,
-      28.6,
-      18.5,
+      44.2,
       46.1,
-      36.5,
-      38.3,
-      19.8,
-      16.4,
-      34.9,
-      35.1,
-      3.7,
-      44.4,
-      48.3,
-      21.3,
-      35.8,
-      5.1,
-      40.7,
-      17.4,
-      7.3,
-      9.1,
-      49.4,
-      50.1,
-      15.6,
-      7.6,
-      19.0,
-      6.0,
-      44.8,
-      33.4,
-      38.8,
-      36.0,
-      23.1,
-      5.1,
-      25.6,
-      12.4,
-      4.2,
-      42.1,
-      21.9,
-      24.9,
-      10.9,
-      46.8,
-      43.3,
-      26.8,
-      10.9,
+      12.0,
+      2.0,
+      33.9,
+      25.1,
+      13.7,
       60.0,
-      52.7,
+      37.9,
+      22.6,
+      4.1,
+      57.6,
+      27.1,
       41.0,
-      38.2,
-      20.7,
-      7.6,
-      3.7,
-      57.8,
-      26.8,
-      26.8,
-      12.1,
+      25.8,
+      33.8,
+      11.0,
+      52.7,
+      52.6,
+      12.7,
+      29.8,
+      19.8,
+      17.8,
+      1.9,
+      39.0,
+      18.4,
+      22.1,
+      47.1,
+      38.8,
+      19.2,
       7.5,
-      1.6,
-      39.7,
-      26.6,
-      13.2,
-      48.9,
-      41.4,
-      20.2,
-      10.3,
-      10.9
+      39.3,
+      12.3,
+      28.6,
+      44.3,
+      21.5,
+      12.1,
+      24.5,
+      17.8,
+      16.8,
+      1.5,
+      44.3,
+      36.3,
+      18.1,
+      18.1,
+      11.2,
+      31.3,
+      21.6,
+      2.7,
+      38.9,
+      31.1,
+      11.8,
+      5.4
     ]
   },
   "video": {
-    "frames_in": 25
+    "frames_in": 0
   },
   "latency": {
     "events": [
       {
         "metric": "first_byte",
-        "value_ms": 2137.0,
+        "value_ms": 1715.0,
         "is_alert": false,
-        "timestamp": 1772364167.565207
+        "timestamp": 1772388470.692375
+      },
+      {
+        "metric": "turn_to_turn",
+        "value_ms": 1105.0,
+        "is_alert": false,
+        "timestamp": 1772388481.6387992
       },
       {
         "metric": "response_start",
-        "value_ms": 54.0,
+        "value_ms": 44.0,
         "is_alert": false,
-        "timestamp": 1772364217.422763
+        "timestamp": 1772388485.783583
       },
       {
         "metric": "response_start",
-        "value_ms": 1207.0,
-        "is_alert": true,
-        "timestamp": 1772364246.32963
+        "value_ms": 41.0,
+        "is_alert": false,
+        "timestamp": 1772388487.380356
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 39.0,
+        "is_alert": false,
+        "timestamp": 1772388489.421411
       }
     ],
     "latest_report": {
       "metrics": {
         "response_start": {
           "name": "response_start",
-          "count": 2,
-          "current": 1207,
-          "avg": 631,
-          "min": 54,
-          "max": 1207,
-          "p95": 1207,
+          "count": 3,
+          "current": 39,
+          "avg": 41,
+          "min": 39,
+          "max": 44,
+          "p95": 44,
           "target_ms": 500,
           "alert_ms": 800
         },
@@ -143,29 +138,29 @@
         },
         "turn_to_turn": {
           "name": "turn_to_turn",
-          "count": 0,
-          "current": 0,
-          "avg": 0,
-          "min": 0,
-          "max": 0,
-          "p95": 0,
+          "count": 1,
+          "current": 1105,
+          "avg": 1105,
+          "min": 1105,
+          "max": 1105,
+          "p95": 1105,
           "target_ms": 1500,
           "alert_ms": 2500
         },
         "first_byte": {
           "name": "first_byte",
           "count": 1,
-          "current": 2137,
-          "avg": 2137,
-          "min": 2137,
-          "max": 2137,
-          "p95": 2137,
+          "current": 1715,
+          "avg": 1715,
+          "min": 1715,
+          "max": 1715,
+          "p95": 1715,
           "target_ms": 3000,
           "alert_ms": 5000
         }
       },
-      "turns": 6,
-      "alerts": 1
+      "turns": 13,
+      "alerts": 0
     },
     "reports": [
       {
@@ -205,12 +200,12 @@
           },
           "first_byte": {
             "name": "first_byte",
-            "count": 0,
-            "current": 0,
-            "avg": 0,
-            "min": 0,
-            "max": 0,
-            "p95": 0,
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
@@ -256,11 +251,11 @@
           "first_byte": {
             "name": "first_byte",
             "count": 1,
-            "current": 2137,
-            "avg": 2137,
-            "min": 2137,
-            "max": 2137,
-            "p95": 2137,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
@@ -306,11 +301,11 @@
           "first_byte": {
             "name": "first_byte",
             "count": 1,
-            "current": 2137,
-            "avg": 2137,
-            "min": 2137,
-            "max": 2137,
-            "p95": 2137,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
@@ -356,11 +351,11 @@
           "first_byte": {
             "name": "first_byte",
             "count": 1,
-            "current": 2137,
-            "avg": 2137,
-            "min": 2137,
-            "max": 2137,
-            "p95": 2137,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
@@ -372,12 +367,12 @@
         "metrics": {
           "response_start": {
             "name": "response_start",
-            "count": 1,
-            "current": 54,
-            "avg": 54,
-            "min": 54,
-            "max": 54,
-            "p95": 54,
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
             "target_ms": 500,
             "alert_ms": 800
           },
@@ -394,23 +389,23 @@
           },
           "turn_to_turn": {
             "name": "turn_to_turn",
-            "count": 0,
-            "current": 0,
-            "avg": 0,
-            "min": 0,
-            "max": 0,
-            "p95": 0,
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
             "target_ms": 1500,
             "alert_ms": 2500
           },
           "first_byte": {
             "name": "first_byte",
             "count": 1,
-            "current": 2137,
-            "avg": 2137,
-            "min": 2137,
-            "max": 2137,
-            "p95": 2137,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
@@ -422,12 +417,12 @@
         "metrics": {
           "response_start": {
             "name": "response_start",
-            "count": 2,
-            "current": 1207,
-            "avg": 631,
-            "min": 54,
-            "max": 1207,
-            "p95": 1207,
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
             "target_ms": 500,
             "alert_ms": 800
           },
@@ -444,155 +439,386 @@
           },
           "turn_to_turn": {
             "name": "turn_to_turn",
-            "count": 0,
-            "current": 0,
-            "avg": 0,
-            "min": 0,
-            "max": 0,
-            "p95": 0,
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
             "target_ms": 1500,
             "alert_ms": 2500
           },
           "first_byte": {
             "name": "first_byte",
             "count": 1,
-            "current": 2137,
-            "avg": 2137,
-            "min": 2137,
-            "max": 2137,
-            "p95": 2137,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
             "target_ms": 3000,
             "alert_ms": 5000
           }
         },
         "turns": 6,
-        "alerts": 1
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 7,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 8,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 9,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 1,
+            "current": 44,
+            "avg": 44,
+            "min": 44,
+            "max": 44,
+            "p95": 44,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 10,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 2,
+            "current": 41,
+            "avg": 42,
+            "min": 41,
+            "max": 44,
+            "p95": 44,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 11,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 2,
+            "current": 41,
+            "avg": 42,
+            "min": 41,
+            "max": 44,
+            "p95": 44,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 12,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 3,
+            "current": 39,
+            "avg": 41,
+            "min": 39,
+            "max": 44,
+            "p95": 44,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 1,
+            "current": 1105,
+            "avg": 1105,
+            "min": 1105,
+            "max": 1105,
+            "p95": 1105,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1715,
+            "avg": 1715,
+            "min": 1715,
+            "max": 1715,
+            "p95": 1715,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 13,
+        "alerts": 0
       }
     ]
   },
   "language": {
     "events": [],
-    "latest_metric": {
-      "tutor_turns": 3,
-      "purity_rate": 100.0,
-      "mixed_turns": 0,
-      "guided_adherence": 100.0,
-      "guided_expected_turns": 3,
-      "guided_matched_turns": 3,
-      "fallback_triggers": 0,
-      "fallback_latency_turns": [],
-      "confusion_signals": 0,
-      "language_flips": 0,
-      "l1_words": 95,
-      "l2_words": 0,
-      "l2_ratio": 0.0,
-      "recap_triggers": 0,
-      "control_prompts_sent": 0
-    },
-    "metrics_history": [
-      {
-        "tutor_turns": 0,
-        "purity_rate": 0.0,
-        "mixed_turns": 0,
-        "guided_adherence": 0.0,
-        "guided_expected_turns": 0,
-        "guided_matched_turns": 0,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 0,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      },
-      {
-        "tutor_turns": 1,
-        "purity_rate": 100.0,
-        "mixed_turns": 0,
-        "guided_adherence": 100.0,
-        "guided_expected_turns": 1,
-        "guided_matched_turns": 1,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 34,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      },
-      {
-        "tutor_turns": 1,
-        "purity_rate": 100.0,
-        "mixed_turns": 0,
-        "guided_adherence": 100.0,
-        "guided_expected_turns": 1,
-        "guided_matched_turns": 1,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 34,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      },
-      {
-        "tutor_turns": 1,
-        "purity_rate": 100.0,
-        "mixed_turns": 0,
-        "guided_adherence": 100.0,
-        "guided_expected_turns": 1,
-        "guided_matched_turns": 1,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 34,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      },
-      {
-        "tutor_turns": 2,
-        "purity_rate": 100.0,
-        "mixed_turns": 0,
-        "guided_adherence": 100.0,
-        "guided_expected_turns": 2,
-        "guided_matched_turns": 2,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 76,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      },
-      {
-        "tutor_turns": 3,
-        "purity_rate": 100.0,
-        "mixed_turns": 0,
-        "guided_adherence": 100.0,
-        "guided_expected_turns": 3,
-        "guided_matched_turns": 3,
-        "fallback_triggers": 0,
-        "fallback_latency_turns": [],
-        "confusion_signals": 0,
-        "language_flips": 0,
-        "l1_words": 95,
-        "l2_words": 0,
-        "l2_ratio": 0.0,
-        "recap_triggers": 0,
-        "control_prompts_sent": 0
-      }
-    ]
+    "latest_metric": {},
+    "metrics_history": []
   },
   "resilience": {
     "stream_retry_attempts": 0,
@@ -602,427 +828,307 @@
     "session_resume_attempts": 0,
     "session_resume_successes": 0,
     "session_resume_fallbacks": 0,
-    "resumption_handles_saved": 105,
+    "resumption_handles_saved": 75,
     "events": [
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364166.8687842
+        "timestamp": 1772388470.687396
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364166.9494898
+        "timestamp": 1772388471.6929128
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364167.0179179
+        "timestamp": 1772388471.744457
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364168.597934
+        "timestamp": 1772388471.892048
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364168.645556
+        "timestamp": 1772388471.942527
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364170.233869
+        "timestamp": 1772388473.516887
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364170.289222
+        "timestamp": 1772388473.563671
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364211.718281
+        "timestamp": 1772388474.1445298
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364211.767657
+        "timestamp": 1772388474.191562
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364215.451861
+        "timestamp": 1772388477.987046
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364215.501461
+        "timestamp": 1772388478.033996
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364220.4139369
+        "timestamp": 1772388478.16923
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364220.461659
+        "timestamp": 1772388478.218036
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364222.1617768
+        "timestamp": 1772388479.3479319
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364222.2232351
+        "timestamp": 1772388479.3963242
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364223.04971
+        "timestamp": 1772388479.527573
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364223.1073332
+        "timestamp": 1772388479.579403
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364223.746185
+        "timestamp": 1772388480.013686
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364223.795352
+        "timestamp": 1772388480.0622752
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364224.651555
+        "timestamp": 1772388480.30588
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364224.7122319
+        "timestamp": 1772388480.34784
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364226.953996
+        "timestamp": 1772388480.485486
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364227.037865
+        "timestamp": 1772388480.5328078
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364229.24608
+        "timestamp": 1772388482.206858
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364229.331181
+        "timestamp": 1772388482.253082
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364231.93529
+        "timestamp": 1772388483.4280891
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364232.003793
+        "timestamp": 1772388483.4734778
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364232.870534
+        "timestamp": 1772388484.036761
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364232.94516
+        "timestamp": 1772388484.081082
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364236.24608
+        "timestamp": 1772388484.469922
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364236.293055
+        "timestamp": 1772388484.518136
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364239.597554
+        "timestamp": 1772388485.038334
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364239.652558
+        "timestamp": 1772388485.087536
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364241.903323
+        "timestamp": 1772388486.7725592
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364241.9560971
+        "timestamp": 1772388486.820127
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364244.177977
+        "timestamp": 1772388487.620656
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364244.233501
+        "timestamp": 1772388487.6698549
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364245.064735
+        "timestamp": 1772388487.948975
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364245.1152399
+        "timestamp": 1772388487.991592
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364247.96241
+        "timestamp": 1772388488.73538
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364248.010035
+        "timestamp": 1772388488.78033
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364251.307989
+        "timestamp": 1772388488.861993
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364251.355443
+        "timestamp": 1772388488.905633
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364255.447364
+        "timestamp": 1772388489.685329
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364255.492586
+        "timestamp": 1772388489.73021
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364258.337249
+        "timestamp": 1772388490.4042282
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364258.386661
+        "timestamp": 1772388490.447542
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364262.921768
+        "timestamp": 1772388491.2190259
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364262.967773
+        "timestamp": 1772388491.263784
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364265.6044202
+        "timestamp": 1772388491.345113
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364265.6607308
+        "timestamp": 1772388491.390203
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364269.207689
+        "timestamp": 1772388493.483207
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364269.2497761
+        "timestamp": 1772388493.529401
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364273.274613
+        "timestamp": 1772388495.517848
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364273.3186822
+        "timestamp": 1772388495.576297
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364277.058055
+        "timestamp": 1772388496.6711712
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364277.101544
+        "timestamp": 1772388496.716566
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364281.679669
+        "timestamp": 1772388496.875804
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364281.727999
+        "timestamp": 1772388496.924848
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364283.690953
+        "timestamp": 1772388499.152766
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364283.747403
+        "timestamp": 1772388499.1960452
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364287.8149178
+        "timestamp": 1772388500.8045068
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364287.878432
+        "timestamp": 1772388500.8533351
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364292.716699
+        "timestamp": 1772388501.33928
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364292.773556
+        "timestamp": 1772388501.385515
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364296.7586298
+        "timestamp": 1772388501.995917
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364296.81083
+        "timestamp": 1772388502.0415502
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364301.681195
+        "timestamp": 1772388504.390228
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364301.73966
+        "timestamp": 1772388504.434858
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364305.4342542
+        "timestamp": 1772388504.583584
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364305.480354
+        "timestamp": 1772388504.627865
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364309.544822
+        "timestamp": 1772388506.5700538
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364309.594379
+        "timestamp": 1772388506.614527
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364313.2599602
+        "timestamp": 1772388506.764627
       },
       {
         "type": "session_resumption_handle_saved",
-        "timestamp": 1772364313.305648
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364315.984235
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364316.028341
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364319.344646
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364319.39279
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364322.448896
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364322.4926982
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364325.937968
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364325.9889102
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364328.952272
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364328.997793
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364332.911617
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364332.9592562
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364335.45718
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364335.517834
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364338.976751
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364339.031301
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364342.1958
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364342.245445
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364345.052313
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364345.11846
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364347.56284
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364347.623443
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364350.029558
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364350.091699
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364352.34954
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364352.3936372
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364352.6847758
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364352.733609
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364357.406525
-      },
-      {
-        "type": "session_resumption_handle_saved",
-        "timestamp": 1772364357.450976
+        "timestamp": 1772388506.8132129
       }
     ]
   },
@@ -1035,201 +1141,241 @@
   },
   "memory": {
     "recall_checks": 1,
-    "checkpoints_saved": 3,
-    "cells_saved": 14,
-    "recalls_applied": 0,
-    "recall_candidates_last": 0,
-    "recall_candidates_total": 0,
-    "recall_selected_total": 0,
-    "last_recall_token_estimate": 0,
+    "checkpoints_saved": 2,
+    "cells_saved": 10,
+    "recalls_applied": 1,
+    "recall_candidates_last": 80,
+    "recall_candidates_total": 80,
+    "recall_selected_total": 6,
+    "last_recall_token_estimate": 345,
     "recall_token_estimates": [
-      0
+      345
     ],
-    "checkpoint_attempts": 8,
-    "checkpoint_skipped": 5,
+    "checkpoint_attempts": 14,
+    "checkpoint_skipped": 12,
     "checkpoint_failed": 0,
     "checkpoint_reasons": {
       "interval_turn": 1,
-      "topic_switch": 1,
       "session_end": 1
     },
     "checkpoint_skip_reasons": {
-      "interval_guardrail": 5
+      "interval_guardrail": 12
     },
     "checkpoint_failure_reasons": {},
     "budget_violations": 0,
     "events": [
       {
         "type": "memory_recall_applied",
-        "selected_count": 0,
-        "candidate_count": 0,
-        "token_estimate": 0,
-        "timestamp": 1772364165.5079198
+        "selected_count": 6,
+        "candidate_count": 80,
+        "token_estimate": 345,
+        "timestamp": 1772388469.034335
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364167.0236568
+        "timestamp": 1772388474.19275
       },
       {
         "type": "memory_checkpoint_saved",
-        "saved_cells": 3,
+        "saved_cells": 4,
         "reason": "interval_turn",
-        "timestamp": 1772364167.271134
+        "timestamp": 1772388474.4312801
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364170.290793
+        "timestamp": 1772388480.063524
       },
       {
         "type": "memory_checkpoint_skipped",
         "reason": "interval_guardrail",
-        "timestamp": 1772364170.290802
-      },
-      {
-        "type": "memory_checkpoint_attempt",
-        "reason": "topic_switch",
-        "timestamp": 1772364211.360713
-      },
-      {
-        "type": "memory_checkpoint_saved",
-        "saved_cells": 5,
-        "reason": "topic_switch",
-        "timestamp": 1772364211.662397
+        "timestamp": 1772388480.063531
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364211.769113
+        "timestamp": 1772388480.348979
       },
       {
         "type": "memory_checkpoint_skipped",
         "reason": "interval_guardrail",
-        "timestamp": 1772364211.7691479
+        "timestamp": 1772388480.3489878
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364215.5020878
+        "timestamp": 1772388480.533921
       },
       {
         "type": "memory_checkpoint_skipped",
         "reason": "interval_guardrail",
-        "timestamp": 1772364215.5020952
+        "timestamp": 1772388480.5339332
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364220.463213
+        "timestamp": 1772388482.254482
       },
       {
         "type": "memory_checkpoint_skipped",
         "reason": "interval_guardrail",
-        "timestamp": 1772364220.463222
+        "timestamp": 1772388482.254495
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "interval_turn",
-        "timestamp": 1772364248.013598
+        "timestamp": 1772388483.47474
       },
       {
         "type": "memory_checkpoint_skipped",
         "reason": "interval_guardrail",
-        "timestamp": 1772364248.013605
+        "timestamp": 1772388483.474752
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388484.082293
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388484.082305
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388484.5195599
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388484.519573
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388485.088827
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388485.0888379
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388486.821502
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388486.821515
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388488.781387
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388488.781398
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388488.906734
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388488.9067452
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772388491.265085
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772388491.265097
       },
       {
         "type": "memory_checkpoint_attempt",
         "reason": "session_end",
-        "timestamp": 1772364358.15152
+        "timestamp": 1772388507.0405812
       },
       {
         "type": "memory_checkpoint_saved",
         "saved_cells": 6,
         "reason": "session_end",
-        "timestamp": 1772364358.464299
+        "timestamp": 1772388507.360217
       }
     ]
   },
   "tools": {
     "calls": [
       {
-        "name": "set_session_phase",
+        "name": "write_notes",
         "args": {
-          "phase": "tutoring"
+          "title": "Milestone 1 — Core Verbs",
+          "note_type": "checklist_item"
         },
-        "result_status": "transitioned",
-        "duration_ms": 0.4,
-        "timestamp": 1772364166.873288
-      },
-      {
-        "name": "switch_topic",
-        "args": {
-          "topic_id": "german-grammar",
-          "topic_title": "German Grammar: Präteritum"
-        },
-        "result_status": "switched",
-        "duration_ms": 807.6,
-        "timestamp": 1772364211.3589828
-      },
-      {
-        "name": "set_session_phase",
-        "args": {
-          "phase": "capture"
-        },
-        "result_status": "transitioned",
-        "duration_ms": 0.3,
-        "timestamp": 1772364211.666997
+        "result_status": "displayed",
+        "duration_ms": 280.6,
+        "timestamp": 1772388474.9215949
       },
       {
         "name": "write_notes",
         "args": {
-          "title": "Übung 6a: Bildlexikon",
+          "title": "Milestone 2 — Cases Review",
           "note_type": "checklist_item"
         },
         "result_status": "displayed",
-        "duration_ms": 75.4,
-        "timestamp": 1772364213.214613
+        "duration_ms": 113.1,
+        "timestamp": 1772388475.068726
       },
       {
         "name": "write_notes",
         "args": {
-          "title": "Übung 6b: Fragen formulieren",
+          "title": "Milestone 3 — Talking about the Past",
           "note_type": "checklist_item"
         },
         "result_status": "displayed",
-        "duration_ms": 50.9,
-        "timestamp": 1772364214.036156
+        "duration_ms": 109.1,
+        "timestamp": 1772388475.4059699
       },
       {
         "name": "write_notes",
         "args": {
-          "title": "Übung 6c: Wahrheitsspiel",
+          "title": "Milestone 4 — Textbook Practice",
           "note_type": "checklist_item"
         },
         "result_status": "displayed",
-        "duration_ms": 53.7,
-        "timestamp": 1772364214.3844512
+        "duration_ms": 116.4,
+        "timestamp": 1772388475.761386
       },
       {
         "name": "write_notes",
         "args": {
-          "title": "Übung c: Verben ergänzen",
+          "title": "Milestone 5 — Exam Prep: Speaking",
           "note_type": "checklist_item"
         },
         "result_status": "displayed",
-        "duration_ms": 51.2,
-        "timestamp": 1772364214.928407
+        "duration_ms": 96.8,
+        "timestamp": 1772388476.0846531
       },
       {
         "name": "write_notes",
         "args": {
-          "title": "Präteritum: sein/haben",
+          "title": "Milestone 6 — Final Check",
           "note_type": "checklist_item"
         },
         "result_status": "displayed",
-        "duration_ms": 59.6,
-        "timestamp": 1772364215.339829
+        "duration_ms": 94.0,
+        "timestamp": 1772388476.402699
       },
       {
         "name": "set_session_phase",
@@ -1237,386 +1383,137 @@
           "phase": "tutoring"
         },
         "result_status": "transitioned",
-        "duration_ms": 0.1,
-        "timestamp": 1772364215.4012742
-      },
-      {
-        "name": "write_notes",
-        "args": {
-          "title": "Übung 6c: Präteritum",
-          "note_type": "checklist_item"
-        },
-        "result_status": "displayed",
-        "duration_ms": 68.7,
-        "timestamp": 1772364216.6390028
-      },
-      {
-        "name": "write_notes",
-        "args": {
-          "title": "Übung 6b: Fragen formulieren",
-          "note_type": "checklist_item"
-        },
-        "result_status": "already_exists",
-        "duration_ms": 0.3,
-        "timestamp": 1772364216.996224
-      },
-      {
-        "name": "write_notes",
-        "args": {
-          "title": "Übung 6b: Fragen formulieren",
-          "note_type": "checklist_item"
-        },
-        "result_status": "already_exists",
         "duration_ms": 0.2,
-        "timestamp": 1772364222.1030211
+        "timestamp": 1772388476.4254441
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364213985",
-          "status": "in_progress"
+          "reason": "Plan bootstrap required, no transcript available."
         },
-        "result_status": "updated",
-        "duration_ms": 144.4,
-        "timestamp": 1772364234.062352
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "in_progress"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364240.284807
+        "timestamp": 1772388480.2583969
       },
       {
-        "name": "update_note_status",
+        "name": "write_notes",
         "args": {
-          "note_id": "note-1772364216570",
-          "status": "in_progress"
+          "title": "Milestone 3 — Textbook Practice",
+          "note_type": "checklist_item"
         },
-        "result_status": "updated",
-        "duration_ms": 51.1,
-        "timestamp": 1772364242.669877
+        "result_status": "displayed",
+        "duration_ms": 43.9,
+        "timestamp": 1772388481.05232
       },
       {
-        "name": "update_note_status",
+        "name": "write_notes",
         "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
+          "title": "Milestone 4 — Writing Skills",
+          "note_type": "checklist_item"
         },
-        "result_status": "updated",
-        "duration_ms": 58.4,
-        "timestamp": 1772364242.9604611
+        "result_status": "displayed",
+        "duration_ms": 47.7,
+        "timestamp": 1772388481.4341938
       },
       {
-        "name": "update_note_status",
+        "name": "write_notes",
         "args": {
-          "note_id": "note-1772364213985",
-          "status": "done"
+          "title": "Milestone 5 — Exam Simulation",
+          "note_type": "checklist_item"
         },
-        "result_status": "updated",
-        "duration_ms": 49.3,
-        "timestamp": 1772364248.9934442
+        "result_status": "displayed",
+        "duration_ms": 45.3,
+        "timestamp": 1772388481.7504342
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
+          "reason": "Plan bootstrap required, but resource transcript was unavailable. Generated general milestones based on topic (German A2) and goal (telc A2 exam prep) instead."
         },
-        "result_status": "updated",
-        "duration_ms": 52.7,
-        "timestamp": 1772364249.2791731
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364251.925187
+        "timestamp": 1772388482.043082
       },
       {
-        "name": "update_note_status",
+        "name": "write_notes",
         "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
+          "title": "Milestone 4 — Exam Prep Speaking",
+          "note_type": "checklist_item"
         },
-        "result_status": "updated",
-        "duration_ms": 82.0,
-        "timestamp": 1772364252.293301
+        "result_status": "displayed",
+        "duration_ms": 48.2,
+        "timestamp": 1772388482.664063
       },
       {
-        "name": "update_note_status",
+        "name": "write_notes",
         "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
+          "title": "Milestone 5 — Final Review & Mock Test",
+          "note_type": "checklist_item"
         },
-        "result_status": "error",
+        "result_status": "displayed",
+        "duration_ms": 44.3,
+        "timestamp": 1772388483.036095
+      },
+      {
+        "name": "mark_plan_fallback",
+        "args": {
+          "reason": "Plan bootstrapped based on stated A2 goal (telc prep) and Menschen A2 resource context."
+        },
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364263.537908
+        "timestamp": 1772388483.261865
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364216570",
-          "status": "pending"
+          "reason": "Plan bootstrapped without specific resource text via general topic/goal context."
         },
-        "result_status": "updated",
-        "duration_ms": 49.9,
-        "timestamp": 1772364263.9070709
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364264.1809568
+        "timestamp": 1772388483.774776
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364216570",
-          "status": "in_progress"
+          "reason": "Plan bootstrapped without transcript context."
         },
-        "result_status": "updated",
-        "duration_ms": 69.8,
-        "timestamp": 1772364266.247883
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364266.4900749
+        "timestamp": 1772388484.301676
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364216570",
-          "status": "pending"
+          "reason": "Plan bootstrapped from session goal and topic context due to lack of transcript/resource text."
         },
-        "result_status": "updated",
-        "duration_ms": 51.7,
-        "timestamp": 1772364269.1582222
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364216570",
-          "status": "in_progress"
-        },
-        "result_status": "updated",
-        "duration_ms": 46.1,
-        "timestamp": 1772364270.0268679
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "done"
-        },
-        "result_status": "updated",
-        "duration_ms": 46.8,
-        "timestamp": 1772364274.01708
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364216570",
-          "status": "pending"
-        },
-        "result_status": "updated",
-        "duration_ms": 45.8,
-        "timestamp": 1772364274.333736
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "in_progress"
-        },
-        "result_status": "updated",
-        "duration_ms": 47.4,
-        "timestamp": 1772364277.7768939
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213139",
-          "status": "done"
-        },
-        "result_status": "updated",
-        "duration_ms": 43.6,
-        "timestamp": 1772364278.092133
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "in_progress"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364284.358457
+        "timestamp": 1772388484.865432
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
+          "reason": "Plan bootstrap required, no transcript available."
         },
-        "result_status": "updated",
-        "duration_ms": 49.1,
-        "timestamp": 1772364288.6031308
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364216570",
-          "status": "pending"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364288.724769
+        "timestamp": 1772388485.340689
       },
       {
-        "name": "update_note_status",
+        "name": "mark_plan_fallback",
         "args": {
-          "note_id": "note-1772364214330",
-          "status": "pending"
+          "reason": "Plan bootstrapped based on stated A2 goal (telc prep) and Menschen A2 resource context."
         },
-        "result_status": "updated",
-        "duration_ms": 50.1,
-        "timestamp": 1772364289.0748842
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364215280",
-          "status": "pending"
-        },
-        "result_status": "updated",
-        "duration_ms": 46.5,
-        "timestamp": 1772364289.3366652
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
-        },
-        "result_status": "updated",
-        "duration_ms": 50.0,
-        "timestamp": 1772364306.216558
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
-        },
-        "result_status": "error",
+        "result_status": "noop",
         "duration_ms": 0.0,
-        "timestamp": 1772364313.949121
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "done"
-        },
-        "result_status": "updated",
-        "duration_ms": 60.5,
-        "timestamp": 1772364329.781504
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364216570",
-          "status": "pending"
-        },
-        "result_status": "error",
-        "duration_ms": 0.0,
-        "timestamp": 1772364330.1295092
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "pending"
-        },
-        "result_status": "updated",
-        "duration_ms": 51.9,
-        "timestamp": 1772364342.141935
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "in_progress"
-        },
-        "result_status": "updated",
-        "duration_ms": 51.3,
-        "timestamp": 1772364353.528384
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
-        },
-        "result_status": "error",
-        "duration_ms": 0.0,
-        "timestamp": 1772364353.7964969
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "done"
-        },
-        "result_status": "updated",
-        "duration_ms": 52.3,
-        "timestamp": 1772364354.171699
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213139",
-          "status": "in_progress"
-        },
-        "result_status": "error",
-        "duration_ms": 0.0,
-        "timestamp": 1772364354.445709
-      },
-      {
-        "name": "update_note_status",
-        "args": {
-          "note_id": "note-1772364213985",
-          "status": "done"
-        },
-        "result_status": "error",
-        "duration_ms": 0.0,
-        "timestamp": 1772364358.0595682
+        "timestamp": 1772388499.531011
       }
     ],
-    "total_calls": 46,
+    "total_calls": 20,
     "unique_tools_used": [
-      "set_session_phase",
-      "switch_topic",
       "write_notes",
-      "update_note_status"
+      "set_session_phase",
+      "mark_plan_fallback"
     ]
   },
   "phases": {
@@ -1624,61 +1521,62 @@
       {
         "from": "greeting",
         "to": "tutoring",
-        "timestamp": 1772364166.8733041
-      },
-      {
-        "from": "tutoring",
-        "to": "capture",
-        "timestamp": 1772364211.667003
-      },
-      {
-        "from": "capture",
-        "to": "tutoring",
-        "timestamp": 1772364215.4012759
+        "timestamp": 1772388476.425451
       }
     ],
     "final_phase": "tutoring"
   },
   "whiteboard": {
-    "notes_created": 7,
-    "notes_duplicate_skipped": 2,
-    "status_updates": 22,
-    "clear_events": 1,
-    "notes_delivered": 7,
+    "notes_created": 11,
+    "notes_duplicate_skipped": 0,
+    "status_updates": 0,
+    "clear_events": 0,
+    "notes_delivered": 11,
     "delivery_latency_ms": [
-      464.0,
-      512.0,
-      466.4,
-      480.8,
-      476.7,
-      455.5,
-      527.2
+      241.3,
+      401.5,
+      423.1,
+      425.7,
+      460.3,
+      450.3,
+      483.5,
+      513.2,
+      504.5,
+      511.0,
+      495.8
     ],
     "sync_speaking_count": 0,
-    "sync_deadline_count": 7
+    "sync_deadline_count": 11
   },
   "interruptions": {
     "count": 0,
-    "stale_filtered": 1
+    "stale_filtered": 3
   },
   "turns": {
-    "count": 6,
+    "count": 13,
     "audio_chunks_per_turn": [
+      1,
       0,
-      50,
       0,
       0,
-      55,
-      29
+      0,
+      0,
+      0,
+      0,
+      0,
+      18,
+      24,
+      0,
+      31
     ]
   },
   "conversation": {
-    "awaiting_reply_prompts": 3,
+    "awaiting_reply_prompts": 4,
     "suspected_repetition_loops": 0
   },
   "idle": {
-    "checkin_1_count": 1,
-    "checkin_2_count": 1,
+    "checkin_1_count": 0,
+    "checkin_2_count": 0,
     "away_activated_count": 0,
     "away_resumed_count": 0
   },
@@ -1689,26 +1587,58 @@
   "transcripts": {
     "student": [
       {
-        "text": "Help me with the exercise number 6. Can you see it?",
-        "timestamp": 1772364209.686188
-      },
-      {
-        "text": "6 8",
-        "timestamp": 1772364245.1225688
+        "text": "Can you hear me?",
+        "timestamp": 1772388481.639435
       }
     ],
     "tutor": [
       {
-        "text": "Hallo Luis! Schön, dass du wieder da bist. Du hast dich super mit den deutschen Essensvokabeln geschlagen. Heute schauen wir uns JavaScript Debugging an. Hast du schon eine Aufgabe, die du mir zeigen möchtest?",
-        "timestamp": 1772364170.173345
+        "text": "Hallo Luis! Schön, dass du wieder da bist. Letztes Mal haben wir uns mit deutschen Essensvokabeln beschäftigt, richtig? Ich sehe, du möchtest dich jetzt auf die telc A2 Prüfung vorbereiten mit deinem Buch. Ich habe da mal einen Plan für uns aufgeschrieben, welche Aufgabe möchtest du zuerst machen?",
+        "timestamp": 1772388474.090467
       },
       {
-        "text": "OK, we're switching gears to German grammar! I see exercise 6c which asks you to fill in a table with verbs in the Präteritum tense, and also exercise 6b which is about writing questions. Which one would you like to start with?",
-        "timestamp": 1772364220.355456
+        "text": "Willkommen zurück, Luis! Schön, dass du wieder da bist. Letztes Mal haben wir uns mit deutschen Essensvokabeln beschäftigt, richtig? Ich sehe, ich habe dir einen Plan aufgestellt, um dich auf die telc A2 Prüfung vorzubereiten. Welchen Meilenstein sollen wir",
+        "timestamp": 1772388480.2598882
       },
       {
-        "text": "Great, we'll start with exercise 6b. Um,steigen ins Deutsche: Was ist die erste Frage, die du formulieren möchtest?",
-        "timestamp": 1772364247.911814
+        "text": "I've mapped out a full plan on the board for you! Which milestone should we start with?",
+        "timestamp": 1772388486.725497
+      },
+      {
+        "text": "Ich habe dir einen Plan aufgeschrieben, um dich auf die Prüfung vorzubereiten. Welchen Meilenstein möchtest du zuerst angehen?",
+        "timestamp": 1772388488.687104
+      },
+      {
+        "text": "Ich habe dir einen Plan aufgeschrieben, der dir helfen soll, dich auf die telc A2 Prüfung vorzubereiten. Welchen Meilenstein sollen wir zuerst in Angriff nehmen?",
+        "timestamp": 1772388491.1565068
+      },
+      {
+        "text": "Yes, I can hear you perfectly! I've mapped out a plan on the board for your telc A2 prep. Which milestone do you want to start with?",
+        "timestamp": 1772388493.431586
+      },
+      {
+        "text": "Yes, I can hear you! I've mapped out a plan for your German A2 goals on the board. Which milestone should we start with?",
+        "timestamp": 1772388495.4640572
+      },
+      {
+        "text": "Yes, I can hear you clearly! What's on your mind?",
+        "timestamp": 1772388496.618479
+      },
+      {
+        "text": "Yes, I can hear you! I've put a plan on the board for your telc A2 prep using your textbook. Which milestone do you want to start with?",
+        "timestamp": 1772388499.098992
+      },
+      {
+        "text": "Ja, ich kann dich gut hören, Luis! Ich habe dir einen Plan aufgeschrieben, um dich auf die telc A2 Prüfung vorzubereiten. Welchen Meilenstein sollen wir zuerst angehen?",
+        "timestamp": 1772388501.9380229
+      },
+      {
+        "text": "Yes, I can hear you perfectly! I've put a few milestones on the board to help you prepare for your telc A2 exam. Which one should we tackle first?",
+        "timestamp": 1772388504.341695
+      },
+      {
+        "text": "Yes, I can hear you just fine! I've mapped out a plan for us to tackle those telc goals. Which milestone looks good to you?",
+        "timestamp": 1772388506.521478
       }
     ]
   },
@@ -1730,11 +1660,19 @@
     "stop_sharing_count": 0,
     "switch_log": []
   },
+  "mastery": {
+    "verifications_completed": 0,
+    "premature_mastery_blocked": 0,
+    "step_failures": 0,
+    "verified_note_ids": [],
+    "blocked_note_ids": [],
+    "step_failure_details": []
+  },
   "errors": [],
   "manual": {},
   "prd_scorecard": {
     "version": "v1",
-    "generated_at": 1772364358.946327,
+    "generated_at": 1772388510.975256,
     "pocs": {
       "poc_00_onboarding": {
         "status": "partial",
@@ -1798,8 +1736,8 @@
             "id": "P02.proactive_trigger_count",
             "metric": "Proactive triggers with visual input",
             "target": ">=1",
-            "actual": 0,
-            "status": "fail",
+            "actual": null,
+            "status": "not_tested",
             "source": "proactive.poke_count + proactive.nudge_count",
             "notes": ""
           },
@@ -1807,7 +1745,7 @@
             "id": "P02.question_turn_ratio",
             "metric": "Question-ending turn ratio",
             "target": "35-50%",
-            "actual": 100.0,
+            "actual": 91.7,
             "status": "fail",
             "source": "transcripts.tutor",
             "notes": "Only meaningful for longer tutoring sessions."
@@ -1816,7 +1754,7 @@
             "id": "P02.question_streak_max",
             "metric": "Max consecutive question turns",
             "target": "<=2",
-            "actual": 3,
+            "actual": 10,
             "status": "fail",
             "source": "transcripts.tutor",
             "notes": ""
@@ -1833,42 +1771,15 @@
         ]
       },
       "poc_03_multilingual": {
-        "status": "fail",
+        "status": "not_tested",
         "checks": [
           {
             "id": "P03.language_purity_rate",
             "metric": "Language purity rate",
             "target": ">=98%",
-            "actual": 100.0,
-            "status": "pass",
-            "source": "language.latest_metric.purity_rate",
-            "notes": ""
-          },
-          {
-            "id": "P03.guided_bilingual_adherence",
-            "metric": "Guided bilingual adherence",
-            "target": ">=95%",
-            "actual": 100.0,
-            "status": "pass",
-            "source": "language.latest_metric.guided_adherence",
-            "notes": ""
-          },
-          {
-            "id": "P03.fallback_trigger_latency",
-            "metric": "Fallback trigger latency (turns)",
-            "target": "<=1 turn",
             "actual": null,
             "status": "not_tested",
-            "source": "language.latest_metric.fallback_latency_turns",
-            "notes": ""
-          },
-          {
-            "id": "P03.l2_distribution",
-            "metric": "L2 word ratio",
-            "target": ">=70%",
-            "actual": 0.0,
-            "status": "fail",
-            "source": "language.latest_metric.l2_ratio",
+            "source": "language.latest_metric.purity_rate",
             "notes": ""
           }
         ]
@@ -1880,7 +1791,7 @@
             "id": "P04.whiteboard_usage_rate",
             "metric": "Notes created",
             "target": ">=1 note/session",
-            "actual": 7,
+            "actual": 11,
             "status": "pass",
             "source": "whiteboard.notes_created",
             "notes": ""
@@ -1889,7 +1800,7 @@
             "id": "P04.note_delivery_latency_p95",
             "metric": "Whiteboard delivery latency p95",
             "target": "<=500ms",
-            "actual": 527.2,
+            "actual": 513.2,
             "status": "fail",
             "source": "whiteboard.delivery_latency_ms",
             "notes": ""
@@ -1898,7 +1809,7 @@
             "id": "P04.audio_continuity_proxy",
             "metric": "Audio continuity while using whiteboard",
             "target": "audio_out > 0 when notes created",
-            "actual": 134,
+            "actual": 74,
             "status": "pass",
             "source": "audio.chunks_out",
             "notes": ""
@@ -1970,14 +1881,14 @@
         ]
       },
       "poc_07_latency": {
-        "status": "fail",
+        "status": "pass",
         "checks": [
           {
             "id": "P07.response_start_avg",
             "metric": "Response start avg latency",
             "target": "<=500ms",
-            "actual": 631,
-            "status": "fail",
+            "actual": 41,
+            "status": "pass",
             "source": "latency.latest_report.metrics.response_start.avg",
             "notes": ""
           },
@@ -1985,8 +1896,8 @@
             "id": "P07.response_start_p95",
             "metric": "Response start p95 latency",
             "target": "<=800ms",
-            "actual": 1207,
-            "status": "fail",
+            "actual": 44,
+            "status": "pass",
             "source": "latency.latest_report.metrics.response_start.p95",
             "notes": ""
           },
@@ -2003,7 +1914,7 @@
             "id": "P07.turn_to_turn_p95",
             "metric": "Turn-to-turn p95 latency",
             "target": "<=2500ms",
-            "actual": 0,
+            "actual": 1105,
             "status": "pass",
             "source": "latency.latest_report.metrics.turn_to_turn.p95",
             "notes": ""
@@ -2012,7 +1923,7 @@
             "id": "P07.first_byte_p95",
             "metric": "First-byte p95 latency",
             "target": "<=5000ms",
-            "actual": 2137,
+            "actual": 1715,
             "status": "pass",
             "source": "latency.latest_report.metrics.first_byte.p95",
             "notes": ""
@@ -2104,7 +2015,7 @@
             "id": "P11.gentle_check_nag_limit",
             "metric": "Gentle check count",
             "target": "<=1",
-            "actual": 1,
+            "actual": 0,
             "status": "pass",
             "source": "idle.checkin_1_count",
             "notes": ""
@@ -2113,7 +2024,7 @@
             "id": "P11.options_check_nag_limit",
             "metric": "Options check count",
             "target": "<=1",
-            "actual": 1,
+            "actual": 0,
             "status": "pass",
             "source": "idle.checkin_2_count",
             "notes": ""
@@ -2144,14 +2055,14 @@
         ]
       },
       "poc_13_memory_management": {
-        "status": "partial",
+        "status": "pass",
         "checks": [
           {
             "id": "P13.memory_recall_applied",
             "metric": "Memory recall applied at session start",
             "target": ">=1 when prior memory exists",
-            "actual": null,
-            "status": "not_tested",
+            "actual": 1,
+            "status": "pass",
             "source": "memory.recalls_applied",
             "notes": ""
           },
@@ -2159,7 +2070,7 @@
             "id": "P13.checkpoints_saved",
             "metric": "Checkpoint summaries saved",
             "target": ">=1 in long session",
-            "actual": 3,
+            "actual": 2,
             "status": "pass",
             "source": "memory.checkpoints_saved",
             "notes": ""
@@ -2168,7 +2079,7 @@
             "id": "P13.cells_saved",
             "metric": "Typed memory cells persisted",
             "target": ">=1 when checkpoints saved",
-            "actual": 14,
+            "actual": 10,
             "status": "pass",
             "source": "memory.cells_saved",
             "notes": ""
@@ -2193,6 +2104,38 @@
           }
         ]
       },
+      "poc_14_mastery_verification": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P14.mastery_verifications",
+            "metric": "3-step mastery verifications completed",
+            "target": ">=1 when exercises mastered",
+            "actual": null,
+            "status": "not_tested",
+            "source": "mastery.verifications_completed",
+            "notes": ""
+          },
+          {
+            "id": "P14.premature_mastery_blocked",
+            "metric": "Premature mastery attempts blocked",
+            "target": "tracked (informational)",
+            "actual": 0,
+            "status": "pass",
+            "source": "mastery.premature_mastery_blocked",
+            "notes": "Counts times tutor tried to mark mastered without verification."
+          },
+          {
+            "id": "P14.mastery_protocol_active",
+            "metric": "Mastery protocol tool called",
+            "target": ">=1 when tutoring phase active",
+            "actual": null,
+            "status": "not_tested",
+            "source": "mastery.*",
+            "notes": "At least one mastery-related tool call observed."
+          }
+        ]
+      },
       "poc_99_hero_flow_rehearsal": {
         "status": "fail",
         "checks": [
@@ -2209,7 +2152,7 @@
             "id": "P99.whiteboard_checkpoint",
             "metric": "Checklist: whiteboard note",
             "target": ">=1 note",
-            "actual": 7,
+            "actual": 11,
             "status": "pass",
             "source": "whiteboard.notes_created",
             "notes": ""
@@ -2236,7 +2179,7 @@
             "id": "P99.action_moment_checkpoint",
             "metric": "Checklist: action moment (3+ exchanges)",
             "target": "turns >= 3",
-            "actual": 6,
+            "actual": 13,
             "status": "pass",
             "source": "turns.count",
             "notes": ""
@@ -2256,43 +2199,43 @@
       }
     },
     "summary": {
-      "checks_passed": 21,
-      "checks_failed": 10,
-      "checks_not_tested": 18,
+      "checks_passed": 23,
+      "checks_failed": 6,
+      "checks_not_tested": 20,
       "checks_total": 49,
       "auto_checks_total": 46,
-      "auto_checks_passed": 21,
-      "auto_checks_failed": 10,
-      "auto_checks_not_tested": 15,
-      "auto_pass_rate_percent": 45.7,
+      "auto_checks_passed": 23,
+      "auto_checks_failed": 6,
+      "auto_checks_not_tested": 17,
+      "auto_pass_rate_percent": 50.0,
       "poc_status_counts": {
-        "pass": 0,
+        "pass": 2,
         "partial": 5,
-        "fail": 5,
-        "not_tested": 5
+        "fail": 3,
+        "not_tested": 6
       }
     },
     "derived_metrics": {
-      "student_turns": 2,
-      "tutor_turns": 6,
-      "question_turns": 3,
-      "question_turn_ratio_percent": 100.0,
-      "max_question_streak": 3,
+      "student_turns": 1,
+      "tutor_turns": 13,
+      "question_turns": 11,
+      "question_turn_ratio_percent": 91.7,
+      "max_question_streak": 10,
       "student_heard_rate_percent": 100.0,
       "socratic_compliance_percent": 100.0,
-      "whiteboard_delivery_p95_ms": 527.2,
+      "whiteboard_delivery_p95_ms": 513.2,
       "proactive_trigger_total": 0,
       "compression_events": 0,
       "compression_last_token_estimate": 0,
-      "memory_checkpoints_saved": 3,
-      "memory_cells_saved": 14,
-      "memory_avg_cells_per_checkpoint": 4.67,
-      "memory_checkpoint_attempts": 8,
+      "memory_checkpoints_saved": 2,
+      "memory_cells_saved": 10,
+      "memory_avg_cells_per_checkpoint": 5.0,
+      "memory_checkpoint_attempts": 14,
       "memory_checkpoint_failed": 0,
-      "memory_checkpoint_success_rate_percent": 37.5,
-      "memory_recalls_applied": 0,
+      "memory_checkpoint_success_rate_percent": 14.3,
+      "memory_recalls_applied": 1,
       "memory_recall_checks": 1,
-      "memory_recall_avg_tokens": 0.0,
+      "memory_recall_avg_tokens": 345.0,
       "session_resume_attempts": 0,
       "session_resume_successes": 0,
       "session_resume_success_rate_percent": null,

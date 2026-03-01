@@ -68,21 +68,6 @@ Use **Backend diagnostics** panel:
 
 ---
 
-## Step 6 — Multilingual (6.1–6.4 unfilled)
-
-Use **Backend diagnostics** panel:
-- `Language` card for purity/turn stats
-- `Recent backend events` for `language_event`
-
-| Test ID | Scenario | Expected | Result (PASS/FAIL) | Evidence |
-|---|---|---|---|---|
-| 6.1 | Speak Portuguese | Tutor responds in Portuguese |  |  |
-| 6.2 | Speak German | Tutor responds in German |  |  |
-| 6.3 | Unsupported language | Tutor redirects in English |  |  |
-| 6.4 | Switch language mid-session | Transition sentence then new language |  |  |
-
----
-
 ## Step 7 — Latency + Resilience (7.1–7.3 unfilled)
 
 Use **Backend diagnostics** panel:

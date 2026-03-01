@@ -4,7 +4,15 @@ from unittest.mock import patch
 
 import pytest
 
-from agent import write_notes, update_note_status, switch_topic, flag_drift
+from agent import (
+    flag_drift,
+    mark_plan_fallback,
+    set_session_phase,
+    switch_topic,
+    update_note_status,
+    verify_mastery_step,
+    write_notes,
+)
 from modules.whiteboard import normalize_title
 
 
@@ -144,12 +152,20 @@ class TestUpdateNoteStatus:
 
     @pytest.mark.asyncio
     async def test_all_valid_statuses(self, tool_context, wb_queue):
-        for status in ("pending", "in_progress", "done", "mastered", "struggling"):
+        for status in ("pending", "in_progress", "done", "struggling"):
             ctx = type(tool_context)(state=dict(tool_context.state))
             p_fs, p_rpt, p_wbq = _patch_infra(asyncio.Queue())
             with p_fs, p_rpt, p_wbq:
                 result = await update_note_status("note-1", status, ctx)
             assert result["result"] == "updated", f"Failed for status '{status}'"
+
+    @pytest.mark.asyncio
+    async def test_mastered_requires_verification(self, tool_context, wb_queue):
+        """'mastered' status is blocked without mastery verification."""
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await update_note_status("note-1", "mastered", tool_context)
+        assert result["result"] == "mastery_not_verified"
 
     @pytest.mark.asyncio
     async def test_redundant_same_status_returns_noop(self, tool_context, wb_queue):
@@ -344,3 +360,252 @@ class TestFlagDrift:
 
         assert result["result"] == "flagged"
         assert result["reason"] == ""
+
+
+class TestPlanBootstrapGuard:
+    def test_blocks_tutoring_before_six_milestones(self, tool_context):
+        tool_context.state.update({
+            "session_phase": "greeting",
+            "plan_bootstrap_required": True,
+            "plan_bootstrap_completed": False,
+            "plan_milestone_min": 6,
+            "plan_milestone_count": 2,
+            "plan_bootstrap_source": "session_setup",
+            "resource_transcript_context": "Transcript text",
+            "resource_transcript_available": True,
+        })
+
+        result = set_session_phase("tutoring", tool_context)
+
+        assert result["result"] == "error"
+        assert "Cannot start tutoring yet" in result["detail"]
+
+    @pytest.mark.asyncio
+    async def test_unblocks_after_six_milestones(self, tool_context, wb_queue):
+        tool_context.state.update({
+            "session_phase": "greeting",
+            "plan_bootstrap_required": True,
+            "plan_bootstrap_completed": False,
+            "plan_milestone_min": 6,
+            "plan_milestone_count": 0,
+            "plan_bootstrap_source": "youtube_transcript",
+            "resource_transcript_context": "Transcript text",
+            "resource_transcript_available": True,
+        })
+
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            for idx in range(1, 7):
+                result = await write_notes(
+                    title=f"Milestone {idx} - Step {idx}",
+                    content=f"Do step {idx}",
+                    note_type="checklist_item",
+                    status="pending",
+                    tool_context=tool_context,
+                )
+                assert result["result"] == "displayed"
+
+        assert tool_context.state["plan_milestone_count"] >= 6
+        assert tool_context.state["plan_bootstrap_completed"] is True
+        assert tool_context.state["plan_bootstrap_required"] is False
+
+        phase_result = set_session_phase("tutoring", tool_context)
+        assert phase_result["result"] == "transitioned"
+        assert phase_result["current_phase"] == "tutoring"
+
+    @pytest.mark.asyncio
+    async def test_transcript_unavailable_fallback_unblocks_tutoring(self, tool_context, wb_queue):
+        tool_context.state.update({
+            "session_phase": "greeting",
+            "plan_bootstrap_required": True,
+            "plan_bootstrap_completed": False,
+            "plan_milestone_min": 6,
+            "plan_milestone_count": 0,
+            "plan_bootstrap_source": "transcript_unavailable",
+            "resource_transcript_context": "",
+            "resource_transcript_available": False,
+        })
+
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await mark_plan_fallback("transcript fetch failed", tool_context)
+
+        assert result["result"] == "generated"
+        assert tool_context.state["plan_fallback_generated"] is True
+        assert tool_context.state["plan_bootstrap_required"] is False
+        assert tool_context.state["plan_milestone_count"] >= 6
+
+        queued = []
+        while not wb_queue.empty():
+            queued.append(wb_queue.get_nowait())
+        titles = [item.get("title") for item in queued if "title" in item]
+        assert "Fallback plan from context" in titles
+        milestone_titles = [title for title in titles if str(title).startswith("Milestone ")]
+        assert len(milestone_titles) >= 6
+
+        phase_result = set_session_phase("tutoring", tool_context)
+        assert phase_result["result"] == "transitioned"
+
+    def test_no_transcript_still_requires_milestones_for_session_setup(self, tool_context):
+        tool_context.state.update({
+            "session_phase": "greeting",
+            "plan_bootstrap_required": True,
+            "plan_bootstrap_completed": False,
+            "plan_milestone_min": 6,
+            "plan_milestone_count": 0,
+            "plan_bootstrap_source": "session_setup",
+            "resource_transcript_context": "",
+            "resource_transcript_available": False,
+        })
+
+        result = set_session_phase("tutoring", tool_context)
+
+        assert result["result"] == "error"
+        assert "Add milestone notes first" in result["detail"]
+        assert "mark_plan_fallback" in result["detail"]
+
+    @pytest.mark.asyncio
+    async def test_mark_plan_fallback_allowed_for_non_transcript_sessions(self, tool_context, wb_queue):
+        tool_context.state.update({
+            "session_phase": "greeting",
+            "plan_bootstrap_required": True,
+            "plan_bootstrap_completed": False,
+            "plan_milestone_min": 6,
+            "plan_milestone_count": 0,
+            "plan_bootstrap_source": "session_setup",
+            "resource_transcript_context": "",
+            "resource_transcript_available": False,
+        })
+
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await mark_plan_fallback("not needed", tool_context)
+
+        assert result["result"] == "generated"
+        assert tool_context.state["plan_fallback_generated"] is True
+        assert tool_context.state["plan_bootstrap_required"] is False
+
+
+# -----------------------------------------------------------------------
+# verify_mastery_step
+# -----------------------------------------------------------------------
+class TestVerifyMasteryStep:
+    def test_solve_step_passed(self, tool_context):
+        result = verify_mastery_step("note-1", "solve", True, tool_context)
+
+        assert result["result"] == "step_passed"
+        assert result["next_step"] == "explain"
+        assert tool_context.state["mastery_step_note-1"] == "explain"
+
+    def test_explain_step_passed(self, tool_context):
+        tool_context.state["mastery_step_note-1"] = "explain"
+        result = verify_mastery_step("note-1", "explain", True, tool_context)
+
+        assert result["result"] == "step_passed"
+        assert result["next_step"] == "transfer"
+        assert tool_context.state["mastery_step_note-1"] == "transfer"
+
+    def test_transfer_step_passed_yields_verified(self, tool_context):
+        tool_context.state["mastery_step_note-1"] = "transfer"
+        result = verify_mastery_step("note-1", "transfer", True, tool_context)
+
+        assert result["result"] == "mastery_verified"
+        assert tool_context.state["mastery_step_note-1"] == "verified"
+
+    def test_full_protocol_solve_explain_transfer(self, tool_context):
+        r1 = verify_mastery_step("note-1", "solve", True, tool_context)
+        assert r1["result"] == "step_passed"
+        assert r1["next_step"] == "explain"
+
+        r2 = verify_mastery_step("note-1", "explain", True, tool_context)
+        assert r2["result"] == "step_passed"
+        assert r2["next_step"] == "transfer"
+
+        r3 = verify_mastery_step("note-1", "transfer", True, tool_context)
+        assert r3["result"] == "mastery_verified"
+        assert tool_context.state["mastery_step_note-1"] == "verified"
+
+    def test_failed_step_resets_to_solve(self, tool_context):
+        tool_context.state["mastery_step_note-1"] = "explain"
+        result = verify_mastery_step("note-1", "explain", False, tool_context)
+
+        assert result["result"] == "step_failed"
+        assert tool_context.state["mastery_step_note-1"] == "solve"
+
+    def test_transfer_failure_resets_to_solve(self, tool_context):
+        tool_context.state["mastery_step_note-1"] = "transfer"
+        result = verify_mastery_step("note-1", "transfer", False, tool_context)
+
+        assert result["result"] == "step_failed"
+        assert tool_context.state["mastery_step_note-1"] == "solve"
+
+    def test_wrong_step_order_rejected(self, tool_context):
+        # Default step is "solve", trying "explain" first should fail
+        result = verify_mastery_step("note-1", "explain", True, tool_context)
+
+        assert result["result"] == "wrong_step"
+        assert result["current_step"] == "solve"
+
+    def test_invalid_step_rejected(self, tool_context):
+        result = verify_mastery_step("note-1", "bogus", True, tool_context)
+
+        assert result["result"] == "error"
+
+    def test_independent_notes_tracked_separately(self, tool_context):
+        verify_mastery_step("note-1", "solve", True, tool_context)
+        verify_mastery_step("note-2", "solve", True, tool_context)
+
+        assert tool_context.state["mastery_step_note-1"] == "explain"
+        assert tool_context.state["mastery_step_note-2"] == "explain"
+
+
+# -----------------------------------------------------------------------
+# update_note_status mastery guard
+# -----------------------------------------------------------------------
+class TestMasteryGuard:
+    @pytest.mark.asyncio
+    async def test_mastered_blocked_without_verification(self, tool_context, wb_queue):
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await update_note_status("note-1", "mastered", tool_context)
+
+        assert result["result"] == "mastery_not_verified"
+        assert "verify_mastery_step" in result["detail"]
+
+    @pytest.mark.asyncio
+    async def test_mastered_allowed_after_full_verification(self, tool_context, wb_queue):
+        # Complete full protocol
+        verify_mastery_step("note-1", "solve", True, tool_context)
+        verify_mastery_step("note-1", "explain", True, tool_context)
+        verify_mastery_step("note-1", "transfer", True, tool_context)
+        assert tool_context.state["mastery_step_note-1"] == "verified"
+
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await update_note_status("note-1", "mastered", tool_context)
+
+        assert result["result"] == "updated"
+        assert result["status"] == "mastered"
+
+    @pytest.mark.asyncio
+    async def test_done_status_not_blocked(self, tool_context, wb_queue):
+        """'done' status should not require mastery verification."""
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await update_note_status("note-1", "done", tool_context)
+
+        assert result["result"] == "updated"
+        assert result["status"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_mastered_blocked_at_explain_step(self, tool_context, wb_queue):
+        """Trying to mark mastered when only at 'explain' step should fail."""
+        verify_mastery_step("note-1", "solve", True, tool_context)
+        assert tool_context.state["mastery_step_note-1"] == "explain"
+
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await update_note_status("note-1", "mastered", tool_context)
+
+        assert result["result"] == "mastery_not_verified"
+        assert result["current_mastery_step"] == "explain"

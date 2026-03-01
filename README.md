@@ -1,6 +1,6 @@
 # SeeMe Tutor
 
-**The AI tutor that sees your homework, hears your confusion, and speaks your language.**
+**The AI Study Companion That Sees Your Work, Hears Your Questions, and Guides You to Mastery**
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Firebase%20Hosting-orange?style=flat-square)](https://seeme-tutor.web.app)
 [![Cloud Run](https://img.shields.io/badge/Backend-Cloud%20Run-blue?style=flat-square)](https://console.cloud.google.com/run)
@@ -10,7 +10,7 @@
 
 ## What Is SeeMe Tutor?
 
-SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gemini 2.5 Flash Live API**. It sees your homework through the camera, hears your questions through the microphone, and guides you — in your own language — using the Socratic method. It never just gives you the answer.
+SeeMe Tutor is a real-time multimodal AI study companion built on the **Gemini 2.5 Flash Live API**. Pick your profile, point your camera at your work, talk naturally, and get step-by-step study guidance in your language — with a tutor that already knows your topic and verifies you truly understand before moving on.
 
 **Key differentiators:**
 
@@ -18,32 +18,35 @@ SeeMe Tutor is a real-time multimodal AI tutoring application built on the **Gem
 - **Live Vision** — Continuous camera feed lets the tutor see what you're working on in real time, not just a snapshot
 - **Natural Voice** — Full-duplex audio with sub-500ms response latency; interrupt naturally and the tutor adapts immediately
 - **Socratic Method** — Guides students to discover answers themselves; never gives the solution directly
-- **Multilingual** — Auto-detects Portuguese, German, and English; switches mid-session without configuration
+- **Mastery Verification** — 3-step protocol (solve, explain, transfer) ensures real understanding before marking anything as mastered
+- **Topic Context** — Pre-loaded domain knowledge per topic via Google Search; the tutor starts knowledgeable about your specific material
+- **Multilingual** — Auto-detects Portuguese, German, French, and English; responds in whatever language the student speaks
 - **Emotional Adaptation** — Detects frustration or confidence in the student's voice and adjusts pace and tone accordingly
-- **Silence Handling** — Checks in after pauses ("Still working on it? Take your time") without being pushy
+- **3 Demo Profiles** — Luis (German A2), Sofia (Grade 4 Math/French), Ana (University Chemistry) — same app, different subjects, different languages
 - **Privacy by Design** — Consent screen before session start, anonymized session data, voice-only option (camera toggle), and transparent data handling
-- **Proactive Tool Calling** — Uses live tool execution to fetch definitions and formulas without breaking the student's flow
 
 ---
 
-## Judge Quick Validation (What Must Be Obvious in 4 Minutes)
+## Quick Start (for Judges)
 
-These are the three non-negotiable proof moments for the hackathon demo:
+1. Open the app: [https://seeme-tutor.web.app](https://seeme-tutor.web.app)
+2. Pick a student profile (3 pre-loaded: Luis/German, Sofia/Math, Ana/Chemistry)
+3. Allow microphone and camera when prompted
+4. Start talking — ask about the current topic, show exercises on camera, or just chat
+5. The tutor knows the study context and will guide you through exercises
+6. Try the mastery check: solve an exercise, then see if the tutor asks you to explain and transfer
 
-1. **Proactive observation:** Tutor catches a visible mistake without being asked.
-2. **Interruption handling:** Student says "wait" mid-response and tutor stops immediately.
-3. **Multilingual pedagogy:** Tutor explains in one language and practices in another.
-
-If any of these are missing, scoring potential drops significantly even if the stack is technically strong.
+**Test credentials:** No login required. Just pick a profile and start.
 
 ---
 
-## Current Documentation
+## Five Key Moments (What Must Be Obvious in the Demo)
 
-- Product requirements: `SeeMeTutor_PRD.md`
-- Execution backlog: `epics_todo.md`
-- Delivery timeline: `TIMELINE.md`
-- Low-priority backlog: `extra_miles.md`
+1. **Proactive vision:** Tutor catches a visible mistake without being asked.
+2. **Affective/Emotional:** Tutor hears frustration (a sigh, a pause), shifts tone, and de-escalates.
+3. **Interruption handling:** Student interrupts mid-response; tutor stops immediately and re-approaches.
+4. **Multilingual:** Same app, three profiles, three languages (DE, PT, FR) — tutor auto-detects and responds naturally.
+5. **Mastery verification:** Tutor doesn't just check answers — asks the student to EXPLAIN why their answer works, then gives a TRANSFER problem. Only then is it marked mastered.
 
 ---
 
@@ -63,7 +66,7 @@ flowchart TD
     end
 
     subgraph Google["Google AI"]
-        GEMINI["Gemini 2.5 Flash Live API\ngemini-2.5-flash-native-audio-preview-12-2025"]
+        GEMINI["Gemini 2.5 Flash Live API\ngemini-live-2.5-flash-native-audio"]
     end
 
     subgraph GCP["GCP Supporting Services"]
@@ -211,16 +214,23 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 ```
 seeme-tutor/
 ├── backend/
-│   ├── main.py           # FastAPI app + WebSocket endpoint
-│   ├── gemini_live.py    # Gemini Live API session management
-│   ├── requirements.txt  # Python dependencies
-│   └── Dockerfile        # Container image for Cloud Run
+│   ├── main.py                  # FastAPI app + WebSocket + ADK Runner
+│   ├── agent.py                 # ADK Agent with Socratic tools + system prompt
+│   ├── seed_demo_profiles.py    # Seed 3 demo profiles into Firestore
+│   ├── test_report.py           # Session metrics + PRD scorecard
+│   ├── modules/
+│   │   ├── language.py          # Language detection (auto mode)
+│   │   ├── proactive.py         # Proactive vision observation
+│   │   ├── screen_share.py      # Screen share toggle
+│   │   ├── whiteboard.py        # Whiteboard note normalization
+│   │   └── resource_ingestion.py # YouTube transcript ingestion
+│   ├── tests/                   # Pytest test suite
+│   ├── requirements.txt
+│   └── Dockerfile
 ├── frontend/
-│   └── index.html        # PWA: mic capture, camera, audio playback
-├── infrastructure/
-│   └── gcp_services.py   # Demonstrates GCP service usage for judges
-├── deploy.sh             # One-command deploy to Cloud Run + Firebase
-├── .env.example          # Environment variable template
+│   └── index.html               # PWA: mic, camera, whiteboard, profile picker
+├── deploy.sh                    # One-command deploy to Cloud Run + Firebase
+├── .env.example
 └── README.md
 ```
 
@@ -261,7 +271,8 @@ SeeMe is a patient, encouraging tutor with a calm and warm voice. Its pedagogica
 - **Proactive observation** — Actively monitors the camera feed and comments without being asked. Catches mistakes in real time ("I see something in that second line — want to take another look?"), congratulates completed steps, and guides next actions — like having a tutor looking over your shoulder.
 - **Visual grounding** — References what it sees via the camera: "I can see you've written 3x on the left side — what would you need to do to isolate x?"
 - **Silence handling** — When a student goes quiet, checks in after a natural pause: "Still working on it? Take your time." Stays present without being pushy.
-- **Multilingual** — Start speaking Portuguese, it responds in Portuguese. Switch to English mid-sentence, it follows. German works too.
+- **Multilingual** — Start speaking Portuguese, it responds in Portuguese. Switch to German or French, it follows naturally.
+- **Mastery verification** — Before marking any exercise as mastered, the tutor runs a 3-step protocol: solve correctly, explain why it works, then solve a transfer problem. Real understanding, not checkbox completion.
 - **Natural interruptions** — Because Gemini Live API is full-duplex, students can interrupt mid-response and SeeMe will stop, acknowledge, and re-approach — just like a real tutor would.
 
 ---
@@ -324,7 +335,8 @@ After deployment:
 | **Google ADK** | Agent Development Kit orchestrates the streaming session, routes tool calls, and manages state |
 | **Cloud Run** | Serverless hosting for the FastAPI WebSocket backend; auto-scales to zero when idle, scales up on demand |
 | **Firebase Hosting** | Hosts the PWA frontend on a global CDN; serves over HTTPS (required for camera/mic browser APIs) |
-| **Firestore** | Stores session metadata (start time, duration, language detected, end reason) for analytics |
+| **Firestore** | Stores student profiles, learning tracks, topics, session metadata, and progress; enables session resumption and cross-session memory |
+| **Google Search** | Pre-loads domain knowledge per study topic via ADK tool; tutor starts sessions already knowledgeable about the student's material |
 | **Secret Manager** | Stores secrets like `DEMO_ACCESS_CODE` securely; Cloud Run mounts the secret at runtime via `--set-secrets` binding |
 | **Cloud Build** | Builds the Docker container image from source on each deploy; no local Docker daemon required |
 | **Artifact Registry** | Stores built container images; used as the image source for Cloud Run deployments |
@@ -364,7 +376,7 @@ SeeMe Tutor was built for the **Gemini Live Agent Challenge** hosted by Google.
 
 **Technology stack:** 100% Google and GCP.
 
-- AI: Gemini 2.5 Flash Live API (`gemini-2.5-flash-native-audio-preview-12-2025`) via the `google-genai` Python SDK
+- AI: Gemini 2.5 Flash Live API (`gemini-live-2.5-flash-native-audio`) via the `google-genai` Python SDK
 - Agent Framework: Google Agent Development Kit (ADK) via `google-adk`
 - Pedagogy: [LearnLM](https://cloud.google.com/solutions/learnlm)-informed system instructions aligned with Google's learning science research
 - Backend: FastAPI on Cloud Run
@@ -378,9 +390,9 @@ No third-party AI APIs are used. The entire intelligence layer runs through Goog
 
 | Criterion (Weight) | Evidence | Where to Find |
 |---------------------|----------|---------------|
-| **Innovation & Multimodal UX (40%)** | Proactive camera observation, natural interruption handling, trilingual switching (PT/DE/EN), visual grounding, emotional adaptation | Demo video + live test |
-| **Technical Implementation (30%)** | Gemini 2.5 Flash Live API + ADK + Cloud Run + Firestore + Secret Manager + automated deploy | `backend/`, `deploy.sh`, `infrastructure/gcp_services.py` |
-| **Demo & Presentation (30%)** | Real family use case, 3 languages, real homework, clear architecture diagram | Demo video |
+| **Innovation & Multimodal UX (40%)** | Proactive camera observation, natural interruption handling, multilingual switching (PT/DE/FR/EN), visual grounding, emotional adaptation, 3-step mastery verification, topic context via Google Search | Demo video + live test |
+| **Technical Implementation (30%)** | Gemini 2.5 Flash Live API + ADK + Cloud Run + Firestore + Secret Manager + Google Search + automated deploy | `backend/`, `deploy.sh` |
+| **Demo & Presentation (30%)** | Real family use case, 3 profiles, 3 subjects, 3 languages, mastery verification protocol, clear architecture diagram | Demo video |
 | **Bonus: Published content (+0.6)** | Blog post | _TBD — link will be added_ |
 | **Bonus: Automated deploy (+0.2)** | One-command deploy script | [`deploy.sh`](deploy.sh) |
 | **Bonus: GDG profile (+0.2)** | Google Developer Group profile | _TBD — link will be added_ |

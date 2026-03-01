@@ -3,7 +3,6 @@
 Source PRDs reviewed:
 - `pocs/01_interruption/prd.md`
 - `pocs/02_proactive_vision/prd.md`
-- `pocs/03_multilingual/prd.md`
 - `pocs/04_whiteboard_sync/prd.md`
 - `pocs/05_search_grounding/prd.md`
 - `pocs/06_session_resilience/prd.md`
@@ -21,7 +20,7 @@ Source PRDs reviewed:
 
 Every test session now writes a JSON with:
 
-1. Raw runtime metrics (audio/video/tools/latency/language/guardrails/etc.)
+1. Raw runtime metrics (audio/video/tools/latency/guardrails/etc.)
 2. Per-POC checks (`pass` / `fail` / `not_tested`)
 3. Unified product summary (`auto_pass_rate_percent`, POC status counts)
 
@@ -36,7 +35,6 @@ This is generated in `backend/test_report.py` under:
 When a session ends, the report in `backend/test_results/*.json` includes:
 
 - `latency.events`, `latency.latest_report`, `latency.reports`
-- `language.events`, `language.latest_metric`
 - `resilience.stream_retry_attempts|successes|failures`
 - `whiteboard.delivery_latency_ms`, sync mode counters
 - `guardrails.prompt_injections`
@@ -49,7 +47,6 @@ When a session ends, the report in `backend/test_results/*.json` includes:
 | `poc_00_onboarding` | context injection proxy (`connection.backlog_context_sent`) |
 | `poc_01_interruption` | interruption p95 latency, student-heard proxy, interruption observed |
 | `poc_02_proactive_vision` | proactive trigger count, question ratio, max question streak |
-| `poc_03_multilingual` | language purity, guided adherence, fallback latency, L2 ratio |
 | `poc_04_whiteboard_sync` | notes created, whiteboard delivery p95, audio continuity proxy |
 | `poc_05_search_grounding` | grounding events, citation render rate, query logging |
 | `poc_06_session_resilience` | reconnect success rate, retry cap |
@@ -74,7 +71,7 @@ Target for hackathon rehearsal runs:
 
 1. `auto_pass_rate_percent >= 85`
 2. `poc_99_hero_flow_rehearsal.checklist_completed == 6`
-3. No `fail` in POCs 01, 02, 03, 04, 05, 07, 09, 10
+3. No `fail` in POCs 01, 02, 04, 05, 07, 09, 10
 
 ## Notes
 

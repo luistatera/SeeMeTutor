@@ -85,10 +85,17 @@ def is_likely_educational_search(text: str, runtime_state: dict[str, Any]) -> bo
         return True
     topic_title = str(runtime_state.get("topic_title") or "")
     track_title = str(runtime_state.get("track_title") or "")
+    context_terms = runtime_state.get("search_context_terms", [])
     if topic_title and topic_title.lower() in candidate.lower():
         return True
     if track_title and track_title.lower() in candidate.lower():
         return True
+    if isinstance(context_terms, list):
+        lowered = candidate.lower()
+        for term in context_terms:
+            token = str(term or "").strip().lower()
+            if len(token) >= 3 and token in lowered:
+                return True
     return False
 
 

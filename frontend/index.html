@@ -1112,6 +1112,8 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.25s;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .modal-backdrop.visible {
@@ -1331,6 +1333,11 @@
       background: var(--bg-card-hover);
     }
 
+    .profile-card.selected {
+      border-color: var(--blue);
+      background: rgba(66, 133, 244, 0.12);
+    }
+
     .profile-name {
       font-size: 14px;
       font-weight: 700;
@@ -1362,10 +1369,107 @@
       color: #f8a7a1;
     }
 
+    .profile-editor {
+      margin-top: 8px;
+      text-align: left;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      width: 100%;
+    }
+
+    .profile-editor h3 {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin: 8px 0;
+    }
+
+    .session-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin-top: 8px;
+      max-height: 34vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 2px;
+    }
+
+    .session-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 10px 12px;
+    }
+
+    .session-card-main {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      padding: 0;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .session-delete-btn {
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .session-delete-btn:hover {
+      background: rgba(234, 67, 53, 0.18);
+      border-color: rgba(234, 67, 53, 0.5);
+      color: #f8a7a1;
+    }
+
+    .session-card.selected {
+      border-color: var(--blue);
+      background: rgba(66, 133, 244, 0.12);
+    }
+
+    .session-card-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .session-card-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
     .prefs-modal {
       max-width: 420px;
       text-align: left;
       padding: 24px 20px;
+    }
+
+    #profile-modal {
+      align-items: flex-start;
+    }
+
+    #profile-modal .modal {
+      max-width: 460px;
+      max-height: calc(100vh - 48px);
+      max-height: calc(100dvh - 48px);
+      overflow-y: auto;
+      margin: 24px auto;
+      text-align: left;
     }
 
     .prefs-modal h2 {
@@ -1479,7 +1583,14 @@
      PROFILE SELECTOR MODAL
 ===================================================================== -->
   <div class="modal-backdrop" id="profile-modal">
-    <div class="modal">
+    <div class="modal" style="position:relative;">
+      <button id="profile-modal-close-btn" style="
+        position:absolute; top:12px; right:12px; background:none; border:none;
+        color:var(--text-secondary); cursor:pointer; padding:4px; line-height:1;
+        font-size:22px; border-radius:6px; width:32px; height:32px;
+        display:flex; align-items:center; justify-content:center;
+        transition: background 0.15s, color 0.15s;
+      " aria-label="Close">&times;</button>
       <div class="modal-icon" style="background: rgba(66,133,244,0.12); border-color: rgba(66,133,244,0.3);">
         <svg viewBox="0 0 24 24" style="stroke: var(--blue);">
           <circle cx="12" cy="8" r="3.2" />
@@ -1487,8 +1598,62 @@
         </svg>
       </div>
       <h2>Choose student profile</h2>
-      <p>Select who is studying now so SeeMe can load the correct backlog and last checkpoint.</p>
+      <p>Select profile, add learning context, then choose or create a session.</p>
       <div class="profile-list" id="profile-list"></div>
+      <div class="profile-editor" id="profile-editor" style="display:none;">
+        <h3>Learner context</h3>
+        <div class="preferences-form">
+          <div class="preference-field">
+            <label for="profile-context-learner-identity">Who are you?</label>
+            <input class="preference-select" id="profile-context-learner-identity"
+              placeholder="e.g., Luis, Master's student" />
+          </div>
+          <div class="preference-field">
+            <label for="profile-context-study-subject">What are you studying?</label>
+            <input class="preference-select" id="profile-context-study-subject"
+              placeholder="e.g., German A2, Organic Chemistry, Calculus I" />
+          </div>
+          <div class="preference-field">
+            <label for="profile-context-class-name">Class / Course</label>
+            <input class="preference-select" id="profile-context-class-name"
+              placeholder="e.g., Menschen A2.1 Kursbuch" />
+          </div>
+          <div class="preference-field">
+            <label for="profile-context-institution-name">School / University</label>
+            <input class="preference-select" id="profile-context-institution-name"
+              placeholder="e.g., Goethe Institut, TU Berlin" />
+          </div>
+          <div class="preference-field">
+            <label for="profile-context-study-context">Study context</label>
+            <textarea class="preference-select" id="profile-context-study-context" rows="2"
+              placeholder="Current chapter, homework type, upcoming exam, constraints"></textarea>
+          </div>
+          <div class="preference-field">
+            <label for="profile-context-resource-context">Resources / materials</label>
+            <textarea class="preference-select" id="profile-context-resource-context" rows="2"
+              placeholder="Book names, worksheet sources, links (YouTube supported), teacher notes"></textarea>
+          </div>
+          <div class="preference-field">
+            <label for="session-goal-input">Session goal</label>
+            <input class="preference-select" id="session-goal-input"
+              placeholder="e.g., Master chapter 3 exercises 1-6 today" />
+          </div>
+          <div class="preference-field">
+            <label for="session-topic-input">Session topic</label>
+            <input class="preference-select" id="session-topic-input" placeholder="e.g., German accusative case" />
+          </div>
+        </div>
+        <div class="preferences-actions">
+          <button class="end-modal-cancel" id="profile-save-context-btn">Save context</button>
+          <button class="modal-btn" id="profile-create-session-btn">Create new session</button>
+        </div>
+        <p class="preferences-status" id="profile-context-status"></p>
+        <h3>Sessions</h3>
+        <div class="session-list" id="session-list"></div>
+        <div class="preferences-actions">
+          <button class="modal-btn" id="profile-start-session-btn">Start selected session</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1590,7 +1755,8 @@
       </div>
       <h2>Before we start</h2>
       <p>SeeMe Tutor streams your microphone audio and camera video to our server to provide real-time tutoring. No
-        audio or video is stored — only anonymized session metadata (duration, language) is saved to improve the
+        audio or video is stored — only anonymized session metadata (for example duration and session events) is saved
+        to improve the
         experience.</p>
       <p id="consent-details"
         style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
@@ -1726,11 +1892,6 @@
             <span class="diag-title">Latency</span>
             <span class="diag-main" id="diag-latency-main">No latency metrics yet</span>
             <span class="diag-sub" id="diag-latency-sub">Alerts: 0</span>
-          </div>
-          <div class="diag-card">
-            <span class="diag-title">Language</span>
-            <span class="diag-main" id="diag-language-main">No language events yet</span>
-            <span class="diag-sub" id="diag-language-sub">Tutor turns: 0</span>
           </div>
           <div class="diag-card">
             <span class="diag-title">Memory</span>
@@ -1968,14 +2129,15 @@
       permGranted: false,
       selectedProfileId: null,
       selectedProfile: null,
+      selectedSessionId: '',
       profiles: [],
+      sessions: [],
       lastServerError: '',
       awayMode: false,
       voiceCommandsSupported: false,
       cameraFacingMode: 'environment',
       commandAttempts: {},
       whiteboardNotes: [],
-      lastSessionId: '',
       restoreMicAfterReconnect: false,
       tutorPreferencesSaveError: '',
       speechPace: 'normal',
@@ -1983,8 +2145,6 @@
         groundingCount: 0,
         guardrailCount: 0,
         latencyAlerts: 0,
-        languageEventCount: 0,
-        languageTutorTurns: 0,
         memoryRecallCount: 0,
         memoryRecallCandidates: 0,
         memoryRecallSelected: 0,
@@ -2036,6 +2196,20 @@
     const tutorPreferencesLink = $('tutor-preferences-link');
     const profileModal = $('profile-modal');
     const profileList = $('profile-list');
+    const profileEditor = $('profile-editor');
+    const profileContextLearnerIdentity = $('profile-context-learner-identity');
+    const profileContextStudySubject = $('profile-context-study-subject');
+    const profileContextClassName = $('profile-context-class-name');
+    const profileContextInstitutionName = $('profile-context-institution-name');
+    const profileContextStudyContext = $('profile-context-study-context');
+    const profileContextResourceContext = $('profile-context-resource-context');
+    const sessionGoalInput = $('session-goal-input');
+    const sessionTopicInput = $('session-topic-input');
+    const profileSaveContextBtn = $('profile-save-context-btn');
+    const profileCreateSessionBtn = $('profile-create-session-btn');
+    const profileStartSessionBtn = $('profile-start-session-btn');
+    const profileContextStatus = $('profile-context-status');
+    const sessionList = $('session-list');
     const tutorPreferencesModal = $('tutor-preferences-modal');
     const prefsSpeechPace = $('preference-speech-pace');
     const prefsExplanationLength = $('preference-explanation-length');
@@ -2055,8 +2229,6 @@
     const diagGuardrailSub = $('diag-guardrail-sub');
     const diagLatencyMain = $('diag-latency-main');
     const diagLatencySub = $('diag-latency-sub');
-    const diagLanguageMain = $('diag-language-main');
-    const diagLanguageSub = $('diag-language-sub');
     const diagMemoryMain = $('diag-memory-main');
     const diagMemorySub = $('diag-memory-sub');
     const diagLog = $('diag-log');
@@ -2098,6 +2270,13 @@
         showToast('Select a student profile before starting a session.', 3000, true);
         return;
       }
+      const sessionId = String(state.selectedSessionId || '').trim().toLowerCase();
+      if (!sessionId) {
+        setStatus('error', 'Session required');
+        showToast('Select or create a session before connecting.', 3200, true);
+        profileModal.classList.add('visible');
+        return;
+      }
 
       // Demo Access Code Check
       let demoCode = localStorage.getItem('demoAccessCode');
@@ -2116,12 +2295,8 @@
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
-      const shouldResume = state.wsAttempts > 0 && Boolean(state.lastSessionId);
-      const resumeQuery = shouldResume
-        ? `&resume=1&resume_session_id=${encodeURIComponent(state.lastSessionId)}`
-        : '';
       ws = new WebSocket(
-        `${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}&student_id=${encodeURIComponent(profileId)}${resumeQuery}`
+        `${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}&student_id=${encodeURIComponent(profileId)}&session_id=${encodeURIComponent(sessionId)}`
       );
 
       ws.onopen = () => {
@@ -2245,7 +2420,7 @@
           disableMicBtn();
           cameraBtn.classList.add('disabled');
           showToast('Great session! Reload to start a new one.', 0);
-          state.lastSessionId = '';
+          state.selectedSessionId = '';
           state.restoreMicAfterReconnect = false;
           break;
 
@@ -2296,14 +2471,6 @@
 
         case 'latency_report':
           if (msg.data) applyLatencyReport(msg.data);
-          break;
-
-        case 'language_event':
-          if (msg.data) applyLanguageEvent(msg.data);
-          break;
-
-        case 'language_metric':
-          if (msg.data) applyLanguageMetric(msg.data);
           break;
 
         case 'context_compression':
@@ -2381,6 +2548,37 @@
 
     function buildProfilePreferencesPath(profileId) {
       return `/api/profiles/${encodeURIComponent(profileId)}/preferences`;
+    }
+
+    function buildProfileContextPath(profileId) {
+      return `/api/profiles/${encodeURIComponent(profileId)}/context`;
+    }
+
+    function buildProfileSessionsPath(profileId, status = 'open') {
+      const clean = String(status || 'open').trim().toLowerCase() || 'open';
+      return `/api/profiles/${encodeURIComponent(profileId)}/sessions?status=${encodeURIComponent(clean)}&limit=30`;
+    }
+
+    function buildProfileSessionsCollectionPath(profileId) {
+      return `/api/profiles/${encodeURIComponent(profileId)}/sessions`;
+    }
+
+    function buildProfileSessionPath(profileId, sessionId) {
+      return `/api/profiles/${encodeURIComponent(profileId)}/sessions/${encodeURIComponent(sessionId)}`;
+    }
+
+    function normalizeProfileContext(rawContext, fallback = null) {
+      const base = (fallback && typeof fallback === 'object') ? fallback : {};
+      const source = (rawContext && typeof rawContext === 'object') ? rawContext : {};
+      const clean = (value) => String(value || '').trim().slice(0, 240);
+      return {
+        learner_identity: clean(source.learner_identity ?? base.learner_identity),
+        study_subject: clean(source.study_subject ?? base.study_subject),
+        class_name: clean(source.class_name ?? base.class_name),
+        institution_name: clean(source.institution_name ?? base.institution_name),
+        study_context: clean(source.study_context ?? base.study_context),
+        resource_context: clean(source.resource_context ?? base.resource_context),
+      };
     }
 
     function normalizeTutorPreferenceChoice(field, value, fallback) {
@@ -2520,8 +2718,256 @@
       scheduleTutorPreferencesSave(profileId, preferences);
     }
 
+    function setProfileContextStatus(message, isError = false) {
+      profileContextStatus.textContent = String(message || '');
+      profileContextStatus.classList.toggle('error', !!isError);
+    }
+
+    function renderProfileContextForm(rawContext) {
+      const context = normalizeProfileContext(rawContext, state.selectedProfile?.profileContext || {});
+      profileContextLearnerIdentity.value = context.learner_identity;
+      profileContextStudySubject.value = context.study_subject;
+      profileContextClassName.value = context.class_name;
+      profileContextInstitutionName.value = context.institution_name;
+      profileContextStudyContext.value = context.study_context;
+      profileContextResourceContext.value = context.resource_context;
+      if (!sessionGoalInput.value) {
+        sessionGoalInput.value = context.study_context || '';
+      }
+      if (!sessionTopicInput.value) {
+        sessionTopicInput.value = context.study_subject || '';
+      }
+    }
+
+    function readProfileContextForm() {
+      return normalizeProfileContext({
+        learner_identity: profileContextLearnerIdentity.value,
+        study_subject: profileContextStudySubject.value,
+        class_name: profileContextClassName.value,
+        institution_name: profileContextInstitutionName.value,
+        study_context: profileContextStudyContext.value,
+        resource_context: profileContextResourceContext.value,
+      }, state.selectedProfile?.profileContext || {});
+    }
+
+    function setProfileContext(profileId, rawContext) {
+      const normalizedId = String(profileId || '').trim().toLowerCase();
+      const profile = state.profiles.find((item) => item.id === normalizedId);
+      const fallback = profile?.profileContext || {};
+      const normalized = normalizeProfileContext(rawContext, fallback);
+      if (profile) {
+        profile.profileContext = normalized;
+      }
+      if (state.selectedProfile && state.selectedProfile.id === normalizedId) {
+        state.selectedProfile.profileContext = normalized;
+      }
+      return normalized;
+    }
+
+    async function persistProfileContext(profileId, profileContext) {
+      if (!profileId) return;
+      try {
+        const response = await fetch(buildApiUrl(buildProfileContextPath(profileId)), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_context: profileContext }),
+        });
+        if (!response.ok) {
+          throw new Error(`profile_context_http_${response.status}`);
+        }
+        const payload = await response.json();
+        const saved = setProfileContext(profileId, payload?.profile_context || profileContext);
+        renderProfileContextForm(saved);
+        setProfileContextStatus('Context saved.');
+      } catch (error) {
+        setProfileContextStatus('Could not save context right now.', true);
+        showToast('Could not save profile context.', 3200, true);
+      }
+    }
+
+    function slugifyTopicId(raw) {
+      const clean = String(raw || '').trim().toLowerCase();
+      if (!clean) return 'current-topic';
+      return clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'current-topic';
+    }
+
+    function setSelectedSession(sessionId) {
+      state.selectedSessionId = String(sessionId || '').trim().toLowerCase();
+      Array.from(sessionList.querySelectorAll('.session-card')).forEach((node) => {
+        node.classList.toggle('selected', String(node.dataset.sessionId || '') === state.selectedSessionId);
+      });
+    }
+
+    function renderSessionCards() {
+      sessionList.innerHTML = '';
+      if (!state.sessions.length) {
+        const empty = document.createElement('div');
+        empty.className = 'profile-status';
+        empty.textContent = 'No open sessions yet. Create one to begin.';
+        sessionList.appendChild(empty);
+        return;
+      }
+      state.sessions.forEach((session) => {
+        const card = document.createElement('div');
+        card.className = 'session-card';
+        card.dataset.sessionId = session.session_id;
+        const title = session.topic_title || session.topic_id || 'Untitled topic';
+        const phase = session.phase || 'setup';
+        const updated = Number(session.updated_at || 0);
+        const updatedText = updated > 0 ? new Date(updated * 1000).toLocaleString() : 'just now';
+        const selectBtn = document.createElement('button');
+        selectBtn.type = 'button';
+        selectBtn.className = 'session-card-main';
+        selectBtn.innerHTML = `
+          <div class="session-card-title">${escapeHtml(title)}</div>
+          <div class="session-card-sub">Phase: ${escapeHtml(phase)} · Updated: ${escapeHtml(updatedText)}</div>
+        `;
+        selectBtn.addEventListener('click', () => {
+          setSelectedSession(session.session_id);
+          setProfileContextStatus(`Session selected: ${title}`);
+        });
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'session-delete-btn';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void deleteSessionForSelectedProfile(session.session_id, title);
+        });
+        card.appendChild(selectBtn);
+        card.appendChild(deleteBtn);
+        if (String(session.session_id || '').toLowerCase() === state.selectedSessionId) {
+          card.classList.add('selected');
+        }
+        sessionList.appendChild(card);
+      });
+    }
+
+    async function deleteSessionForSelectedProfile(sessionId, sessionTitle = '') {
+      const profileId = String(state.selectedProfileId || '').trim().toLowerCase();
+      const normalizedSessionId = String(sessionId || '').trim().toLowerCase();
+      if (!profileId || !normalizedSessionId) return;
+
+      const label = String(sessionTitle || normalizedSessionId).trim() || normalizedSessionId;
+      const confirmed = window.confirm(`Delete session "${label}"? This cannot be undone.`);
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(buildApiUrl(buildProfileSessionPath(profileId, normalizedSessionId)), {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          if (response.status === 409) {
+            setProfileContextStatus('Cannot delete an active live session.', true);
+            showToast('Cannot delete the session while it is active.', 3200, true);
+            return;
+          }
+          throw new Error(`delete_session_http_${response.status}`);
+        }
+        if (state.selectedSessionId === normalizedSessionId) {
+          state.selectedSessionId = '';
+        }
+        await loadSessionsForProfile(profileId);
+        setProfileContextStatus(`Session deleted: ${label}`);
+      } catch (error) {
+        setProfileContextStatus('Could not delete session right now.', true);
+        showToast('Could not delete session.', 3200, true);
+      }
+    }
+
+    async function loadSessionsForProfile(profileId) {
+      if (!profileId) return;
+      sessionList.innerHTML = '';
+      const loading = document.createElement('div');
+      loading.className = 'profile-status';
+      loading.textContent = 'Loading sessions...';
+      sessionList.appendChild(loading);
+      try {
+        const response = await fetch(buildApiUrl(buildProfileSessionsPath(profileId, 'open')), { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`sessions_http_${response.status}`);
+        }
+        const payload = await response.json();
+        const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+        state.sessions = sessions.map((session) => ({
+          session_id: String(session?.session_id || '').trim().toLowerCase(),
+          topic_id: String(session?.topic_id || '').trim(),
+          topic_title: String(session?.topic_title || '').trim(),
+          phase: String(session?.phase || 'setup').trim().toLowerCase(),
+          updated_at: Number(session?.updated_at || 0),
+        })).filter((item) => item.session_id);
+        if (state.selectedSessionId && !state.sessions.find((s) => s.session_id === state.selectedSessionId)) {
+          state.selectedSessionId = '';
+        }
+        if (!state.selectedSessionId && state.sessions.length) {
+          state.selectedSessionId = state.sessions[0].session_id;
+        }
+        renderSessionCards();
+      } catch (error) {
+        state.sessions = [];
+        renderSessionCards();
+        setProfileContextStatus('Could not load sessions.', true);
+      }
+    }
+
+    async function createSessionForSelectedProfile() {
+      const profile = state.selectedProfile;
+      if (!profile) {
+        setProfileContextStatus('Select a profile first.', true);
+        return;
+      }
+      const profileId = profile.id;
+      const profileContext = setProfileContext(profileId, readProfileContextForm());
+      await persistProfileContext(profileId, profileContext);
+      const topicTitle = String(sessionTopicInput.value || profileContext.study_subject || profile.focus || '').trim() || 'Current Topic';
+      const sessionGoal = String(sessionGoalInput.value || profileContext.study_context || '').trim();
+      const payload = {
+        track_id: slugifyTopicId(profile.track || 'general-track'),
+        track_title: profile.track || 'General Learning',
+        topic_id: slugifyTopicId(topicTitle),
+        topic_title: topicTitle,
+        setup: {
+          session_goal: sessionGoal,
+          student_context_text: profileContext.study_context || '',
+          resource_refs: [profileContext.resource_context].filter(Boolean),
+          confirmed: false,
+        },
+      };
+      try {
+        const response = await fetch(buildApiUrl(buildProfileSessionsCollectionPath(profileId)), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(`create_session_http_${response.status}`);
+        }
+        const created = await response.json();
+        const createdId = String(created?.session_id || '').trim().toLowerCase();
+        await loadSessionsForProfile(profileId);
+        setSelectedSession(createdId);
+        const ingestion = (created && typeof created === 'object') ? created.resource_ingestion : null;
+        const imported = Number(ingestion?.youtube_imported || 0);
+        const failed = Number(ingestion?.youtube_failed || 0);
+        if (imported > 0 && failed > 0) {
+          setProfileContextStatus(`New session created. Imported ${imported} YouTube transcript(s), ${failed} failed.`);
+        } else if (imported > 0) {
+          setProfileContextStatus(`New session created. Imported ${imported} YouTube transcript(s).`);
+        } else if (failed > 0) {
+          setProfileContextStatus(`New session created. Could not import ${failed} YouTube transcript(s).`, true);
+        } else {
+          setProfileContextStatus('New session created. Select Start selected session.');
+        }
+      } catch (error) {
+        setProfileContextStatus('Could not create session right now.', true);
+        showToast('Could not create session.', 3200, true);
+      }
+    }
+
     function renderProfileStatus(message, isError = false) {
       profileList.innerHTML = '';
+      profileEditor.style.display = 'none';
       const node = document.createElement('div');
       node.className = `profile-status${isError ? ' error' : ''}`;
       node.textContent = message;
@@ -2532,6 +2978,7 @@
       profileList.innerHTML = '';
       if (!state.profiles.length) {
         renderProfileStatus('No profiles found in Firestore. Add student documents first.', true);
+        profileEditor.style.display = 'none';
         return;
       }
 
@@ -2540,20 +2987,35 @@
         btn.type = 'button';
         btn.className = 'profile-card';
         btn.dataset.profileId = profile.id;
-        btn.innerHTML = `
-          <div class="profile-name">${escapeHtml(profile.name)}</div>
-          <div class="profile-track">${escapeHtml(profile.track)}</div>
-          <div class="profile-focus">${escapeHtml(profile.focus)}</div>
-        `;
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'profile-name';
+        nameDiv.textContent = `${profile.name} — ${profile.studySubject || profile.track}`;
+        const trackDiv = document.createElement('div');
+        trackDiv.className = 'profile-track';
+        trackDiv.textContent = profile.track;
+        btn.appendChild(nameDiv);
+        btn.appendChild(trackDiv);
+        if (profile.currentTopic) {
+          const topicDiv = document.createElement('div');
+          topicDiv.className = 'profile-focus';
+          topicDiv.textContent = `Now: ${profile.currentTopic}`;
+          btn.appendChild(topicDiv);
+        }
         btn.addEventListener('click', () => {
           if (!selectProfile(profile.id)) return;
-          profileModal.classList.remove('visible');
-          if (localStorage.getItem('seeme_consent')) {
-            startSession();
-          } else {
-            consentModal.classList.add('visible');
-          }
+          Array.from(profileList.querySelectorAll('.profile-card')).forEach((node) => {
+            node.classList.toggle('selected', node.dataset.profileId === profile.id);
+          });
+          profileEditor.style.display = 'block';
+          sessionGoalInput.value = '';
+          sessionTopicInput.value = '';
+          renderProfileContextForm(profile.profileContext || {});
+          setProfileContextStatus('Profile selected. Save context and choose/create a session.');
+          void loadSessionsForProfile(profile.id);
         });
+        if (state.selectedProfileId === profile.id) {
+          btn.classList.add('selected');
+        }
         profileList.appendChild(btn);
       });
     }
@@ -2577,8 +3039,10 @@
               name: String(profile?.name || id).trim() || id,
               track: String(profile?.track || 'General Learning').trim() || 'General Learning',
               focus: String(profile?.focus || 'Continue learning').trim() || 'Continue learning',
-              preferredLanguage: String(profile?.preferred_language || 'en').trim().toLowerCase() || 'en',
+              currentTopic: String(profile?.current_topic || '').trim(),
+              studySubject: String(profile?.study_subject || '').trim(),
               tutorPreferences: normalizeTutorPreferences(profile?.tutor_preferences),
+              profileContext: normalizeProfileContext(profile?.profile_context),
             };
           })
           .filter(Boolean);
@@ -2596,11 +3060,13 @@
       if (!profile) return false;
       state.selectedProfileId = profile.id;
       state.selectedProfile = profile;
+      state.selectedSessionId = '';
+      state.sessions = [];
       setSelectedTutorPreferences(profile.tutorPreferences);
       localStorage.setItem(PROFILE_STORAGE_KEY, profile.id);
       profileNamePill.textContent = profile.name;
       trackPill.textContent = `Track: ${profile.track}`;
-      topicPill.textContent = 'Topic: loading...';
+      topicPill.textContent = 'Topic: --';
       setStatus('idle', 'Profile selected');
       return true;
     }
@@ -2613,10 +3079,17 @@
         ? context.memory_recall
         : null;
       if (context.session_id) {
-        state.lastSessionId = String(context.session_id);
+        state.selectedSessionId = String(context.session_id).trim().toLowerCase();
+        setSelectedSession(state.selectedSessionId);
       }
       trackPill.textContent = `Track: ${track}`;
       topicPill.textContent = `Topic: ${topic}`;
+      if (context.profile_context && state.selectedProfileId) {
+        const updatedContext = setProfileContext(state.selectedProfileId, context.profile_context);
+        if (profileEditor.style.display !== 'none') {
+          renderProfileContextForm(updatedContext);
+        }
+      }
       if (context.tutor_preferences) {
         const normalized = setSelectedTutorPreferences(context.tutor_preferences);
         if (tutorPreferencesModal.classList.contains('visible')) {
@@ -2769,29 +3242,6 @@
       }
       diagLatencySub.textContent = `Alerts: ${state.diagnostics.latencyAlerts} · Turns: ${Math.max(0, turns)}`;
       appendDiagnosticLog('latency-report', `turns=${Math.max(0, turns)} alerts=${state.diagnostics.latencyAlerts}`);
-    }
-
-    function applyLanguageEvent(data) {
-      state.diagnostics.languageEventCount += 1;
-      const eventName = clipText(String(data?.event || 'event').replace(/_/g, ' '), 42);
-      const forced = clipText(data?.forced_lang || data?.lang || '', 22);
-
-      diagLanguageMain.textContent = eventName || 'language event';
-      diagLanguageSub.textContent = `Tutor turns: ${state.diagnostics.languageTutorTurns} · Events: ${state.diagnostics.languageEventCount}${forced ? ` · ${forced}` : ''}`;
-      appendDiagnosticLog('language', forced ? `${eventName} (${forced})` : eventName);
-    }
-
-    function applyLanguageMetric(data) {
-      const turns = Number(data?.tutor_turns || 0);
-      const purity = Number(data?.purity_rate || 0);
-      const l2Ratio = Number(data?.l2_ratio || 0);
-      const fallbackTriggers = Number(data?.fallback_triggers || 0);
-      const recapTriggers = Number(data?.recap_triggers || 0);
-
-      state.diagnostics.languageTutorTurns = Math.max(0, turns);
-      diagLanguageMain.textContent = `purity ${Math.round(purity)}% · l2 ${Math.round(l2Ratio)}%`;
-      diagLanguageSub.textContent = `Tutor turns: ${state.diagnostics.languageTutorTurns} · fallback ${Math.max(0, fallbackTriggers)} · recap ${Math.max(0, recapTriggers)}`;
-      appendDiagnosticLog('language-metric', `turns=${state.diagnostics.languageTutorTurns} purity=${Math.round(purity)}%`);
     }
 
     function updateMemoryDiagSub() {
@@ -3645,7 +4095,7 @@
       disableMicBtn();
       cameraBtn.classList.add('disabled');
       showToast('Session ended. Reload to start again.', 0);
-      state.lastSessionId = '';
+      state.selectedSessionId = '';
       state.restoreMicAfterReconnect = false;
     }
 
@@ -3661,8 +4111,12 @@
       if (ws) { ws.close(); ws = null; }
       disableMicBtn();
       setStatus('idle', 'Select profile');
-      state.lastSessionId = '';
+      state.selectedProfileId = null;
+      state.selectedProfile = null;
+      state.selectedSessionId = '';
+      state.sessions = [];
       state.restoreMicAfterReconnect = false;
+      setProfileContextStatus('');
       void loadProfiles();
       profileModal.classList.add('visible');
       showToast('Select a profile to continue.', 2500);
@@ -3799,15 +4253,15 @@
     }
 
     function getRecognitionLang() {
+      const browserLocale = normalizeLocaleTag(navigator.language || '');
+      if (browserLocale) {
+        if (browserLocale === 'pt') return 'pt-BR';
+        if (browserLocale === 'de') return 'de-DE';
+        if (browserLocale === 'en') return 'en-US';
+        return browserLocale;
+      }
       const profile = state.selectedProfile;
       if (!profile) return 'en-US';
-      const preferredLocale = normalizeLocaleTag(profile.preferredLanguage);
-      if (preferredLocale) {
-        if (preferredLocale === 'pt') return 'pt-BR';
-        if (preferredLocale === 'de') return 'de-DE';
-        if (preferredLocale === 'en') return 'en-US';
-        return preferredLocale;
-      }
       const track = (profile.track || '').toLowerCase();
       if (track.includes('german')) return 'de-DE';
       if (track.includes('portug')) return 'pt-BR';
@@ -3815,6 +4269,11 @@
     }
 
     function initVoiceCommandRecognition() {
+      // Disabled due to macOS/Chrome getUserMedia conflict stripping audio from the primary mic stream
+      // See: P0 demo-critical reliability priority
+      state.voiceCommandsSupported = false;
+      return;
+
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         state.voiceCommandsSupported = false;
@@ -4289,6 +4748,41 @@
       node.addEventListener('change', handleTutorPreferencesChange);
     });
 
+    $('profile-modal-close-btn').addEventListener('click', () => {
+      profileModal.classList.remove('visible');
+    });
+
+    profileSaveContextBtn.addEventListener('click', () => {
+      if (!state.selectedProfile) {
+        setProfileContextStatus('Select a profile first.', true);
+        return;
+      }
+      const profileId = state.selectedProfile.id;
+      const context = setProfileContext(profileId, readProfileContextForm());
+      void persistProfileContext(profileId, context);
+    });
+
+    profileCreateSessionBtn.addEventListener('click', () => {
+      void createSessionForSelectedProfile();
+    });
+
+    profileStartSessionBtn.addEventListener('click', () => {
+      if (!state.selectedProfileId) {
+        setProfileContextStatus('Select a profile first.', true);
+        return;
+      }
+      if (!state.selectedSessionId) {
+        setProfileContextStatus('Select or create a session first.', true);
+        return;
+      }
+      if (localStorage.getItem('seeme_consent')) {
+        profileModal.classList.remove('visible');
+        startSession();
+      } else {
+        consentModal.classList.add('visible');
+      }
+    });
+
     // =========================================================================
     // CONSENT MODAL
     // =========================================================================
@@ -4338,7 +4832,11 @@
       setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
       profileModal.classList.add('visible');
       if (restored) {
-        showToast('Select profile to start this session.', 2600);
+        renderProfileCards();
+        profileEditor.style.display = 'block';
+        renderProfileContextForm(state.selectedProfile?.profileContext || {});
+        await loadSessionsForProfile(state.selectedProfileId);
+        showToast('Review context and choose a session.', 2600);
       }
     }
 
@@ -4348,6 +4846,13 @@
         profileModal.classList.add('visible');
         return;
       }
+      if (!state.selectedSessionId) {
+        setStatus('error', 'Session required');
+        profileModal.classList.add('visible');
+        setProfileContextStatus('Select or create a session before starting.', true);
+        return;
+      }
+      profileModal.classList.remove('visible');
 
       // Hide loader after brief delay (gives time for WS to init)
       setTimeout(() => {

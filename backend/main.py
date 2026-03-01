@@ -76,19 +76,6 @@ from modules.grounding import (
     extract_grounding,
     extract_inline_url_citations,
 )
-from modules.language import (
-    init_language_state,
-    append_tutor_text_part,
-    handle_student_transcript as handle_language_student_transcript,
-    finalize_tutor_turn as finalize_language_tutor_turn,
-    build_language_metric_snapshot,
-    language_label as module_language_label,
-    language_short as module_language_short,
-    normalize_preferred_language as module_normalize_preferred_language,
-    default_language_policy as module_default_language_policy,
-    normalize_language_policy as module_normalize_language_policy,
-    build_language_contract as module_build_language_contract,
-)
 from modules.latency import (
     init_latency_state,
     record_latency_metric,
@@ -141,6 +128,8 @@ from modules.search_intent import (
     is_likely_educational_search,
     SEARCH_INTENT_SIGNAL_WINDOW_S,
 )
+from modules.resource_ingestion import ingest_youtube_transcripts
+from seed_demo_profiles import PROFILES as _SEED_PROFILES
 
 load_dotenv()
 
@@ -224,6 +213,7 @@ _active_student_sessions: dict[str, dict] = {}
 _active_student_sessions_lock = asyncio.Lock()
 
 _STUDENT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
+_SESSION_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{7,127}$")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -324,8 +314,13 @@ def _anonymize_ip(ip: str) -> str:
     return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 
-def _language_label(code: str) -> str:
-    return module_language_label(code)
+def _is_adk_session_exists_error(exc: Exception) -> bool:
+    """Detect ADK in-memory session ID collision errors across versions."""
+    if exc is None:
+        return False
+    name = type(exc).__name__.strip().lower()
+    message = str(exc).strip().lower()
+    return name == "alreadyexistserror" or "already exists" in message
 
 
 def _parse_int(value, fallback: int, minimum: int = 1, maximum: int = 8) -> int:
@@ -342,37 +337,6 @@ def _safe_order_index(value, fallback: int = 9999) -> int:
     except (TypeError, ValueError):
         return fallback
 
-
-def _normalize_preferred_language(value: str | None) -> str:
-    return module_normalize_preferred_language(value)
-
-
-def _default_language_policy() -> dict:
-    return module_default_language_policy()
-
-
-def _normalize_language_policy(policy: dict | None, fallback: dict) -> dict:
-    return module_normalize_language_policy(policy, fallback)
-
-
-def _build_language_contract(language_policy: dict) -> str:
-    return module_build_language_contract(language_policy)
-
-
-_LANGUAGE_DETECTION_PATTERNS: dict[str, list[str]] = {
-    "en": [
-        r"\b(what|why|how|can you|please|answer|explain|help)\b",
-    ],
-    "pt": [
-        r"\b(nao|não|porque|como|pode|explicar|ajuda|entendi)\b",
-    ],
-    "de": [
-        r"\b(ich|nicht|warum|wie|kannst|bitte|verstehe|erklar|erklär)\b",
-    ],
-    "es": [
-        r"\b(que|qué|como|cómo|puedes|explica|ayuda|entiendo|por que|por qué)\b",
-    ],
-}
 
 _SEARCH_REQUEST_PATTERNS_BY_LANG: dict[str, list[str]] = {
     "en": [r"\b(search|google|look\s*up|lookup|find)\b"],
@@ -415,6 +379,18 @@ _DEFAULT_TUTOR_PREFERENCES: dict[str, str] = {
     "encouragement_level": "medium",
 }
 
+_PROFILE_CONTEXT_MAX_LEN = 240
+_PROFILE_CONTEXT_FIELDS = (
+    "learner_identity",
+    "study_subject",
+    "class_name",
+    "institution_name",
+    "study_context",
+    "resource_context",
+)
+_RESOURCE_MATERIAL_MAX_ITEMS = 5
+_PLAN_MILESTONE_MIN_DEFAULT = 6
+
 
 def _normalize_preference_choice(
     value,
@@ -453,6 +429,135 @@ def _normalize_tutor_preferences(preferences: dict | None, fallback: dict | None
     return normalized
 
 
+def _sanitize_text(value, *, max_len: int = _PROFILE_CONTEXT_MAX_LEN) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        return ""
+    if len(clean) > max_len:
+        clean = clean[:max_len].rstrip()
+    return clean
+
+
+def _sanitize_long_text(value, *, max_len: int = 24000) -> str:
+    clean = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not clean:
+        return ""
+    if len(clean) > max_len:
+        clean = clean[:max_len].rstrip()
+    return clean
+
+
+def _normalize_resource_materials(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    materials: list[dict] = []
+    for item in value[:_RESOURCE_MATERIAL_MAX_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            char_count = int(item.get("char_count") or 0)
+        except (TypeError, ValueError):
+            char_count = 0
+        entry = {
+            "kind": _sanitize_text(item.get("kind"), max_len=24) or "resource",
+            "url": _sanitize_text(item.get("url"), max_len=400),
+            "status": _sanitize_text(item.get("status"), max_len=32) or "unknown",
+            "video_id": _sanitize_text(item.get("video_id"), max_len=32),
+            "language": _sanitize_text(item.get("language"), max_len=24),
+            "char_count": max(0, char_count),
+            "excerpt": _sanitize_text(item.get("excerpt"), max_len=260),
+            "error": _sanitize_text(item.get("error"), max_len=160),
+        }
+        materials.append(entry)
+    return materials
+
+
+def _agent_phase_from_session_phase(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "capture":
+        return "capture"
+    if normalized == "review":
+        return "review"
+    return "greeting"
+
+
+def _default_profile_context() -> dict[str, str]:
+    return {field: "" for field in _PROFILE_CONTEXT_FIELDS}
+
+
+def _normalize_profile_context(
+    profile_context: dict | None,
+    fallback: dict | None = None,
+) -> dict[str, str]:
+    source = profile_context if isinstance(profile_context, dict) else {}
+    base = dict(fallback) if isinstance(fallback, dict) else _default_profile_context()
+    normalized: dict[str, str] = {}
+    for field in _PROFILE_CONTEXT_FIELDS:
+        normalized[field] = _sanitize_text(source.get(field) or base.get(field))
+    return normalized
+
+
+def _search_terms_from_profile_context(profile_context: dict | None) -> list[str]:
+    if not isinstance(profile_context, dict):
+        return []
+    ordered: list[str] = []
+    for field in _PROFILE_CONTEXT_FIELDS:
+        token = _sanitize_text(profile_context.get(field), max_len=80)
+        if token and token.lower() not in {t.lower() for t in ordered}:
+            ordered.append(token)
+    return ordered
+
+
+def _search_terms_from_setup(setup: dict | None) -> list[str]:
+    if not isinstance(setup, dict):
+        return []
+    terms: list[str] = []
+    goal = _sanitize_text(setup.get("session_goal"), max_len=120)
+    context = _sanitize_text(setup.get("student_context_text"), max_len=120)
+    if goal:
+        terms.append(goal)
+    if context:
+        terms.append(context)
+    refs = setup.get("resource_refs", [])
+    if isinstance(refs, list):
+        for item in refs[:6]:
+            token = _sanitize_text(item, max_len=80)
+            if token:
+                terms.append(token)
+    materials = setup.get("resource_materials", [])
+    if isinstance(materials, list):
+        for item in materials[:_RESOURCE_MATERIAL_MAX_ITEMS]:
+            if not isinstance(item, dict):
+                continue
+            excerpt = _sanitize_text(item.get("excerpt"), max_len=80)
+            if excerpt:
+                terms.append(excerpt)
+            source_url = _sanitize_text(item.get("url"), max_len=80)
+            if source_url:
+                terms.append(source_url)
+    deduped: list[str] = []
+    for item in terms:
+        if item.lower() not in {d.lower() for d in deduped}:
+            deduped.append(item)
+    return deduped
+
+
+def _merge_search_context_terms(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for raw in group:
+            token = _sanitize_text(raw, max_len=120)
+            if not token:
+                continue
+            key = token.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(token)
+    return merged[:18]
+
+
 def _build_tutor_preferences_control_prompt(preferences: dict) -> str:
     normalized = _normalize_tutor_preferences(preferences)
     speech_pace = {
@@ -487,21 +592,42 @@ def _build_tutor_preferences_control_prompt(preferences: dict) -> str:
         f"- Directness: {directness[normalized['directness']]}\n"
         f"- Socratic intensity: {socratic_intensity[normalized['socratic_intensity']]}\n"
         f"- Encouragement level: {encouragement[normalized['encouragement_level']]}\n"
-        "Keep all safety, anti-cheating, and language-contract rules unchanged. "
+        "Keep all safety and anti-cheating rules unchanged. "
         "Do not mention this control message."
     )
 
 
-def _policy_language_codes(language_policy: dict) -> list[str]:
-    l1 = module_language_short(language_policy.get("l1", "en-US"))
-    l2 = module_language_short(language_policy.get("l2", "en-US"))
-    ordered: list[str] = []
-    for lang in (l1, l2):
-        if lang and lang not in ordered:
-            ordered.append(lang)
-    if not ordered:
-        ordered.append("en")
-    return ordered
+def _append_tutor_turn_part(runtime_state: dict, text: str, *, source: str) -> None:
+    clean = str(text or "").strip()
+    if not clean:
+        return
+    turn_parts = runtime_state.setdefault("_tutor_turn_parts", {})
+    if not isinstance(turn_parts, dict):
+        turn_parts = {}
+        runtime_state["_tutor_turn_parts"] = turn_parts
+    bucket = turn_parts.setdefault(source, [])
+    if not isinstance(bucket, list):
+        bucket = []
+        turn_parts[source] = bucket
+    if bucket and str(bucket[-1]).strip() == clean:
+        return
+    bucket.append(clean)
+
+
+def _finalize_tutor_turn(runtime_state: dict) -> dict:
+    turn_parts = runtime_state.get("_tutor_turn_parts")
+    transcript_parts: list[str] = []
+    text_parts: list[str] = []
+    if isinstance(turn_parts, dict):
+        raw_transcript = turn_parts.get("transcript", [])
+        if isinstance(raw_transcript, list):
+            transcript_parts = [str(part).strip() for part in raw_transcript if str(part).strip()]
+        raw_text = turn_parts.get("text", [])
+        if isinstance(raw_text, list):
+            text_parts = [str(part).strip() for part in raw_text if str(part).strip()]
+    runtime_state["_tutor_turn_parts"] = {"text": [], "transcript": []}
+    turn_text = " ".join(transcript_parts or text_parts).strip()
+    return {"turn_text": turn_text}
 
 
 def _dedupe_patterns(patterns: list[str]) -> list[str]:
@@ -513,39 +639,18 @@ def _dedupe_patterns(patterns: list[str]) -> list[str]:
     return deduped
 
 
-def _default_detection_patterns(language_policy: dict) -> dict[str, list[str]]:
-    template: dict[str, list[str]] = {}
-    for lang in _policy_language_codes(language_policy):
-        patterns = _LANGUAGE_DETECTION_PATTERNS.get(lang, [])
-        if patterns:
-            template[lang] = list(patterns)
-    if not template:
-        template["en"] = list(_LANGUAGE_DETECTION_PATTERNS.get("en", []))
-    return template
+def _all_patterns(pattern_map: dict[str, list[str]]) -> list[str]:
+    merged: list[str] = []
+    for patterns in pattern_map.values():
+        merged.extend(patterns)
+    return _dedupe_patterns(merged)
 
 
-def _apply_language_policy_templates(language_policy: dict) -> dict:
-    normalized = dict(language_policy or {})
-    detection = normalized.get("detection_patterns", {})
-    detection_map = detection if isinstance(detection, dict) else {}
-    merged = {
-        str(lang): _dedupe_patterns(list(patterns))
-        for lang, patterns in detection_map.items()
-        if isinstance(patterns, list)
-    }
-    for lang, patterns in _default_detection_patterns(normalized).items():
-        if not merged.get(lang):
-            merged[lang] = list(patterns)
-    normalized["detection_patterns"] = merged
-    return normalized
-
-
-def _default_search_intent_policy(language_policy: dict) -> dict:
+def _default_search_intent_policy() -> dict:
     request_patterns: list[str] = []
     educational_patterns: list[str] = []
-    for lang in _policy_language_codes(language_policy):
-        request_patterns.extend(_SEARCH_REQUEST_PATTERNS_BY_LANG.get(lang, []))
-        educational_patterns.extend(_SEARCH_EDU_HINT_PATTERNS_BY_LANG.get(lang, []))
+    request_patterns.extend(_all_patterns(_SEARCH_REQUEST_PATTERNS_BY_LANG))
+    educational_patterns.extend(_all_patterns(_SEARCH_EDU_HINT_PATTERNS_BY_LANG))
     if not request_patterns:
         request_patterns.extend(_SEARCH_REQUEST_PATTERNS_BY_LANG.get("en", []))
     if not educational_patterns:
@@ -557,8 +662,8 @@ def _default_search_intent_policy(language_policy: dict) -> dict:
     }
 
 
-def _normalize_search_intent_policy(policy: dict | None, language_policy: dict) -> dict:
-    template = _default_search_intent_policy(language_policy)
+def _normalize_search_intent_policy(policy: dict | None) -> dict:
+    template = _default_search_intent_policy()
     source = policy if isinstance(policy, dict) else {}
     normalized: dict[str, list[str]] = {}
     for key, fallback in template.items():
@@ -572,13 +677,12 @@ def _normalize_search_intent_policy(policy: dict | None, language_policy: dict) 
 
 
 def _default_backlog_context(student_id: str, student_name: str = "Student") -> dict:
-    language_policy = _apply_language_policy_templates(_default_language_policy())
-    search_intent_policy = _default_search_intent_policy(language_policy)
+    search_intent_policy = _default_search_intent_policy()
     tutor_preferences = _default_tutor_preferences()
+    profile_context = _default_profile_context()
     return {
         "student_id": student_id,
         "student_name": student_name,
-        "preferred_language": "en",
         "track_id": "general-track",
         "track_title": "General Learning",
         "topic_id": "current-topic",
@@ -587,10 +691,26 @@ def _default_backlog_context(student_id: str, student_name: str = "Student") -> 
         "unresolved_topics": 0,
         "available_topics": [],
         "resume_message": "Let's continue where we left off.",
-        "language_policy": language_policy,
-        "language_contract": _build_language_contract(language_policy),
         "search_intent_policy": search_intent_policy,
         "tutor_preferences": tutor_preferences,
+        "profile_context": profile_context,
+        "session_setup": {
+            "session_goal": "",
+            "student_context_text": "",
+            "resource_refs": [],
+            "resource_materials": [],
+            "confirmed": False,
+        },
+        "plan_bootstrap_required": False,
+        "plan_bootstrap_completed": False,
+        "plan_milestone_min": _PLAN_MILESTONE_MIN_DEFAULT,
+        "plan_milestone_count": 0,
+        "plan_fallback_generated": False,
+        "plan_bootstrap_source": "",
+        "resource_transcript_context": "",
+        "resource_transcript_available": False,
+        "search_context_terms": [],
+        "session_phase": "setup",
     }
 
 
@@ -620,8 +740,8 @@ async def _unregister_active_student_session(student_id: str, session_id: str) -
             _active_student_sessions.pop(student_id, None)
 
 
-async def _load_backlog_context(student_id: str) -> dict | None:
-    """Load student backlog context from Firestore."""
+async def _load_backlog_context(student_id: str, session_data: dict | None = None) -> dict | None:
+    """Load student backlog context from Firestore and optional selected-session overlay."""
     if not firestore_client:
         logger.error("Firestore unavailable while loading profile '%s'", student_id)
         return None
@@ -648,25 +768,72 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "data": track_data,
         })
 
-    language_policy = _normalize_language_policy(student_data.get("language_policy"), _default_language_policy())
-    language_policy = _apply_language_policy_templates(language_policy)
-    search_intent_policy = _normalize_search_intent_policy(
-        student_data.get("search_intent_policy"),
-        language_policy,
+    selected_session = session_data if isinstance(session_data, dict) else {}
+    selected_setup = selected_session.get("setup") if isinstance(selected_session.get("setup"), dict) else {}
+    selected_planning = selected_session.get("planning") if isinstance(selected_session.get("planning"), dict) else {}
+    selected_phase = str(selected_session.get("phase") or "setup")
+    selected_transcript_context = _sanitize_long_text(
+        selected_session.get("resource_transcript_context"),
+        max_len=24000,
     )
+    selected_resource_materials = _normalize_resource_materials(selected_setup.get("resource_materials"))
+    transcript_material_requested = any(
+        item.get("kind") == "youtube"
+        for item in selected_resource_materials
+    )
+    transcript_material_ready = any(
+        item.get("kind") == "youtube" and item.get("status") == "ready"
+        for item in selected_resource_materials
+    )
+    transcript_available = bool(selected_transcript_context.strip()) or transcript_material_ready
+    plan_milestone_min = _parse_int(
+        selected_planning.get("milestone_min"),
+        _PLAN_MILESTONE_MIN_DEFAULT,
+        minimum=1,
+        maximum=20,
+    )
+    plan_milestone_count = _parse_int(
+        selected_planning.get("milestone_count"),
+        0,
+        minimum=0,
+        maximum=50,
+    )
+    plan_fallback_generated = bool(selected_planning.get("fallback_generated"))
+    plan_bootstrap_source = _sanitize_text(selected_planning.get("bootstrap_source"), max_len=40)
+    if not plan_bootstrap_source and transcript_material_requested:
+        plan_bootstrap_source = "youtube_transcript" if transcript_material_ready else "transcript_unavailable"
+    if not plan_bootstrap_source:
+        plan_bootstrap_source = "session_setup"
+    plan_bootstrap_completed = bool(selected_planning.get("bootstrap_completed"))
+    if plan_milestone_count >= plan_milestone_min:
+        plan_bootstrap_completed = True
+    if plan_fallback_generated and not transcript_available:
+        plan_bootstrap_completed = True
+    if "bootstrap_required" in selected_planning:
+        plan_bootstrap_required_config = bool(selected_planning.get("bootstrap_required"))
+    else:
+        plan_bootstrap_required_config = bool(
+            selected_phase in {"setup", "greeting"}
+        )
+    plan_bootstrap_required = bool(plan_bootstrap_required_config and not plan_bootstrap_completed)
+    session_setup = {
+        "session_goal": _sanitize_text(selected_setup.get("session_goal")),
+        "student_context_text": _sanitize_text(selected_setup.get("student_context_text")),
+        "resource_refs": list(selected_setup.get("resource_refs") or []),
+        "resource_materials": selected_resource_materials,
+        "confirmed": bool(selected_setup.get("confirmed")),
+    }
+
+    search_intent_policy = _normalize_search_intent_policy(student_data.get("search_intent_policy"))
     tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    preferred_language = _normalize_preferred_language(
-        student_data.get("preferred_language") or language_policy.get("l2") or "en"
-    )
+    profile_context = _normalize_profile_context(student_data.get("profile_context"))
     student_updates: dict = {}
-    if student_data.get("language_policy") != language_policy:
-        student_updates["language_policy"] = language_policy
     if student_data.get("search_intent_policy") != search_intent_policy:
         student_updates["search_intent_policy"] = search_intent_policy
     if student_data.get("tutor_preferences") != tutor_preferences:
         student_updates["tutor_preferences"] = tutor_preferences
-    if _normalize_preferred_language(student_data.get("preferred_language")) != preferred_language:
-        student_updates["preferred_language"] = preferred_language
+    if student_data.get("profile_context") != profile_context:
+        student_updates["profile_context"] = profile_context
 
     if not track_rows:
         if student_updates:
@@ -674,14 +841,39 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             await student_ref.set(student_updates, merge=True)
         context = _default_backlog_context(student_id, student_name)
         context.update({
-            "preferred_language": preferred_language,
             "previous_notes": [],
             "resume_message": f"Welcome back, {student_name}. Let's set your first learning track.",
-            "language_policy": language_policy,
-            "language_contract": _build_language_contract(language_policy),
             "search_intent_policy": search_intent_policy,
             "tutor_preferences": tutor_preferences,
+            "profile_context": profile_context,
+            "session_phase": selected_phase,
+            "session_setup": session_setup,
+            "plan_bootstrap_required": plan_bootstrap_required,
+            "plan_bootstrap_completed": plan_bootstrap_completed,
+            "plan_milestone_min": plan_milestone_min,
+            "plan_milestone_count": plan_milestone_count,
+            "plan_fallback_generated": plan_fallback_generated,
+            "plan_bootstrap_source": plan_bootstrap_source,
+            "resource_transcript_context": selected_transcript_context,
+            "resource_transcript_available": transcript_available,
         })
+        session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
+        session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
+        session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
+        session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
+        if session_track_id:
+            context["track_id"] = session_track_id
+        if session_track_title:
+            context["track_title"] = session_track_title
+        if session_topic_id:
+            context["topic_id"] = session_topic_id
+        if session_topic_title:
+            context["topic_title"] = session_topic_title
+        context["search_context_terms"] = _merge_search_context_terms(
+            _search_terms_from_profile_context(profile_context),
+            _search_terms_from_setup(context.get("session_setup")),
+            [context.get("track_title"), context.get("topic_title")],
+        )
         return context
 
     track_rows.sort(key=lambda row: (0 if row["id"] == preferred_track_id else 1, str(row["title"]).lower(), row["id"]))
@@ -703,6 +895,8 @@ async def _load_backlog_context(student_id: str) -> dict | None:
             "title": str(topic_data.get("title") or topic_snapshot.id),
             "status": str(topic_data.get("status", "not_started")).lower(),
             "order_index": _safe_order_index(topic_data.get("order_index"), 9999),
+            "context_query": str(topic_data.get("context_query") or "").strip(),
+            "context_summary": str(topic_data.get("context_summary") or "").strip(),
         })
     topic_rows.sort(key=lambda row: (row["order_index"], row["title"]))
 
@@ -735,16 +929,41 @@ async def _load_backlog_context(student_id: str) -> dict | None:
     if not active_topic:
         context = _default_backlog_context(student_id, student_name)
         context.update({
-            "preferred_language": preferred_language,
             "previous_notes": [],
             "track_id": active_track_id,
             "track_title": str(active_track_data.get("title") or active_track_id),
             "resume_message": f"Welcome back, {student_name}. Let's choose your next topic.",
-            "language_policy": language_policy,
-            "language_contract": _build_language_contract(language_policy),
             "search_intent_policy": search_intent_policy,
             "tutor_preferences": tutor_preferences,
+            "profile_context": profile_context,
+            "session_phase": selected_phase,
+            "session_setup": session_setup,
+            "plan_bootstrap_required": plan_bootstrap_required,
+            "plan_bootstrap_completed": plan_bootstrap_completed,
+            "plan_milestone_min": plan_milestone_min,
+            "plan_milestone_count": plan_milestone_count,
+            "plan_fallback_generated": plan_fallback_generated,
+            "plan_bootstrap_source": plan_bootstrap_source,
+            "resource_transcript_context": selected_transcript_context,
+            "resource_transcript_available": transcript_available,
         })
+        session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
+        session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
+        session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
+        session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
+        if session_track_id:
+            context["track_id"] = session_track_id
+        if session_track_title:
+            context["track_title"] = session_track_title
+        if session_topic_id:
+            context["topic_id"] = session_topic_id
+        if session_topic_title:
+            context["topic_title"] = session_topic_title
+        context["search_context_terms"] = _merge_search_context_terms(
+            _search_terms_from_profile_context(profile_context),
+            _search_terms_from_setup(context.get("session_setup")),
+            [context.get("track_title"), context.get("topic_title")],
+        )
         return context
 
     topic_title = active_topic["title"]
@@ -790,14 +1009,33 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         except Exception:
             logger.warning("Failed to load previous notes for student '%s'", student_id, exc_info=True)
 
+    session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
+    session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
+    session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
+    session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
+    resolved_track_id = session_track_id or active_track_id
+    resolved_track_title = session_track_title or str(active_track_data.get("title") or active_track_id)
+    resolved_topic_id = session_topic_id or str(active_topic.get("id") or "")
+    resolved_topic_title = session_topic_title or topic_title
+    search_context_terms = _merge_search_context_terms(
+        _search_terms_from_profile_context(profile_context),
+        _search_terms_from_setup(session_setup),
+        [resolved_track_title, resolved_topic_title],
+    )
+    if plan_bootstrap_required:
+        previous_notes = []
+        resume_message = (
+            f"Welcome back, {student_name}. Let's build a 0-to-hero milestone plan "
+            "from your shared resource before we start solving."
+        )
+
     return {
         "student_id": student_id,
         "student_name": student_name,
-        "preferred_language": preferred_language,
-        "track_id": active_track_id,
-        "track_title": str(active_track_data.get("title") or active_track_id),
-        "topic_id": active_topic["id"],
-        "topic_title": topic_title,
+        "track_id": resolved_track_id,
+        "track_title": resolved_track_title,
+        "topic_id": resolved_topic_id,
+        "topic_title": resolved_topic_title,
         "topic_status": topic_status,
         "unresolved_topics": unresolved_topics,
         "available_topics": [
@@ -806,10 +1044,22 @@ async def _load_backlog_context(student_id: str) -> dict | None:
         ],
         "previous_notes": previous_notes,
         "resume_message": resume_message,
-        "language_policy": language_policy,
-        "language_contract": _build_language_contract(language_policy),
         "search_intent_policy": search_intent_policy,
         "tutor_preferences": tutor_preferences,
+        "profile_context": profile_context,
+        "session_phase": selected_phase,
+        "session_setup": session_setup,
+        "plan_bootstrap_required": plan_bootstrap_required,
+        "plan_bootstrap_completed": plan_bootstrap_completed,
+        "plan_milestone_min": plan_milestone_min,
+        "plan_milestone_count": plan_milestone_count,
+        "plan_fallback_generated": plan_fallback_generated,
+        "plan_bootstrap_source": plan_bootstrap_source,
+        "resource_transcript_context": selected_transcript_context,
+        "resource_transcript_available": transcript_available,
+        "search_context_terms": search_context_terms,
+        "topic_context_query": active_topic.get("context_query", ""),
+        "topic_context_summary": active_topic.get("context_summary", ""),
     }
 
 
@@ -819,12 +1069,8 @@ async def _build_profile_summary(student_snapshot) -> dict:
     student_id = student_snapshot.id
     student_ref = student_snapshot.reference
     student_name = str(student_data.get("name") or student_id)
-    language_policy = _normalize_language_policy(student_data.get("language_policy"), _default_language_policy())
-    language_policy = _apply_language_policy_templates(language_policy)
     tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    preferred_language = _normalize_preferred_language(
-        student_data.get("preferred_language") or language_policy.get("l2")
-    )
+    profile_context = _normalize_profile_context(student_data.get("profile_context"))
     active_track_id = str(student_data.get("active_track_id") or "").strip()
     active_topic_id = str(student_data.get("last_active_topic_id") or "").strip()
 
@@ -866,13 +1112,17 @@ async def _build_profile_summary(student_snapshot) -> dict:
     if not focus:
         focus = "Continue learning"
 
+    study_subject = str(profile_context.get("study_subject") or "").strip()
+
     return {
         "id": student_id,
         "name": student_name,
         "track": chosen_track["title"] if chosen_track else "General Learning",
         "focus": focus,
-        "preferred_language": preferred_language,
+        "current_topic": topic_title,
+        "study_subject": study_subject,
         "tutor_preferences": tutor_preferences,
+        "profile_context": profile_context,
     }
 
 # Firestore client for session logging (optional — works without it for local dev)
@@ -891,6 +1141,87 @@ except Exception:
         GCP_PROJECT_ID,
         exc_info=True,
     )
+
+# ---------------------------------------------------------------------------
+# In-memory profile store — local dev fallback when Firestore is unavailable.
+# Populated from seed_demo_profiles.PROFILES on startup.
+# ---------------------------------------------------------------------------
+_local_profiles: dict[str, dict] = {}  # student_id -> full student doc
+_local_tracks: dict[str, list[dict]] = {}  # student_id -> list of track dicts
+_local_topics: dict[str, dict[str, list[dict]]] = {}  # student_id -> {track_id: [topic dicts]}
+_local_sessions: dict[str, dict] = {}  # session_id -> session doc
+
+
+def _init_local_profiles():
+    """Build in-memory profile store from seed data."""
+    for profile in _SEED_PROFILES:
+        sid = profile["student_id"]
+        _local_profiles[sid] = dict(profile["student"])
+        _local_tracks[sid] = []
+        _local_topics[sid] = {}
+        for track_def in profile.get("tracks", []):
+            tid = track_def["track_id"]
+            _local_tracks[sid].append({"id": tid, **track_def["track"]})
+            _local_topics[sid][tid] = [
+                {"id": t["topic_id"], "title": t["title"], "status": t["status"],
+                 "order_index": t["order_index"], "context_query": t["context_query"]}
+                for t in track_def.get("topics", [])
+            ]
+    logger.info("Local profile store: %d profiles loaded from seed data", len(_local_profiles))
+
+
+def _build_local_profile_summary(student_id: str) -> dict | None:
+    """Build profile summary from local store (mirrors _build_profile_summary)."""
+    student_data = _local_profiles.get(student_id)
+    if not student_data:
+        return None
+
+    student_name = str(student_data.get("name") or student_id)
+    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
+    profile_context = _normalize_profile_context(student_data.get("profile_context"))
+    active_track_id = str(student_data.get("active_track_id") or "").strip()
+
+    track_rows = _local_tracks.get(student_id, [])
+    sorted_tracks = sorted(
+        track_rows,
+        key=lambda row: (0 if row["id"] == active_track_id else 1, row.get("title", "").lower()),
+    )
+    chosen_track = sorted_tracks[0] if sorted_tracks else None
+
+    topic_title = ""
+    if chosen_track:
+        topic_rows = _local_topics.get(student_id, {}).get(chosen_track["id"], [])
+        sorted_topics = sorted(topic_rows, key=lambda r: (r.get("order_index", 9999), r.get("title", "")))
+        active_topic = next((r for r in sorted_topics if r.get("status") != "mastered"), None)
+        if active_topic is None and sorted_topics:
+            active_topic = sorted_topics[0]
+        if active_topic:
+            topic_title = active_topic["title"]
+
+    focus = ""
+    if chosen_track and chosen_track.get("goal"):
+        focus = chosen_track["goal"]
+    elif topic_title:
+        focus = f"Continue with {topic_title}"
+    if not focus:
+        focus = "Continue learning"
+
+    study_subject = str(profile_context.get("study_subject") or "").strip()
+
+    return {
+        "id": student_id,
+        "name": student_name,
+        "track": chosen_track["title"] if chosen_track else "General Learning",
+        "focus": focus,
+        "current_topic": topic_title,
+        "study_subject": study_subject,
+        "tutor_preferences": tutor_preferences,
+        "profile_context": profile_context,
+    }
+
+
+_init_local_profiles()
+
 # ---------------------------------------------------------------------------
 # ADK Runner + Session Service
 # ---------------------------------------------------------------------------
@@ -1022,23 +1353,29 @@ async def health_check() -> dict:
 
 @app.get("/api/profiles")
 async def list_profiles() -> dict:
-    """Return profile cards from Firestore for frontend profile picker."""
-    if not firestore_client:
-        raise HTTPException(status_code=503, detail="Profile storage unavailable. Configure Firestore first.")
+    """Return profile cards from Firestore (or local store as fallback)."""
+    if firestore_client:
+        profiles: list[dict] = []
+        async for student_snapshot in firestore_client.collection("students").stream():
+            try:
+                profile = await _build_profile_summary(student_snapshot)
+                if profile.get("id"):
+                    profiles.append(profile)
+            except Exception:
+                logger.warning(
+                    "Failed to build profile summary for student '%s'",
+                    student_snapshot.id,
+                    exc_info=True,
+                )
+        profiles.sort(key=lambda p: (str(p.get("name", "")).lower(), str(p.get("id", ""))))
+        return {"profiles": profiles}
 
-    profiles: list[dict] = []
-    async for student_snapshot in firestore_client.collection("students").stream():
-        try:
-            profile = await _build_profile_summary(student_snapshot)
-            if profile.get("id"):
-                profiles.append(profile)
-        except Exception:
-            logger.warning(
-                "Failed to build profile summary for student '%s'",
-                student_snapshot.id,
-                exc_info=True,
-            )
-
+    # Fallback: serve from local in-memory store (seed data)
+    profiles = []
+    for sid in _local_profiles:
+        summary = _build_local_profile_summary(sid)
+        if summary and summary.get("id"):
+            profiles.append(summary)
     profiles.sort(key=lambda p: (str(p.get("name", "")).lower(), str(p.get("id", ""))))
     return {"profiles": profiles}
 
@@ -1046,9 +1383,6 @@ async def list_profiles() -> dict:
 @app.post("/api/profiles/{student_id}/preferences")
 async def save_profile_preferences(student_id: str, request: Request) -> dict:
     """Persist tutor preferences for one student profile."""
-    if not firestore_client:
-        raise HTTPException(status_code=503, detail="Profile storage unavailable. Configure Firestore first.")
-
     normalized_student_id = str(student_id or "").strip().lower()
     if not _STUDENT_ID_PATTERN.match(normalized_student_id):
         raise HTTPException(status_code=400, detail="Invalid profile identifier.")
@@ -1066,26 +1400,335 @@ async def save_profile_preferences(student_id: str, request: Request) -> dict:
     if not isinstance(raw_preferences, dict):
         raise HTTPException(status_code=400, detail="tutor_preferences must be an object.")
 
-    student_ref = firestore_client.collection("students").document(normalized_student_id)
-    student_snapshot = await student_ref.get()
-    if not student_snapshot.exists:
-        raise HTTPException(status_code=404, detail="Profile not found.")
-    student_data = student_snapshot.to_dict() or {}
+    if firestore_client:
+        student_ref = firestore_client.collection("students").document(normalized_student_id)
+        student_snapshot = await student_ref.get()
+        if not student_snapshot.exists:
+            raise HTTPException(status_code=404, detail="Profile not found.")
+        student_data = student_snapshot.to_dict() or {}
 
-    existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
+        existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
+        normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
 
-    await student_ref.set(
-        {
-            "tutor_preferences": normalized_preferences,
-            "updated_at": time.time(),
-        },
-        merge=True,
-    )
+        await student_ref.set(
+            {"tutor_preferences": normalized_preferences, "updated_at": time.time()},
+            merge=True,
+        )
+    else:
+        student_data = _local_profiles.get(normalized_student_id)
+        if not student_data:
+            raise HTTPException(status_code=404, detail="Profile not found.")
+        existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
+        normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
+        student_data["tutor_preferences"] = normalized_preferences
+
     return {
         "student_id": normalized_student_id,
         "tutor_preferences": normalized_preferences,
     }
+
+
+@app.post("/api/profiles/{student_id}/context")
+async def save_profile_context(student_id: str, request: Request) -> dict:
+    """Persist learner grounding context for one student profile."""
+    normalized_student_id = str(student_id or "").strip().lower()
+    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
+        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload.")
+
+    raw_context = payload.get("profile_context", payload)
+    if raw_context is None:
+        raw_context = {}
+    if not isinstance(raw_context, dict):
+        raise HTTPException(status_code=400, detail="profile_context must be an object.")
+
+    if firestore_client:
+        student_ref = firestore_client.collection("students").document(normalized_student_id)
+        student_snapshot = await student_ref.get()
+        if not student_snapshot.exists:
+            raise HTTPException(status_code=404, detail="Profile not found.")
+        student_data = student_snapshot.to_dict() or {}
+
+        existing_context = _normalize_profile_context(student_data.get("profile_context"))
+        normalized_context = _normalize_profile_context(raw_context, existing_context)
+
+        await student_ref.set(
+            {"profile_context": normalized_context, "updated_at": time.time()},
+            merge=True,
+        )
+    else:
+        student_data = _local_profiles.get(normalized_student_id)
+        if not student_data:
+            raise HTTPException(status_code=404, detail="Profile not found.")
+        existing_context = _normalize_profile_context(student_data.get("profile_context"))
+        normalized_context = _normalize_profile_context(raw_context, existing_context)
+        student_data["profile_context"] = normalized_context
+
+    return {
+        "student_id": normalized_student_id,
+        "profile_context": normalized_context,
+    }
+
+
+@app.get("/api/profiles/{student_id}/sessions")
+async def list_profile_sessions(student_id: str, request: Request) -> dict:
+    """List sessions for one student profile."""
+    normalized_student_id = str(student_id or "").strip().lower()
+    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
+        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
+
+    status_filter = str(request.query_params.get("status", "open") or "open").strip().lower()
+    if status_filter not in {"open", "closed", "all"}:
+        raise HTTPException(status_code=400, detail="status must be one of: open, closed, all")
+
+    try:
+        limit = int(request.query_params.get("limit", "20"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="limit must be an integer")
+    limit = max(1, min(50, limit))
+
+    if firestore_client:
+        rows: list[dict] = []
+        async for snap in firestore_client.collection("sessions").stream():
+            data = snap.to_dict() or {}
+            if str(data.get("student_id") or "").strip().lower() != normalized_student_id:
+                continue
+            state = str(data.get("status") or "open").strip().lower()
+            if status_filter != "all" and state != status_filter:
+                continue
+            rows.append(
+                {
+                    "session_id": snap.id,
+                    "status": state,
+                    "phase": str(data.get("phase") or "setup"),
+                    "topic_id": str(data.get("topic_id") or ""),
+                    "topic_title": str(data.get("topic_title") or ""),
+                    "track_id": str(data.get("track_id") or ""),
+                    "track_title": str(data.get("track_title") or ""),
+                    "started_at": float(data.get("started_at") or 0.0),
+                    "updated_at": float(data.get("updated_at") or data.get("started_at") or 0.0),
+                    "ended_reason": data.get("ended_reason"),
+                    "setup": data.get("setup") if isinstance(data.get("setup"), dict) else {},
+                }
+            )
+        rows.sort(key=lambda item: float(item.get("updated_at") or 0.0), reverse=True)
+        return {"sessions": rows[:limit]}
+
+    # Local fallback: filter in-memory sessions
+    rows = []
+    for sid, data in _local_sessions.items():
+        if str(data.get("student_id") or "").strip().lower() != normalized_student_id:
+            continue
+        state = str(data.get("status") or "open").strip().lower()
+        if status_filter != "all" and state != status_filter:
+            continue
+        rows.append({
+            "session_id": sid,
+            "status": state,
+            "phase": str(data.get("phase") or "setup"),
+            "topic_id": str(data.get("topic_id") or ""),
+            "topic_title": str(data.get("topic_title") or ""),
+            "track_id": str(data.get("track_id") or ""),
+            "track_title": str(data.get("track_title") or ""),
+            "started_at": float(data.get("started_at") or 0.0),
+            "updated_at": float(data.get("updated_at") or data.get("started_at") or 0.0),
+            "ended_reason": data.get("ended_reason"),
+            "setup": data.get("setup") if isinstance(data.get("setup"), dict) else {},
+        })
+    rows.sort(key=lambda item: float(item.get("updated_at") or 0.0), reverse=True)
+    return {"sessions": rows[:limit]}
+
+
+@app.post("/api/profiles/{student_id}/sessions")
+async def create_profile_session(student_id: str, request: Request) -> dict:
+    """Create a new tutoring session placeholder for a student profile."""
+    normalized_student_id = str(student_id or "").strip().lower()
+    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
+        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload.")
+
+    # Verify student exists
+    if firestore_client:
+        student_ref = firestore_client.collection("students").document(normalized_student_id)
+        student_snapshot = await student_ref.get()
+        if not student_snapshot.exists:
+            raise HTTPException(status_code=404, detail="Profile not found.")
+    elif normalized_student_id not in _local_profiles:
+        raise HTTPException(status_code=404, detail="Profile not found.")
+
+    # Load backlog context (Firestore) or build local fallback
+    if firestore_client:
+        base_context = await _load_backlog_context(normalized_student_id)
+        if not base_context:
+            raise HTTPException(status_code=400, detail="Could not load student context.")
+    else:
+        # Build lightweight context from local store
+        local_student = _local_profiles[normalized_student_id]
+        local_tracks = _local_tracks.get(normalized_student_id, [])
+        active_track_id = str(local_student.get("active_track_id") or "").strip()
+        chosen = next((t for t in local_tracks if t["id"] == active_track_id), local_tracks[0] if local_tracks else None)
+        local_topic_rows = _local_topics.get(normalized_student_id, {}).get(chosen["id"] if chosen else "", [])
+        active_topic = next((t for t in local_topic_rows if t.get("status") != "mastered"), local_topic_rows[0] if local_topic_rows else None)
+        base_context = {
+            "track_id": chosen["id"] if chosen else "",
+            "track_title": chosen.get("title", "") if chosen else "",
+            "topic_id": active_topic["id"] if active_topic else "current-topic",
+            "topic_title": active_topic.get("title", "Current Topic") if active_topic else "Current Topic",
+        }
+
+    now = time.time()
+    session_id = str(uuid.uuid4())
+    setup_payload = payload.get("setup") if isinstance(payload.get("setup"), dict) else {}
+    resource_refs = [
+        _sanitize_text(item, max_len=400)
+        for item in list(setup_payload.get("resource_refs") or [])
+        if _sanitize_text(item, max_len=400)
+    ][:10]
+    resource_materials, transcript_context = await ingest_youtube_transcripts(resource_refs)
+    normalized_resource_materials = _normalize_resource_materials(resource_materials)
+    youtube_materials = [
+        item for item in normalized_resource_materials if item.get("kind") == "youtube"
+    ]
+    youtube_requested = len(youtube_materials)
+    youtube_imported = sum(1 for item in youtube_materials if item.get("status") == "ready")
+    youtube_failed = sum(
+        1 for item in youtube_materials if item.get("status") in {"unavailable", "error"}
+    )
+    plan_bootstrap_required = True
+    plan_bootstrap_completed = False
+    if youtube_imported > 0:
+        plan_bootstrap_source = "youtube_transcript"
+    elif youtube_requested > 0:
+        plan_bootstrap_source = "transcript_unavailable"
+    else:
+        plan_bootstrap_source = "session_setup"
+    session_setup = {
+        "session_goal": _sanitize_text(setup_payload.get("session_goal")),
+        "student_context_text": _sanitize_text(setup_payload.get("student_context_text")),
+        "resource_refs": resource_refs,
+        "resource_materials": normalized_resource_materials,
+        "confirmed": bool(setup_payload.get("confirmed", False)),
+        "confirmed_at": None,
+    }
+
+    track_id = _sanitize_text(payload.get("track_id"), max_len=80) or str(base_context.get("track_id") or "")
+    track_title = _sanitize_text(payload.get("track_title"), max_len=120) or str(base_context.get("track_title") or track_id)
+    topic_id = _sanitize_text(payload.get("topic_id"), max_len=80) or str(base_context.get("topic_id") or "current-topic")
+    topic_title = _sanitize_text(payload.get("topic_title"), max_len=140) or str(base_context.get("topic_title") or "Current Topic")
+
+    doc = {
+        "session_id": session_id,
+        "student_id": normalized_student_id,
+        "status": "open",
+        "phase": "setup",
+        "started_at": now,
+        "updated_at": now,
+        "closed_at": None,
+        "ended_reason": None,
+        "duration_seconds": None,
+        "consent_given": False,
+        "track_id": track_id,
+        "track_title": track_title,
+        "topic_id": topic_id,
+        "topic_title": topic_title,
+        "resource_transcript_context": _sanitize_long_text(transcript_context, max_len=24000),
+        "setup": session_setup,
+        "capture": {
+            "source": "none",
+            "summary_text": "",
+            "artifacts_count": 0,
+            "confirmed": False,
+            "confirmed_at": None,
+        },
+        "planning": {
+            "bootstrap_required": plan_bootstrap_required,
+            "bootstrap_completed": plan_bootstrap_completed,
+            "milestone_min": _PLAN_MILESTONE_MIN_DEFAULT,
+            "milestone_count": 0,
+            "fallback_generated": False,
+            "fallback_reason": "",
+            "bootstrap_source": plan_bootstrap_source,
+        },
+        "mastery": {
+            "state": "not_started",
+            "last_proposed_at": None,
+            "last_evaluated_at": None,
+            "last_outcome": None,
+            "approved_at": None,
+        },
+    }
+
+    if firestore_client:
+        await firestore_client.collection("sessions").document(session_id).set(doc, merge=True)
+    else:
+        _local_sessions[session_id] = doc
+
+    return {
+        "session_id": session_id,
+        "status": "open",
+        "phase": "setup",
+        "topic_id": topic_id,
+        "topic_title": topic_title,
+        "track_id": track_id,
+        "track_title": track_title,
+        "setup": session_setup,
+        "resource_ingestion": {
+            "youtube_requested": youtube_requested,
+            "youtube_imported": youtube_imported,
+            "youtube_failed": youtube_failed,
+        },
+    }
+
+
+@app.delete("/api/profiles/{student_id}/sessions/{session_id}")
+async def delete_profile_session(student_id: str, session_id: str) -> dict:
+    """Delete one session for a student profile."""
+    normalized_student_id = str(student_id or "").strip().lower()
+    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
+        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
+
+    normalized_session_id = str(session_id or "").strip().lower()
+    if not _SESSION_ID_PATTERN.match(normalized_session_id):
+        raise HTTPException(status_code=400, detail="Invalid session identifier.")
+
+    async with _active_student_sessions_lock:
+        active = _active_student_sessions.get(normalized_student_id)
+        if active and str(active.get("session_id") or "").strip().lower() == normalized_session_id:
+            raise HTTPException(status_code=409, detail="Cannot delete an active live session.")
+
+    if firestore_client:
+        session_ref = firestore_client.collection("sessions").document(normalized_session_id)
+        snapshot = await session_ref.get()
+        if not snapshot.exists:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        session_data = snapshot.to_dict() or {}
+        session_student_id = str(session_data.get("student_id") or "").strip().lower()
+        if session_student_id != normalized_student_id:
+            raise HTTPException(status_code=404, detail="Session not found for this profile.")
+        await session_ref.delete()
+    else:
+        session_data = _local_sessions.get(normalized_session_id)
+        if not session_data:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        if str(session_data.get("student_id") or "").strip().lower() != normalized_student_id:
+            raise HTTPException(status_code=404, detail="Session not found for this profile.")
+        del _local_sessions[normalized_session_id]
+
+    return {"deleted": True, "session_id": normalized_session_id}
 
 
 class _StudentEndedSession(Exception):
@@ -1143,27 +1786,56 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await _send_json(websocket, {"type": "error", "data": "Invalid profile identifier. Please select a profile again."})
         await websocket.close(code=1008)
         return
-
-    resume_requested = str(websocket.query_params.get("resume", "")).strip().lower() in {"1", "true", "yes", "on"}
-    requested_resume_session_id = str(websocket.query_params.get("resume_session_id", "")).strip()
-    resumption_record: dict | None = None
-    if resume_requested:
-        resumption_record = await load_latest_resumption_handle(
-            firestore_client,
-            student_id=raw_student_id,
+    if not firestore_client:
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "Firestore is required in V1. Configure backend storage first."},
         )
-        if resumption_record and requested_resume_session_id:
-            stored_sid = str(resumption_record.get("session_id") or "")
-            if stored_sid and stored_sid != requested_resume_session_id:
-                logger.info(
-                    "Ignoring stale resumption handle for student '%s' (requested=%s stored=%s)",
-                    raw_student_id,
-                    requested_resume_session_id,
-                    stored_sid,
-                )
-                resumption_record = None
+        await websocket.close(code=1013)
+        return
 
-    backlog_context = await _load_backlog_context(raw_student_id)
+    raw_session_id = websocket.query_params.get("session_id", "").strip().lower()
+    if not raw_session_id:
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "Please select or create a session before starting."},
+        )
+        await websocket.close(code=1008)
+        return
+    if not _SESSION_ID_PATTERN.match(raw_session_id):
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "Invalid session identifier. Please reselect the session."},
+        )
+        await websocket.close(code=1008)
+        return
+
+    session_snapshot = await firestore_client.collection("sessions").document(raw_session_id).get() if firestore_client else None
+    if not session_snapshot or not session_snapshot.exists:
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "Session not found. Please create a new session."},
+        )
+        await websocket.close(code=1008)
+        return
+    selected_session = session_snapshot.to_dict() or {}
+    session_student = str(selected_session.get("student_id") or "").strip().lower()
+    if session_student != raw_student_id:
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "This session does not belong to the selected profile."},
+        )
+        await websocket.close(code=1008)
+        return
+    if str(selected_session.get("status") or "open").strip().lower() == "closed":
+        await _send_json(
+            websocket,
+            {"type": "error", "data": "This session is already closed. Please create a new one."},
+        )
+        await websocket.close(code=1008)
+        return
+
+    backlog_context = await _load_backlog_context(raw_student_id, session_data=selected_session)
     if not backlog_context:
         await _send_json(
             websocket,
@@ -1198,64 +1870,91 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             str(memory_recall.get("summary") or ""),
         )
 
-    resumption_handle = (
-        str((resumption_record or {}).get("handle") or "").strip()
-        if resume_requested
-        else ""
-    )
+    resumption_handle = ""
     session_run_config, run_config_meta = _build_session_run_config(
         resumption_handle=resumption_handle or None
     )
 
-    session_id = str(uuid.uuid4())
-    session_start = time.time()
+    session_id = raw_session_id
+    session_start = float(selected_session.get("started_at") or time.time())
     logger.info("Session %s accepted from %s", session_id, client_host)
 
-    # Log session start to Firestore
+    # Update session activity
     if firestore_client:
         try:
             await firestore_client.collection("sessions").document(session_id).set({
-                "started_at": session_start,
+                "session_id": session_id,
                 "client_host": _anonymize_ip(client_host),
+                "status": "open",
                 "ended_reason": None,
-                "duration_seconds": None,
-                "consent_given": False,
+                "closed_at": None,
                 "student_id": raw_student_id,
                 "track_id": backlog_context.get("track_id"),
+                "track_title": backlog_context.get("track_title"),
                 "topic_id": backlog_context.get("topic_id"),
+                "topic_title": backlog_context.get("topic_title"),
+                "phase": backlog_context.get("session_phase") or selected_session.get("phase") or "setup",
+                "updated_at": time.time(),
             })
         except Exception:
-            logger.warning("Session %s: failed to log start to Firestore", session_id, exc_info=True)
+            logger.warning("Session %s: failed to update session activity", session_id, exc_info=True)
 
     session_state = {
         "session_id": session_id,
         "gcp_project_id": GCP_PROJECT_ID,
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
-        "preferred_language": backlog_context.get("preferred_language"),
         "track_id": backlog_context.get("track_id"),
         "track_title": backlog_context.get("track_title"),
         "topic_id": backlog_context.get("topic_id"),
         "topic_title": backlog_context.get("topic_title"),
         "topic_status": backlog_context.get("topic_status"),
         "available_topics": backlog_context.get("available_topics", []),
-        "language_policy": backlog_context.get("language_policy"),
-        "language_contract": backlog_context.get("language_contract"),
         "search_intent_policy": backlog_context.get("search_intent_policy"),
+        "search_context_terms": backlog_context.get("search_context_terms", []),
         "tutor_preferences": backlog_context.get("tutor_preferences"),
+        "profile_context": backlog_context.get("profile_context", {}),
+        "session_setup": backlog_context.get("session_setup", {}),
+        "plan_bootstrap_required": bool(backlog_context.get("plan_bootstrap_required")),
+        "plan_bootstrap_completed": bool(backlog_context.get("plan_bootstrap_completed")),
+        "plan_milestone_min": _parse_int(
+            backlog_context.get("plan_milestone_min"),
+            _PLAN_MILESTONE_MIN_DEFAULT,
+            minimum=1,
+            maximum=20,
+        ),
+        "plan_milestone_count": _parse_int(
+            backlog_context.get("plan_milestone_count"),
+            0,
+            minimum=0,
+            maximum=50,
+        ),
+        "plan_fallback_generated": bool(backlog_context.get("plan_fallback_generated")),
+        "plan_bootstrap_source": _sanitize_text(
+            backlog_context.get("plan_bootstrap_source"),
+            max_len=40,
+        ),
+        "resource_transcript_context": backlog_context.get("resource_transcript_context", ""),
+        "resource_transcript_available": bool(backlog_context.get("resource_transcript_available")),
         "previous_notes": backlog_context.get("previous_notes", []),
         "resume_message": backlog_context.get("resume_message"),
         "memory_recall": memory_recall,
-        "session_phase": "greeting",
+        "session_phase": _agent_phase_from_session_phase(
+            str(backlog_context.get("session_phase") or selected_session.get("phase") or "setup")
+        ),
     }
     report = create_report(session_id, raw_student_id)
     report.record_run_config(
         run_config_meta,
-        resumption_requested=bool(resumption_handle),
+        resumption_requested=False,
     )
     backlog_context_payload = dict(backlog_context)
+    resource_transcript_context = str(backlog_context_payload.get("resource_transcript_context") or "").strip()
+    if resource_transcript_context:
+        backlog_context_payload["resource_transcript_context_available"] = True
+        backlog_context_payload.pop("resource_transcript_context", None)
     backlog_context_payload["session_id"] = session_id
-    backlog_context_payload["resumption_requested"] = bool(resumption_handle)
+    backlog_context_payload["resumption_requested"] = False
     await _send_json(websocket, {"type": "backlog_context", "data": backlog_context_payload})
     report.record_backlog_sent()
     report.record_memory_recall_applied(
@@ -1279,15 +1978,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
     for note in backlog_context.get("previous_notes", []):
         await _send_json(websocket, {"type": "whiteboard", "data": note})
-    if resumption_handle:
+    if state := selected_session.get("phase"):
         await _send_json(
             websocket,
             {
                 "type": "assistant_state",
-                "data": {"state": "reconnecting", "reason": "session_resumption_requested"},
+                "data": {"state": "active", "reason": f"session_phase_{state}"},
             },
         )
-        report.record_session_resume_attempt()
 
     replaced_session_id, replaced_socket = await _register_active_student_session(
         raw_student_id,
@@ -1333,7 +2031,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "mic_kickoff_sent": False,
         "_greeting_delivered": False,  # True after first greeting turn completes
         "_student_has_spoken": False,   # True after first input_transcription
-        "_turn_ticket_count": 1,        # Allow one tutor turn per student/proactive trigger
+        "_turn_ticket_count": 3,        # Allow tutor turns per student/proactive trigger
         "_last_tutor_audio_at": 0.0,    # For echo-guard around input_transcription
         "awaiting_student_reply": False,
         "student_activity_count": 0,
@@ -1346,10 +2044,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "question_note_signatures": set(),
         "example_note_counter": 0,
         "example_note_signatures": set(),
+        "_tutor_turn_parts": {"text": [], "transcript": []},
         "last_forced_search_query": "",
         "last_forced_search_at": 0.0,
         "search_intent_policy": backlog_context.get("search_intent_policy"),
+        "search_context_terms": backlog_context.get("search_context_terms", []),
         "tutor_preferences": backlog_context.get("tutor_preferences"),
+        "profile_context": backlog_context.get("profile_context", {}),
+        "session_setup": backlog_context.get("session_setup", {}),
+        "resource_transcript_context": backlog_context.get("resource_transcript_context", ""),
         "resume_message": backlog_context.get("resume_message"),
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
@@ -1370,10 +2073,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         **init_whiteboard_state(),
         **init_guardrails_state(),
         **init_grounding_state(),
-        **init_language_state(
-            backlog_context.get("language_policy"),
-            backlog_context.get("preferred_language"),
-        ),
         **init_latency_state(session_start),
         **init_memory_state(
             checkpoint_interval_s=MEMORY_CHECKPOINT_INTERVAL_S,
@@ -1382,6 +2081,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         ),
         "topic_id": backlog_context.get("topic_id"),
         "topic_title": backlog_context.get("topic_title"),
+        "track_title": backlog_context.get("track_title"),
+        "topic_context_query": backlog_context.get("topic_context_query", ""),
+        "topic_context_summary": backlog_context.get("topic_context_summary", ""),
         "_report": report,
     }
     recall_token_estimate = int(memory_recall.get("token_estimate", 0) or 0)
@@ -1393,16 +2095,41 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
     wb_queue = register_whiteboard_queue(session_id)
     topic_queue = register_topic_update_queue(session_id)
+    if bool(backlog_context.get("plan_bootstrap_required")):
+        try:
+            wb_queue.put_nowait({"action": "clear"})
+            wb_queue.put_nowait({"action": "clear_dedupe"})
+        except Exception:
+            logger.warning("Session %s: failed to pre-clear whiteboard for plan bootstrap", session_id, exc_info=True)
     ended_reason = "disconnect"
     try:
         try:
             # Create ADK session with initial state
-            adk_session = await session_service.create_session(
-                app_name="seeme_tutor",
-                user_id=raw_student_id,
-                state=session_state,
-                session_id=session_id,
-            )
+            try:
+                await session_service.create_session(
+                    app_name="seeme_tutor",
+                    user_id=raw_student_id,
+                    state=session_state,
+                    session_id=session_id,
+                )
+            except Exception as create_exc:
+                if not _is_adk_session_exists_error(create_exc):
+                    raise
+                logger.warning(
+                    "Session %s: ADK session id already exists, recycling in-memory session and retrying create_session",
+                    session_id,
+                )
+                await session_service.delete_session(
+                    app_name="seeme_tutor",
+                    user_id=raw_student_id,
+                    session_id=session_id,
+                )
+                await session_service.create_session(
+                    app_name="seeme_tutor",
+                    user_id=raw_student_id,
+                    state=session_state,
+                    session_id=session_id,
+                )
 
             # Create queue for browser→Gemini upstream
             live_queue = LiveRequestQueue()
@@ -1410,12 +2137,45 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # Send [SESSION START] hidden turn with student context
             student_context = {
                 "student_name": session_state.get("student_name"),
-                "preferred_language": session_state.get("preferred_language"),
                 "resume_message": session_state.get("resume_message"),
+                "track_title": session_state.get("track_title"),
                 "topic_title": session_state.get("topic_title"),
                 "topic_status": session_state.get("topic_status"),
-                "language_contract": session_state.get("language_contract"),
+                "topic_context_summary": session_state.get("topic_context_summary", ""),
                 "tutor_preferences": session_state.get("tutor_preferences"),
+                "profile_context": session_state.get("profile_context"),
+                "session_setup": session_state.get("session_setup"),
+                "resource_transcript_available": bool(
+                    session_state.get("resource_transcript_available")
+                    or str(session_state.get("resource_transcript_context") or "").strip()
+                ),
+                "plan_bootstrap_required": bool(
+                    session_state.get("plan_bootstrap_required")
+                ),
+                "plan_bootstrap_completed": bool(
+                    session_state.get("plan_bootstrap_completed")
+                ),
+                "plan_milestone_min": _parse_int(
+                    session_state.get("plan_milestone_min"),
+                    _PLAN_MILESTONE_MIN_DEFAULT,
+                    minimum=1,
+                    maximum=20,
+                ),
+                "plan_milestone_count": _parse_int(
+                    session_state.get("plan_milestone_count"),
+                    0,
+                    minimum=0,
+                    maximum=50,
+                ),
+                "plan_fallback_generated": bool(
+                    session_state.get("plan_fallback_generated")
+                ),
+                "plan_bootstrap_source": _sanitize_text(
+                    session_state.get("plan_bootstrap_source"),
+                    max_len=40,
+                ),
+                "search_context_terms": session_state.get("search_context_terms", []),
+                "session_phase": session_state.get("session_phase"),
                 "previous_notes_count": len(session_state.get("previous_notes", [])),
                 "memory_recall_count": int(memory_recall.get("selected_count", 0)),
             }
@@ -1442,6 +2202,57 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     )
                 )
                 runtime_state["memory_recall_count"] = int(runtime_state.get("memory_recall_count", 0)) + 1
+            resource_transcript_context = str(
+                session_state.get("resource_transcript_context") or ""
+            ).strip()
+            if resource_transcript_context:
+                live_queue.send_content(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                text=(
+                                    "INTERNAL CONTROL: Resource transcript context follows. "
+                                    "Treat as background grounding.\n"
+                                    f"{resource_transcript_context}\n"
+                                    "[IMPORTANT: Use this transcript as grounding context for tutoring in this session. "
+                                    "Do not read it aloud verbatim. Ask what the student wants to understand first.]"
+                                )
+                            )
+                        ],
+                    )
+                )
+            if bool(session_state.get("plan_bootstrap_required")):
+                transcript_available_for_bootstrap = bool(
+                    session_state.get("resource_transcript_available")
+                    or resource_transcript_context
+                )
+                if not transcript_available_for_bootstrap:
+                    control_text = (
+                        "INTERNAL CONTROL: This session requires plan bootstrap and no structured resource text is available. "
+                        "On your first spoken response after greeting, call mark_plan_fallback with a short reason, "
+                        "then ask the student which milestone to start and call set_session_phase('tutoring'). "
+                        "Do not mention this control message."
+                    )
+                else:
+                    control_text = (
+                        "INTERNAL CONTROL: This session requires a 0-to-hero milestone plan bootstrap. "
+                        "On your first spoken response after greeting, you MUST call write_notes 6 to 10 times "
+                        "with note_type='checklist_item' using unique titles 'Milestone 1 — ...', "
+                        "'Milestone 2 — ...', etc., based on session_setup and any resource transcript context when available. "
+                        "Then ask the student which milestone to start and call set_session_phase('tutoring'). "
+                        "Do not mention this control message."
+                    )
+                live_queue.send_content(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                text=control_text
+                            )
+                        ],
+                    )
+                )
             logger.info(
                 "Session %s run config: compression=%s(%s) resumption=%s(%s)",
                 session_id,
@@ -1528,6 +2339,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     finally:
         try:
+            await session_service.delete_session(
+                app_name="seeme_tutor",
+                user_id=raw_student_id,
+                session_id=session_id,
+            )
+        except Exception:
+            logger.warning(
+                "Session %s: failed to cleanup in-memory ADK session",
+                session_id,
+                exc_info=True,
+            )
+        try:
             await _persist_memory_checkpoint(
                 runtime_state,
                 session_id,
@@ -1557,10 +2380,32 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         duration = int(time.time() - session_start)
         if firestore_client:
             try:
-                await firestore_client.collection("sessions").document(session_id).update({
-                    "ended_reason": ended_reason,
+                now_ts = time.time()
+                update_payload: dict = {
+                    "updated_at": now_ts,
                     "duration_seconds": duration,
-                })
+                }
+                if ended_reason == "student_ended":
+                    update_payload.update(
+                        {
+                            "status": "closed",
+                            "phase": "closed",
+                            "ended_reason": ended_reason,
+                            "closed_at": now_ts,
+                        }
+                    )
+                else:
+                    update_payload.update(
+                        {
+                            "status": "open",
+                            "ended_reason": None,
+                            "last_disconnect_at": now_ts,
+                        }
+                    )
+                await firestore_client.collection("sessions").document(session_id).set(
+                    update_payload,
+                    merge=True,
+                )
             except Exception:
                 logger.warning("Session %s: failed to log end to Firestore", session_id, exc_info=True)
 
@@ -1713,7 +2558,7 @@ def _mark_student_activity(runtime_state: dict, *, unlock_turn: bool = False) ->
     reset_silence_tracking(runtime_state)
     if unlock_turn:
         runtime_state["_turn_ticket_count"] = max(
-            int(runtime_state.get("_turn_ticket_count", 0)), 1,
+            int(runtime_state.get("_turn_ticket_count", 0)), 3,
         )
 
 
@@ -2173,10 +3018,10 @@ async def _forward_to_gemini(
                 runtime_state["conversation_started"] = False
                 runtime_state["proactive_waiting_for_student"] = False
                 reset_silence_tracking(runtime_state)
-                try:
-                    queue.send_activity_start()
-                except Exception:
-                    logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
+                # try:
+                #     queue.send_activity_start()
+                # except Exception:
+                #     logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
                 logger.info("Control message from browser: 'mic_start'")
                 continue
             if msg_type == "away_mode":
@@ -2277,10 +3122,10 @@ async def _forward_to_gemini(
                     runtime_state["mic_opened_at"] = None
                     runtime_state["mic_kickoff_sent"] = False
                     runtime_state["idle_stage"] = 0
-                    try:
-                        queue.send_activity_end()
-                    except Exception:
-                        logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
+                    # try:
+                    #     queue.send_activity_end()
+                    # except Exception:
+                    #     logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
                 logger.info("Control message from browser: '%s'", msg_type)
                 continue
             if msg_type == "source_switch":
@@ -2357,20 +3202,33 @@ async def _forward_to_gemini(
 
             if msg_type == "audio":
                 now = time.time()
-                # Greeting-gate race fix: open the gate as soon as real speech audio arrives,
-                # even if input_transcription.finished lands later in the stream.
+                # Audio heuristic: grant a ticket when speech-like audio is detected,
+                # but do NOT open the greeting gate here. Only input_transcription
+                # or barge_in should set _student_has_spoken, because the PCM
+                # heuristic fires on ambient noise and defeats the greeting gate.
                 if (
                     runtime_state.get("_greeting_delivered")
                     and not runtime_state.get("_student_has_spoken")
                     and _is_probable_speech_pcm16(raw_bytes)
                 ):
-                    runtime_state["_student_has_spoken"] = True
-                    runtime_state["proactive_waiting_for_student"] = False
+                    # Grant a ticket so the model CAN respond once transcription confirms speech,
+                    # but keep the greeting gate closed.
                     runtime_state["_turn_ticket_count"] = max(int(runtime_state.get("_turn_ticket_count", 0)), 1)
-                    logger.info("Detected non-silent student audio — opening greeting gate")
-                # NOTE: Raw audio chunks are continuous (~15/sec) even during silence.
-                # Do NOT reset idle/silence tracking here — that must only happen on
-                # actual speech (input_transcription) or deliberate user actions.
+                    logger.debug("Speech-like audio detected — granting ticket but keeping greeting gate")
+                # Raw audio chunks are continuous (~15/sec) even during silence.
+                # However, when speech-like audio IS detected, we must reset the
+                # idle timer to prevent proactive pokes while the student is talking.
+                # This is critical because the echo guard may discard the eventual
+                # input_transcription (if tutor audio just finished), leaving no
+                # other mechanism to tell the idle orchestrator "student is active".
+                # Rate-limit to once per second to avoid excessive resets on noise.
+                if _is_probable_speech_pcm16(raw_bytes):
+                    last_speech_reset = float(runtime_state.get("_last_speech_audio_reset", 0.0))
+                    if (now - last_speech_reset) >= 1.0:
+                        runtime_state["last_user_activity_at"] = now
+                        runtime_state["idle_stage"] = 0
+                        reset_silence_tracking(runtime_state)
+                        runtime_state["_last_speech_audio_reset"] = now
                 lat = _latency_state.get(session_id)
                 if lat is not None:
                     lat["last_audio_in"] = now
@@ -2830,37 +3688,35 @@ async def _forward_to_client(
                         force=False,
                     )
 
-            # If a turn was gated out due missing student/proactive trigger, discard
-            # all events until the matching turn_complete boundary.
-            if drop_turn_in_progress:
-                if event.turn_complete:
-                    drop_turn_in_progress = False
-                    runtime_state["assistant_speaking"] = False
-                    audio_response_chunks = 0
-                    turn_had_output = False
-                    _debug_logger.debug("TURN_DROPPED_COMPLETE sid=%s (no ticket)", session_id[:8])
-                continue
+            # If a turn was gated out due missing student/proactive trigger, suppress
+            # its output until the matching turn_complete boundary.
+            suppress_output = drop_turn_in_progress
+            if drop_turn_in_progress and event.turn_complete:
+                drop_turn_in_progress = False
+                runtime_state["assistant_speaking"] = False
+                audio_response_chunks = 0
+                turn_had_output = False
+                _debug_logger.debug("TURN_DROPPED_COMPLETE sid=%s (no ticket)", session_id[:8])
 
-            # --- Audio and text from content parts ---
-            if event.content and event.content.parts:
+            if not suppress_output and event.content and event.content.parts:
                 # Greeting gate: after first greeting turn, suppress output until student speaks.
                 # Prevents Gemini from producing duplicate greetings from [SESSION START].
                 if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken"):
-                    continue
+                    suppress_output = True
 
                 # General turn gate: allow only one tutor turn per student/proactive trigger.
-                if int(runtime_state.get("_turn_ticket_count", 0)) <= 0:
+                elif int(runtime_state.get("_turn_ticket_count", 0)) <= 0:
+                    suppress_output = True
                     runtime_state["assistant_speaking"] = False
-                    if event.turn_complete:
-                        audio_response_chunks = 0
-                        turn_had_output = False
-                        _debug_logger.debug("TURN_DROPPED_ONE_EVENT sid=%s (no ticket)", session_id[:8])
-                    else:
+                    if not event.turn_complete:
                         drop_turn_in_progress = True
                         _debug_logger.debug("TURN_DROPPED_START sid=%s (no ticket)", session_id[:8])
+                    else:
+                        _debug_logger.debug("TURN_DROPPED_ONE_EVENT sid=%s (no ticket)", session_id[:8])
                     logger.info("Suppressed extra tutor turn without new student activity")
-                    continue
 
+            # --- Audio and text from content parts ---
+            if event.content and event.content.parts and not suppress_output:
                 for part in event.content.parts:
                     # Audio data
                     inline_data = getattr(part, "inline_data", None)
@@ -2948,6 +3804,15 @@ async def _forward_to_client(
                                     len(inline_data.data), inline_data.data[:16].hex(),
                                 )
                         runtime_state["_last_tutor_audio_at"] = time.time()
+                        # Close greeting gate on first audio reaching the
+                        # browser — echo-triggered interrupts can no longer
+                        # reset tickets and cause duplicate greetings.
+                        if not runtime_state.get("_greeting_delivered"):
+                            runtime_state["_greeting_delivered"] = True
+                            _debug_logger.debug(
+                                "GREETING_GATE_CLOSED sid=%s (first audio out)",
+                                session_id[:8],
+                            )
                         audio_bytes: bytes = inline_data.data
                         encoded = base64.b64encode(audio_bytes).decode("utf-8")
                         await _send_json(websocket, {"type": "audio", "data": encoded})
@@ -2966,7 +3831,7 @@ async def _forward_to_client(
                             logger.info("Sanitized leaked internal text from tutor output")
                         if not cleaned:
                             continue
-                        append_tutor_text_part(runtime_state, cleaned, source="text")
+                        _append_tutor_turn_part(runtime_state, cleaned, source="text")
                         logger.info("TUTOR TEXT: %s", cleaned)
                         runtime_state["last_user_activity_at"] = time.time()
                         runtime_state["idle_stage"] = 0
@@ -3008,12 +3873,15 @@ async def _forward_to_client(
 
             # --- Turn complete ---
             if event.turn_complete:
-                # Greeting gate: after first turn, suppress subsequent turns until student speaks
-                if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken"):
-                    runtime_state["assistant_speaking"] = False
-                    _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (greeting gate)", session_id[:8])
-                    logger.info("Suppressed duplicate greeting turn (turn #%d)", turn_count + 1)
-                    audio_response_chunks = 0
+                if suppress_output:
+                    # If this turn was suppressed, skip normal turn_complete logic.
+                    # Drop logic has already handled state cleanup.
+                    # We just need to log the greeting gate drop if that was the reason.
+                    if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken") and not drop_turn_in_progress and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
+                        runtime_state["assistant_speaking"] = False
+                        _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (greeting gate)", session_id[:8])
+                        logger.info("Suppressed duplicate greeting turn (turn #%d)", turn_count + 1)
+                        audio_response_chunks = 0
                     continue
 
                 # Ignore no-output synthetic turn_complete bursts when no ticket is available.
@@ -3046,30 +3914,7 @@ async def _forward_to_client(
                 if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
                     runtime_state["_turn_ticket_count"] = int(runtime_state.get("_turn_ticket_count", 0)) - 1
                 turn_had_output = False
-                lang_turn = finalize_language_tutor_turn(runtime_state)
-                if lang_turn.get("events"):
-                    for language_event in lang_turn["events"]:
-                        await _send_json(
-                            websocket,
-                            {"type": "language_event", "data": language_event},
-                        )
-                        if report:
-                            report.record_language_event(language_event)
-                control_prompt = lang_turn.get("control_prompt")
-                if control_prompt:
-                    live_queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
-                    )
-                language_metric = build_language_metric_snapshot(runtime_state)
-                await _send_json(
-                    websocket,
-                    {
-                        "type": "language_metric",
-                        "data": language_metric,
-                    },
-                )
-                if report:
-                    report.record_language_metric(language_metric)
+                turn_snapshot = _finalize_tutor_turn(runtime_state)
                 await _persist_memory_checkpoint(
                     runtime_state,
                     session_id,
@@ -3081,7 +3926,7 @@ async def _forward_to_client(
 
                 # Track whether the tutor is waiting on a student reply and detect
                 # near-duplicate prompt loops when no new student activity happened.
-                turn_text = str(lang_turn.get("turn_text") or "").strip()
+                turn_text = str(turn_snapshot.get("turn_text") or "").strip()
                 if completed_with_output and turn_text:
                     await _maybe_store_question_answer_note(
                         session_id,
@@ -3152,9 +3997,8 @@ async def _forward_to_client(
                 else:
                     runtime_state["awaiting_student_reply"] = False
 
-                # Mark greeting as delivered only after a turn with actual audio/text.
-                # Silent/empty turns (e.g. model acknowledging [SESSION START]) must
-                # not lock the gate — the real audio greeting arrives in a later turn.
+                # Fallback: also set greeting gate at turn_complete if not
+                # already closed by the first-audio-out path (e.g. text-only turns).
                 if not runtime_state.get("_greeting_delivered") and completed_with_output:
                     runtime_state["_greeting_delivered"] = True
 
@@ -3170,10 +4014,20 @@ async def _forward_to_client(
                         report.record_stale_interruption()
                     continue
                 runtime_state["assistant_speaking"] = False
-                _mark_student_activity(runtime_state, unlock_turn=True)
+                # During the greeting phase, interrupts are typically echo
+                # from the tutor's own audio — not real student speech.
+                # Only unlock turn tickets when the student has actually
+                # spoken (confirmed by barge_in or input_transcription).
+                if runtime_state.get("_student_has_spoken"):
+                    _mark_student_activity(runtime_state, unlock_turn=True)
+                else:
+                    # Minimal idle reset — no ticket unlock.
+                    runtime_state["last_user_activity_at"] = time.time()
+                    runtime_state["idle_stage"] = 0
+                    reset_silence_tracking(runtime_state)
                 if dc is not None:
                     dc["interrupted"] += 1
-                _debug_logger.debug("INTERRUPTED sid=%s", session_id[:8])
+                _debug_logger.debug("INTERRUPTED sid=%s student_spoken=%s", session_id[:8], runtime_state.get("_student_has_spoken"))
                 if report:
                     report.record_interruption()
                 lat = _latency_state.get(session_id)
@@ -3242,8 +4096,14 @@ async def _forward_to_client(
             if event.input_transcription and event.input_transcription.text and event.input_transcription.finished:
                 student_text = event.input_transcription.text
                 logger.info("STUDENT TRANSCRIPT: %s", student_text)
+                
+                # We always want to mark activity to grant a ticket if the student spoke, 
+                # because Gemini might respond to it.
+                _mark_student_activity(runtime_state, unlock_turn=True)
+                runtime_state["_student_has_spoken"] = True
+                
                 # Echo guard: while tutor output is active, transcription often captures
-                # assistant audio from speakers. In that case, do not unlock another turn.
+                # assistant audio from speakers. In that case, ignore the transcript content.
                 now = time.time()
                 is_echo_window = (
                     runtime_state.get("assistant_speaking")
@@ -3252,9 +4112,6 @@ async def _forward_to_client(
                 if is_echo_window:
                     _debug_logger.debug("INPUT_TRANSCRIPT_IGNORED sid=%s (echo-window)", session_id[:8])
                     continue
-
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                runtime_state["_student_has_spoken"] = True
                 runtime_state["latency_last_student_transcript_at"] = now
                 if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
                     runtime_state["latency_first_request_at"] = now
@@ -3295,23 +4152,6 @@ async def _forward_to_client(
                         runtime_state["last_forced_search_query"] = search_query
                         runtime_state["last_forced_search_at"] = now
                         runtime_state["last_hidden_prompt_at"] = now
-
-                language_update = handle_language_student_transcript(
-                    student_text,
-                    runtime_state,
-                )
-                for language_event in language_update.get("events", []):
-                    await _send_json(
-                        websocket,
-                        {"type": "language_event", "data": language_event},
-                    )
-                    if report:
-                        report.record_language_event(language_event)
-                control_prompt = language_update.get("control_prompt")
-                if control_prompt:
-                    live_queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
-                    )
 
                 # Guardrail: check student input for off-topic / cheat / inappropriate
                 student_guardrail_events = check_student_input(student_text)
@@ -3374,7 +4214,7 @@ async def _forward_to_client(
                     continue
 
                 logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
-                append_tutor_text_part(runtime_state, tutor_text, source="transcript")
+                _append_tutor_turn_part(runtime_state, tutor_text, source="transcript")
 
                 # Guardrail: check tutor output for answer leaks
                 tutor_guardrail_events = check_tutor_output(tutor_text, runtime_state)

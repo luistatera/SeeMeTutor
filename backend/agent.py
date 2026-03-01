@@ -8,6 +8,7 @@ manual tool dispatch with state: dict injection.
 
 import logging
 import os
+import re
 import time
 
 from google.adk.agents import Agent
@@ -59,7 +60,7 @@ def get_firestore_client():
 _BASE_INSTRUCTION = """\
 You are SeeMe, a warm, patient, and encouraging tutor. You speak like a favorite \
 teacher — enthusiastic but never rushed. Your name is SeeMe because you see the \
-student's homework, hear their questions, and speak their language.
+student's homework and hear their questions in real time.
 
 ## Session Phase System
 
@@ -76,29 +77,21 @@ what's on your mind?" or "Sure, let's look at that differently." Then \
 re-approach from a fresh angle based on what they said. Never finish a sentence \
 after being interrupted.
 
-## Language Matching
-
-Follow the session's language contract strictly. The backend provides L1/L2 \
-and mode in each session start context. Treat those values as the source of \
-truth instead of fixed language allowlists. If the learner's language intent is \
-ambiguous, default to L1 and ask one short clarification question.
+## Communication Clarity
 
 At the beginning of each session, a [SESSION START] message is sent containing \
-the student's preferred_language, language_contract, and other context. Use this \
-immediately to greet the student — do not call get_backlog_context at session \
-start. The language_contract in that message is mandatory and overrides generic \
-language behavior. Use get_backlog_context only to refresh context mid-session.
+session context. Use this immediately to greet the student — do not call \
+get_backlog_context at session start. Use get_backlog_context only to refresh \
+context mid-session.
 
-Hard turn-level rule: use one language per tutor turn. Never mix two languages \
-in one response unless the language_contract explicitly allows it.
+Speak clearly, match the student's level, and avoid unnecessary jargon.
 
-When changing languages, add one short transition sentence first, then continue \
-fully in the new language.
+## Language Matching
 
-For guided bilingual language learning (for example German A2): explain \
-strategy in L1, run drills in L2, then return to a short L1 recap based on the \
-contract settings. Gently correct errors by modeling the correct form in a \
-follow-up question, not by stating "that was wrong."
+Respond in the same language the student uses. If the student speaks German, \
+respond in German. If they speak Portuguese, respond in Portuguese. If their \
+language is unclear, ask briefly which language they prefer. One language per \
+turn — never mix languages in the same response.
 
 ## Tutor Personalization
 
@@ -228,17 +221,32 @@ _PHASE_GREETING = """\
 
 1. Read the student context from the [SESSION START] message. Do NOT call \
 get_backlog_context — the context is already provided. Start speaking immediately.
-2. Greet the student by name in their preferred_language.
+2. Greet the student by name and confirm what they want to work on now.
 3. Reference what they worked on last time (use resume_message from the context).
 4. If previous_notes_count > 0, the student has unfinished exercises on the board. \
 Tell them: "I see we still have [N] exercises from last time. Want to continue \
 where we left off, or show me new homework?" If they want to continue, call \
 `set_session_phase("tutoring")` directly — the exercises are already on the whiteboard.
-5. Invite them to show their homework on camera OR pick a topic to work on verbally.
-6. Keep it brief — one warm greeting, one invitation to start.
+5. If `plan_bootstrap_required=true`, create a full 0-to-hero plan BEFORE tutoring:
+- Call `write_notes` 6 to 10 times with `note_type="checklist_item"` using \
+short unique titles: "Milestone 1 — ...", "Milestone 2 — ...", etc.
+- If `resource_transcript_available=true`, build milestones from session goal + shared transcript.
+- If `resource_transcript_available=false`, build milestones from session goal + student context + topic.
+- Cover foundations, guided practice, transfer practice, and final mastery check.
+- Then say one short line: "I mapped a full plan on the board. Which milestone \
+should we start with?" and call `set_session_phase("tutoring")`.
+6. If `plan_bootstrap_required=true` and `resource_transcript_available=false`, you may call \
+`mark_plan_fallback` once to generate a ready-made fallback structure, then \
+call `set_session_phase("tutoring")`.
+7. If `topic_context_summary` is provided, you already know about this topic. \
+Reference it naturally in your greeting: "I see you're studying {topic_title}..."
+8. Otherwise, invite them to show their homework on camera OR pick a topic to work on verbally.
+9. Keep it brief — one warm greeting, one invitation to start.
 
 ### Transitions
 - If previous_notes exist and student wants to continue → call `set_session_phase("tutoring")`.
+- If `plan_bootstrap_required=true` and milestones were added → call `set_session_phase("tutoring")`.
+- If `plan_bootstrap_required=true` and fallback was generated → call `set_session_phase("tutoring")`.
 - If the camera shows exercises or a homework page → call `set_session_phase("capture")`.
 - If the student picks a topic verbally without showing homework → call `set_session_phase("tutoring")`."""
 
@@ -294,6 +302,19 @@ short declarative hint/explanation before asking another question.
 
 Always celebrate each correct step before moving forward. Even partial \
 understanding deserves genuine encouragement.
+
+### Topic Context Awareness
+
+At session start, you may receive a `topic_context_summary` with background \
+knowledge about the student's current study topic. Use this context to guide \
+the student — reference specific rules, formulas, or concepts from the loaded \
+material rather than giving generic advice.
+
+If the student shows exercises on camera that go beyond your loaded context, \
+call `search_topic_context` with a relevant query to learn more before guiding \
+them. When the student describes a new topic or book they want to study, call \
+`search_topic_context` to load context, then use `google_search` with the same \
+query to get specific results.
 
 ### Emotional Adaptation
 
@@ -354,12 +375,51 @@ hallucinate content. Instead, ask a brief check-in or wait for the student.
 ### Exercise Tracking
 
 When starting an exercise, call `update_note_status(note_id, "in_progress")`.
-When the student solves it, call `update_note_status(note_id, "done")` or \
-`"mastered"`, then move to the next one. If the student is stuck, call \
-`update_note_status(note_id, "struggling")`, then simplify your approach.
+If the student is stuck, call `update_note_status(note_id, "struggling")`, \
+then simplify your approach.
 
 You MUST call `update_note_status` before moving between exercises. The student \
 sees these status changes on their board — it gives them a sense of progress.
+
+### Mastery Verification Protocol
+
+You MUST follow this protocol before marking any exercise as mastered:
+
+**Step 1 — SOLVE:** Guide the student to the correct answer using the Socratic \
+method. When they get it right, celebrate briefly, then call \
+`verify_mastery_step(note_id, "solve", true)` and move to Step 2.
+
+**Step 2 — EXPLAIN:** Ask the student to explain their reasoning:
+- "Great answer! Can you explain why that works?"
+- "How did you know to use that formula?"
+- "What's the rule behind this?"
+
+If they can explain correctly, call `verify_mastery_step(note_id, "explain", true)` \
+and move to Step 3. If they cannot explain, call \
+`verify_mastery_step(note_id, "explain", false)` — this resets to Step 1. \
+Reteach the concept, then try again.
+
+**Step 3 — TRANSFER:** Give a similar problem with different numbers or context:
+- "Now try this one: [variation of the same concept]"
+- "What if the number was negative instead?"
+- "Apply the same rule to this sentence: [different example]"
+
+If they solve it, call `verify_mastery_step(note_id, "transfer", true)`, then \
+call `update_note_status(note_id, "mastered")`. If they struggle, call \
+`verify_mastery_step(note_id, "transfer", false)` — this resets to Step 1.
+
+**CRITICAL:** Never skip steps. Never call `update_note_status(note_id, "mastered")` \
+without completing all three verification steps — the system will block it. \
+For exercises where mastery verification is not needed (simple warm-ups, review \
+items), use `update_note_status(note_id, "done")` instead.
+
+**Escape hatch:** If the student fails the same step three times, offer to mark \
+it as "done" and come back to it later rather than getting stuck in a loop.
+
+**Progress signals to the student:**
+- After Step 1: "You got it! Now tell me — why does that work?"
+- After Step 2: "You really understand this. Let me give you one more to be sure..."
+- After Step 3: "You've mastered this one! That concept is yours now."
 
 ### Supporting Notes
 
@@ -413,7 +473,7 @@ factoring trick on your own — that's real progress."
 4. Note any unfinished exercises for next time: "We still have Exercise 5 to \
 tackle — we'll pick it up next session."
 5. Suggest what to work on next session based on what you observed.
-6. End warmly in the student's preferred language.
+6. End warmly and confirm the next concrete step for the student.
 
 ### Transitions
 - If the student wants to continue working → call \
@@ -467,6 +527,137 @@ TOOL_LATENCY_BUDGETS = {
     "get_backlog_context": 150,  # ms
 }
 
+
+PLAN_MILESTONE_MIN_DEFAULT = 6
+_PLAN_MILESTONE_TITLE_RE = re.compile(r"^\s*milestone\s+\d+\b", re.IGNORECASE)
+
+
+def _parse_int(value, fallback: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return max(minimum, min(maximum, parsed))
+
+
+def _is_transcript_available(state: dict) -> bool:
+    if bool(state.get("resource_transcript_available")):
+        return True
+    transcript = str(state.get("resource_transcript_context") or "").strip()
+    return bool(transcript)
+
+
+def _planning_snapshot(tool_context: ToolContext) -> dict:
+    state = tool_context.state
+    milestone_min = _parse_int(
+        state.get("plan_milestone_min"),
+        PLAN_MILESTONE_MIN_DEFAULT,
+        minimum=1,
+        maximum=20,
+    )
+    milestone_count = _parse_int(
+        state.get("plan_milestone_count"),
+        0,
+        minimum=0,
+        maximum=50,
+    )
+    fallback_generated = bool(state.get("plan_fallback_generated"))
+    bootstrap_source = str(state.get("plan_bootstrap_source") or "").strip().lower()
+    transcript_available = _is_transcript_available(state)
+    bootstrap_completed = bool(state.get("plan_bootstrap_completed")) or milestone_count >= milestone_min
+    if fallback_generated and not transcript_available:
+        bootstrap_completed = True
+    bootstrap_required = bool(state.get("plan_bootstrap_required")) and not bootstrap_completed
+    return {
+        "bootstrap_required": bootstrap_required,
+        "bootstrap_completed": bootstrap_completed,
+        "milestone_min": milestone_min,
+        "milestone_count": milestone_count,
+        "fallback_generated": fallback_generated,
+        "bootstrap_source": bootstrap_source,
+        "transcript_available": transcript_available,
+    }
+
+
+async def _persist_planning_state(tool_context: ToolContext) -> None:
+    fs_client = get_firestore_client()
+    session_id = str(tool_context.state.get("session_id") or "").strip()
+    if not fs_client or not session_id:
+        return
+
+    snapshot = _planning_snapshot(tool_context)
+    planning_doc = {
+        "bootstrap_required": bool(snapshot["bootstrap_required"]),
+        "bootstrap_completed": bool(snapshot["bootstrap_completed"]),
+        "milestone_min": int(snapshot["milestone_min"]),
+        "milestone_count": int(snapshot["milestone_count"]),
+        "fallback_generated": bool(snapshot["fallback_generated"]),
+        "fallback_reason": str(tool_context.state.get("plan_fallback_reason") or "").strip(),
+        "bootstrap_source": str(tool_context.state.get("plan_bootstrap_source") or "").strip(),
+    }
+    try:
+        await (
+            fs_client.collection("sessions")
+            .document(session_id)
+            .set(
+                {
+                    "planning": planning_doc,
+                    "updated_at": time.time(),
+                },
+                merge=True,
+            )
+        )
+    except Exception:
+        logger.exception("Session %s: failed to persist planning state", session_id)
+
+
+def _is_plan_milestone_note(title: str, note_type: str) -> bool:
+    if note_type != "checklist_item":
+        return False
+    return bool(_PLAN_MILESTONE_TITLE_RE.match(str(title or "").strip()))
+
+
+def _update_plan_milestones_from_note(tool_context: ToolContext, title: str, note_type: str) -> bool:
+    if not bool(tool_context.state.get("plan_bootstrap_required")):
+        return False
+    if not _is_plan_milestone_note(title, note_type):
+        return False
+
+    state = tool_context.state
+    milestone_min = _parse_int(
+        state.get("plan_milestone_min"),
+        PLAN_MILESTONE_MIN_DEFAULT,
+        minimum=1,
+        maximum=20,
+    )
+    milestone_count = _parse_int(
+        state.get("plan_milestone_count"),
+        0,
+        minimum=0,
+        maximum=50,
+    )
+
+    seen_titles = state.get("_plan_milestone_titles")
+    if not isinstance(seen_titles, set):
+        seen_titles = set()
+        state["_plan_milestone_titles"] = seen_titles
+    if not seen_titles and milestone_count > 0:
+        for idx in range(milestone_count):
+            seen_titles.add(f"__persisted_{idx + 1}")
+
+    normalized_title = str(title or "").strip().lower()
+    if normalized_title in seen_titles:
+        return False
+
+    seen_titles.add(normalized_title)
+    updated_count = max(milestone_count, len(seen_titles))
+    state["plan_milestone_count"] = updated_count
+    if updated_count >= milestone_min:
+        state["plan_bootstrap_completed"] = True
+        state["plan_bootstrap_required"] = False
+    return True
+
+
 def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
     """Transition the tutoring session to a new phase.
 
@@ -503,6 +694,43 @@ def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
                 f"Allowed transitions: {', '.join(sorted(allowed)) if allowed else 'none'}"
             ),
         }
+
+    if normalized == "tutoring":
+        planning = _planning_snapshot(tool_context)
+        if planning["bootstrap_required"]:
+            remaining = max(
+                int(planning["milestone_min"]) - int(planning["milestone_count"]),
+                0,
+            )
+            if planning["transcript_available"]:
+                return {
+                    "result": "error",
+                    "detail": (
+                        "Cannot start tutoring yet. Add milestone notes first. "
+                        f"Required: {planning['milestone_min']}, current: {planning['milestone_count']}."
+                    ),
+                    "planning": {
+                        "milestone_min": planning["milestone_min"],
+                        "milestone_count": planning["milestone_count"],
+                        "remaining_milestones": remaining,
+                        "transcript_available": True,
+                        "fallback_generated": planning["fallback_generated"],
+                    },
+                }
+            return {
+                "result": "error",
+                "detail": (
+                    "Cannot start tutoring yet. Add milestone notes first, or call mark_plan_fallback(...) "
+                    "to generate a fallback plan from available context."
+                ),
+                "planning": {
+                    "milestone_min": planning["milestone_min"],
+                    "milestone_count": planning["milestone_count"],
+                    "remaining_milestones": remaining,
+                    "transcript_available": False,
+                    "fallback_generated": planning["fallback_generated"],
+                },
+            }
 
     tool_context.state["session_phase"] = normalized
     logger.info("Phase transition: %s -> %s", current_phase, normalized)
@@ -549,7 +777,6 @@ def get_backlog_context(tool_context: ToolContext) -> dict:
     return {
         "student_id": tool_context.state.get("student_id"),
         "student_name": tool_context.state.get("student_name"),
-        "preferred_language": tool_context.state.get("preferred_language"),
         "track_id": tool_context.state.get("track_id"),
         "track_title": tool_context.state.get("track_title"),
         "topic_id": tool_context.state.get("topic_id"),
@@ -557,8 +784,22 @@ def get_backlog_context(tool_context: ToolContext) -> dict:
         "topic_status": tool_context.state.get("topic_status"),
         "available_topics": tool_context.state.get("available_topics", []),
         "previous_notes": tool_context.state.get("previous_notes", []),
-        "language_policy": tool_context.state.get("language_policy"),
-        "language_contract": tool_context.state.get("language_contract"),
+        "plan_bootstrap_required": bool(tool_context.state.get("plan_bootstrap_required")),
+        "plan_bootstrap_completed": bool(tool_context.state.get("plan_bootstrap_completed")),
+        "plan_milestone_min": _parse_int(
+            tool_context.state.get("plan_milestone_min"),
+            PLAN_MILESTONE_MIN_DEFAULT,
+            minimum=1,
+            maximum=20,
+        ),
+        "plan_milestone_count": _parse_int(
+            tool_context.state.get("plan_milestone_count"),
+            0,
+            minimum=0,
+            maximum=50,
+        ),
+        "plan_fallback_generated": bool(tool_context.state.get("plan_fallback_generated")),
+        "plan_bootstrap_source": str(tool_context.state.get("plan_bootstrap_source") or "").strip(),
     }
 
 
@@ -942,6 +1183,23 @@ async def write_notes(
             _wb_queued = True
             previous_notes = tool_context.state.setdefault("previous_notes", [])
             previous_notes.append(note)
+        else:
+            previous_notes = tool_context.state.setdefault("previous_notes", [])
+            previous_notes.append(
+                {
+                    "id": note_id,
+                    "title": title,
+                    "content": content,
+                    "note_type": note_type,
+                    "status": status,
+                }
+            )
+
+        planning_state_changed = _update_plan_milestones_from_note(
+            tool_context,
+            title=title,
+            note_type=note_type,
+        )
 
         student_id = tool_context.state.get("student_id")
         track_id = tool_context.state.get("track_id")
@@ -979,6 +1237,9 @@ async def write_notes(
                 "Firestore not available — note not persisted (OK for local dev)"
             )
 
+        if planning_state_changed:
+            await _persist_planning_state(tool_context)
+
         _result_status = "displayed"
         return {
             "result": "displayed",
@@ -1004,6 +1265,115 @@ async def write_notes(
                 rpt.record_whiteboard_note_created()
                 if _wb_queued and note_id:
                     rpt.record_whiteboard_note_queued(str(note_id))
+
+
+def verify_mastery_step(
+    note_id: str, step: str, passed: bool, tool_context: ToolContext
+) -> dict:
+    """Record that the student passed or failed a mastery verification step.
+
+    Before marking any exercise as "mastered", you MUST use this tool to verify
+    understanding through three sequential steps:
+      1. "solve"    — student solved the exercise correctly
+      2. "explain"  — student explained WHY their answer is correct
+      3. "transfer" — student solved a similar problem with different values
+
+    Call this after each step with passed=true or passed=false.
+    Only after all three steps pass can you call update_note_status with "mastered".
+
+    Args:
+        note_id: The exercise note being verified (e.g. 'note-1234567890').
+        step: Which step — "solve", "explain", or "transfer".
+        passed: Whether the student passed this step.
+
+    Returns:
+        A dict with the result, next step, and guidance prompt.
+    """
+    session_id = tool_context.state.get("session_id")
+    t0 = time.time()
+    _result_status = "error"
+    try:
+        valid_steps = ("solve", "explain", "transfer")
+        step_normalized = step.strip().lower() if step else ""
+        if step_normalized not in valid_steps:
+            return {
+                "result": "error",
+                "detail": f"step must be one of: {', '.join(valid_steps)}",
+            }
+
+        state_key = f"mastery_step_{note_id}"
+        current_step = tool_context.state.get(state_key, "solve")
+
+        # Validate step order
+        step_order = {"solve": 0, "explain": 1, "transfer": 2}
+        if step_order.get(step_normalized, 0) != step_order.get(current_step, 0):
+            _result_status = "wrong_step"
+            return {
+                "result": "wrong_step",
+                "detail": f"Expected step '{current_step}', got '{step_normalized}'.",
+                "current_step": current_step,
+                "prompt": f"The student is on the '{current_step}' step. Complete that first.",
+            }
+
+        if passed:
+            if step_normalized == "solve":
+                tool_context.state[state_key] = "explain"
+                _result_status = "step_passed"
+                return {
+                    "result": "step_passed",
+                    "step": "solve",
+                    "next_step": "explain",
+                    "prompt": "Ask the student to explain WHY their answer works.",
+                }
+            elif step_normalized == "explain":
+                tool_context.state[state_key] = "transfer"
+                _result_status = "step_passed"
+                return {
+                    "result": "step_passed",
+                    "step": "explain",
+                    "next_step": "transfer",
+                    "prompt": "Give the student a similar problem with different values.",
+                }
+            elif step_normalized == "transfer":
+                tool_context.state[state_key] = "verified"
+                _result_status = "mastery_verified"
+                return {
+                    "result": "mastery_verified",
+                    "step": "transfer",
+                    "note_id": note_id,
+                    "prompt": "Student has verified mastery! Call update_note_status(note_id, 'mastered').",
+                }
+        else:
+            # Failed — reset to solve
+            tool_context.state[state_key] = "solve"
+            _result_status = "step_failed"
+            return {
+                "result": "step_failed",
+                "step": step_normalized,
+                "note_id": note_id,
+                "prompt": f"Student didn't pass the '{step_normalized}' step. Reteach the concept and try Step 1 (solve) again.",
+            }
+
+        return {"result": "error", "detail": "Unexpected state"}
+    finally:
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=verify_mastery_step duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call(
+                "verify_mastery_step",
+                {"note_id": note_id, "step": step, "passed": passed},
+                _result_status,
+                duration_ms,
+            )
+            if _result_status == "mastery_verified":
+                rpt.record_mastery_verified(note_id)
+            elif _result_status == "step_failed":
+                rpt.record_mastery_step_failed(note_id, step_normalized)
 
 
 async def update_note_status(
@@ -1035,6 +1405,25 @@ async def update_note_status(
                 "result": "error",
                 "detail": f"status must be one of: {', '.join(sorted(valid_statuses))}",
             }
+
+        # Mastery guard: "mastered" requires verify_mastery_step completion
+        if normalized_status == "mastered":
+            mastery_state = tool_context.state.get(f"mastery_step_{note_id}")
+            if mastery_state != "verified":
+                rpt = get_report(session_id)
+                if rpt:
+                    rpt.record_premature_mastery_blocked(note_id)
+                _result_status = "mastery_not_verified"
+                return {
+                    "result": "mastery_not_verified",
+                    "note_id": note_id,
+                    "detail": (
+                        "Cannot mark as mastered without completing the 3-step "
+                        "verification protocol. Use verify_mastery_step to record "
+                        "solve → explain → transfer before marking mastered."
+                    ),
+                    "current_mastery_step": mastery_state or "solve",
+                }
 
         # Skip redundant same-status updates
         note_statuses = tool_context.state.setdefault("_session_note_statuses", {})
@@ -1099,6 +1488,102 @@ async def update_note_status(
             rpt.record_tool_call("update_note_status", {"note_id": note_id, "status": status}, _result_status, duration_ms)
             if _result_status == "updated":
                 rpt.record_whiteboard_status_update()
+
+
+async def mark_plan_fallback(reason: str, tool_context: ToolContext) -> dict:
+    """Generate a transcript-unavailable fallback plan for plan bootstrap sessions.
+
+    Call this only when plan bootstrap is required and transcript context is not
+    available. The tool writes a clear fallback summary plus milestone checklist
+    notes so tutoring can proceed safely.
+    """
+    session_id = tool_context.state.get("session_id")
+    t0 = time.time()
+    _result_status = "error"
+    try:
+        planning = _planning_snapshot(tool_context)
+        if not planning["bootstrap_required"]:
+            _result_status = "noop"
+            return {
+                "result": "noop",
+                "detail": "Plan bootstrap is not required for this session.",
+            }
+        if planning["transcript_available"]:
+            return {
+                "result": "error",
+                "detail": "Transcript is available; create milestone notes directly instead of fallback mode.",
+            }
+        if planning["fallback_generated"] and planning["bootstrap_completed"]:
+            _result_status = "already_exists"
+            return {
+                "result": "already_exists",
+                "detail": "Fallback plan already generated for this session.",
+                "planning": planning,
+            }
+
+        session_setup = tool_context.state.get("session_setup", {})
+        goal = str(session_setup.get("session_goal") or "").strip()
+        student_context = str(session_setup.get("student_context_text") or "").strip()
+        topic_title = str(tool_context.state.get("topic_title") or "current topic").strip()
+        focus_label = goal or student_context or topic_title
+        fallback_reason = str(reason or "").strip() or "transcript_unavailable"
+        summary_content = (
+            f"- Structured resource text is unavailable right now.\n"
+            f"- Fallback focus: {focus_label}\n"
+            "- We will run a structured path from fundamentals to mastery check."
+        )
+        await write_notes(
+            title="Fallback plan from context",
+            content=summary_content,
+            note_type="summary",
+            status="in_progress",
+            tool_context=tool_context,
+        )
+
+        milestone_specs = [
+            ("Milestone 1 - Baseline check", "- Identify what you already know and what is unclear."),
+            ("Milestone 2 - Core concepts", "- Build a clean concept map with precise definitions."),
+            ("Milestone 3 - Guided example", "- Solve one worked example with reasoning at each step."),
+            ("Milestone 4 - Supported practice", "- Solve a similar problem with hints only when needed."),
+            ("Milestone 5 - Independent practice", "- Solve a new variant independently and explain choices."),
+            ("Milestone 6 - Mastery check", "- Complete a final challenge and self-explain the solution."),
+        ]
+        for milestone_title, milestone_content in milestone_specs:
+            await write_notes(
+                title=milestone_title,
+                content=milestone_content,
+                note_type="checklist_item",
+                status="pending",
+                tool_context=tool_context,
+            )
+
+        tool_context.state["plan_fallback_generated"] = True
+        tool_context.state["plan_fallback_reason"] = fallback_reason
+        tool_context.state["plan_bootstrap_completed"] = True
+        tool_context.state["plan_bootstrap_required"] = False
+        await _persist_planning_state(tool_context)
+
+        _result_status = "generated"
+        return {
+            "result": "generated",
+            "detail": "Fallback plan generated. You can now call set_session_phase('tutoring').",
+            "planning": _planning_snapshot(tool_context),
+        }
+    finally:
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=mark_plan_fallback duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call(
+                "mark_plan_fallback",
+                {"reason": reason},
+                _result_status,
+                duration_ms,
+            )
 
 
 async def switch_topic(
@@ -1281,6 +1766,91 @@ async def flag_drift(
                 rpt.record_guardrail_event(normalized_type, "medium", "model_drift")
 
 
+async def search_topic_context(query: str, tool_context: ToolContext) -> dict:
+    """Search for educational context about the current study topic.
+
+    Call this when you need more context about the subject the student is
+    studying. Use it at session start if topic_context_summary is empty, or
+    mid-session when the student shifts to a sub-topic you need to learn about.
+
+    Args:
+        query: Search query about the study topic (e.g., "dative case German grammar rules and exercises").
+
+    Returns:
+        A dict with the search status and a summary of the results found.
+    """
+    session_id = tool_context.state.get("session_id")
+    student_id = tool_context.state.get("student_id")
+    track_id = tool_context.state.get("track_id")
+    topic_id = tool_context.state.get("topic_id")
+    t0 = time.time()
+    _result_status = "error"
+    try:
+        clean_query = str(query or "").strip()
+        if not clean_query:
+            return {"result": "error", "detail": "Query cannot be empty."}
+
+        logger.info(
+            "Session %s: search_topic_context query='%s'",
+            session_id,
+            clean_query[:120],
+        )
+
+        # Store in session state so the tutor can reference it
+        tool_context.state["topic_context_query"] = clean_query
+
+        # Persist to Firestore topic if available
+        fs_client = get_firestore_client()
+        if fs_client and student_id and track_id and topic_id:
+            try:
+                topic_ref = (
+                    fs_client.collection("students")
+                    .document(student_id)
+                    .collection("tracks")
+                    .document(track_id)
+                    .collection("topics")
+                    .document(topic_id)
+                )
+                await topic_ref.set(
+                    {
+                        "context_query": clean_query,
+                        "updated_at": time.time(),
+                    },
+                    merge=True,
+                )
+            except Exception:
+                logger.warning(
+                    "Session %s: failed to persist context_query to Firestore",
+                    session_id,
+                    exc_info=True,
+                )
+
+        _result_status = "searched"
+        return {
+            "result": "searched",
+            "query": clean_query,
+            "detail": (
+                "Search dispatched. Use google_search with this query to get "
+                "results, then summarize the key concepts for the student's topic."
+            ),
+        }
+    finally:
+        duration_ms = (time.time() - t0) * 1000
+        logger.info(
+            "TOOL_METRIC session=%s tool=search_topic_context duration_ms=%.1f",
+            session_id,
+            duration_ms,
+        )
+        rpt = get_report(session_id)
+        if rpt:
+            rpt.record_tool_call(
+                "search_topic_context",
+                {"query": query},
+                _result_status,
+                duration_ms,
+            )
+
+
 # ---------------------------------------------------------------------------
 # ADK Agent definition
 # ---------------------------------------------------------------------------
@@ -1291,9 +1861,12 @@ TUTOR_TOOLS = [
     log_progress,
     set_checkpoint_decision,
     write_notes,
+    mark_plan_fallback,
+    verify_mastery_step,
     update_note_status,
     switch_topic,
     flag_drift,
+    search_topic_context,
     google_search,
 ]
 

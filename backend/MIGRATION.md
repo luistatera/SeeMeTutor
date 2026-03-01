@@ -24,7 +24,6 @@ backend/
 ├── modules/
 │   ├── __init__.py
 │   ├── proactive.py     # PoC 02 — idle orchestrator, hidden turns
-│   ├── language.py      # PoC 03 — language detection, contracts
 │   ├── whiteboard.py    # PoC 04 — note normalization, dispatcher
 │   ├── grounding.py     # PoC 05 — citation extraction
 │   ├── guardrails.py    # PoC 09 — input/output checks
@@ -281,34 +280,6 @@ Backend config only (VAD sensitivity already set in Step 0). Frontend-heavy.
 | 5.4 | Factual question without "search" | No search, answer from knowledge | |
 
 **Pass gate:** 5.1–5.4 all pass.
-
----
-
-### Step 6 — PoC 03: Multilingual
-
-**Test reference:** `pocs/03_multilingual/test.md`
-
-| Item | Status |
-|---|---|
-| Create `modules/language.py` | ✅ |
-| `handle_student_transcript` hook | ✅ |
-| `finalize_tutor_turn` hook | ✅ |
-
-**Implementation notes (2026-02-28):**
-- `modules/language.py` added with policy normalization, language heuristics, confusion fallback logic, turn-level language analysis, and internal control prompt generation.
-- Runtime language state now initialized in `main.py` via `init_language_state(...)`.
-- Student transcript path now calls `handle_student_transcript(...)` and can inject hidden language-control prompts into `live_queue`.
-- Tutor turn completion now calls `finalize_tutor_turn(...)`, emits `language_event` / `language_metric`, and injects guided-phase/recap control prompts when needed.
-- Unit tests added: `backend/tests/test_language.py`.
-
-| # | Test | Expected | Result |
-|---|---|---|---|
-| 6.1 | Speak Portuguese | Tutor responds in Portuguese | |
-| 6.2 | Speak German | Tutor responds in German | |
-| 6.3 | Speak unsupported language | Tutor responds in English with redirect | |
-| 6.4 | Switch language mid-session | Transition sentence + new language | |
-
-**Pass gate:** 6.1–6.4 all pass.
 
 ---
 

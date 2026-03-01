@@ -20,7 +20,7 @@ def test_finalize_builds_prd_scorecard_structure():
     assert "poc_99_hero_flow_rehearsal" in scorecard["pocs"]
 
 
-def test_latency_and_language_checks_can_pass():
+def test_latency_checks_can_pass():
     report = SessionReport("session-234", "student-def")
     report.record_backlog_sent()
     report.record_turn_complete(3)
@@ -37,18 +37,10 @@ def test_latency_and_language_checks_can_pass():
         "turns": 1,
         "alerts": 0,
     })
-    report.record_language_metric({
-        "purity_rate": 99.0,
-        "guided_adherence": 98.0,
-        "guided_expected_turns": 2,
-        "fallback_latency_turns": [1.0],
-        "l2_ratio": 75.0,
-    })
 
     report.finalize("student_ended")
     pocs = report.data["prd_scorecard"]["pocs"]
 
-    assert pocs["poc_03_multilingual"]["status"] == "pass"
     assert pocs["poc_07_latency"]["status"] == "pass"
 
 

@@ -224,6 +224,14 @@ class SessionReport:
                 "stop_sharing_count": 0,
                 "switch_log": [],
             },
+            "mastery": {
+                "verifications_completed": 0,
+                "premature_mastery_blocked": 0,
+                "step_failures": 0,
+                "verified_note_ids": [],
+                "blocked_note_ids": [],
+                "step_failure_details": [],
+            },
             "errors": [],
             "manual": {},
             "prd_scorecard": {},
@@ -513,6 +521,23 @@ class SessionReport:
 
     def record_whiteboard_clear(self):
         self.data["whiteboard"]["clear_events"] += 1
+
+    # --- Mastery Verification ---
+
+    def record_mastery_verified(self, note_id: str):
+        self.data["mastery"]["verifications_completed"] += 1
+        self.data["mastery"]["verified_note_ids"].append(note_id)
+
+    def record_premature_mastery_blocked(self, note_id: str):
+        self.data["mastery"]["premature_mastery_blocked"] += 1
+        if note_id not in self.data["mastery"]["blocked_note_ids"]:
+            self.data["mastery"]["blocked_note_ids"].append(note_id)
+
+    def record_mastery_step_failed(self, note_id: str, step: str):
+        self.data["mastery"]["step_failures"] += 1
+        self.data["mastery"]["step_failure_details"].append(
+            {"note_id": note_id, "step": step, "at": time.time()}
+        )
 
     # --- Interruptions ---
 
@@ -839,15 +864,8 @@ class SessionReport:
         }
 
         # ------------------------------------------------------------------
-        # POC 03 — Multilingual
+        # POC 03 — Multilingual (auto-detect, respond in student's language)
         # ------------------------------------------------------------------
-        guided_expected = language_latest.get("guided_expected_turns")
-        guided_adherence = language_latest.get("guided_adherence")
-        fallback_latency_turns = language_latest.get("fallback_latency_turns", [])
-        fallback_latency_avg = None
-        if isinstance(fallback_latency_turns, list) and fallback_latency_turns:
-            fallback_latency_avg = sum(float(v) for v in fallback_latency_turns) / len(fallback_latency_turns)
-
         p03_checks = [
             self._check(
                 "P03.language_purity_rate",
@@ -856,33 +874,6 @@ class SessionReport:
                 language_latest.get("purity_rate"),
                 _check_status_pass_fail_not_tested(language_latest.get("purity_rate"), min_value=98),
                 "language.latest_metric.purity_rate",
-            ),
-            self._check(
-                "P03.guided_bilingual_adherence",
-                "Guided bilingual adherence",
-                ">=95%",
-                guided_adherence if isinstance(guided_expected, int) and guided_expected > 0 else None,
-                _check_status_pass_fail_not_tested(
-                    guided_adherence if isinstance(guided_expected, int) and guided_expected > 0 else None,
-                    min_value=95,
-                ),
-                "language.latest_metric.guided_adherence",
-            ),
-            self._check(
-                "P03.fallback_trigger_latency",
-                "Fallback trigger latency (turns)",
-                "<=1 turn",
-                _round_or_none(fallback_latency_avg, 2),
-                _check_status_pass_fail_not_tested(fallback_latency_avg, max_value=1),
-                "language.latest_metric.fallback_latency_turns",
-            ),
-            self._check(
-                "P03.l2_distribution",
-                "L2 word ratio",
-                ">=70%",
-                language_latest.get("l2_ratio"),
-                _check_status_pass_fail_not_tested(language_latest.get("l2_ratio"), min_value=70),
-                "language.latest_metric.l2_ratio",
             ),
         ]
         pocs["poc_03_multilingual"] = {
@@ -1319,6 +1310,55 @@ class SessionReport:
         pocs["poc_13_memory_management"] = {
             "status": _status_from_checks(p13_checks),
             "checks": p13_checks,
+        }
+
+        # ------------------------------------------------------------------
+        # POC 14 — Mastery Verification Protocol
+        # ------------------------------------------------------------------
+        mastery_verified = int(self.data["mastery"]["verifications_completed"])
+        mastery_blocked = int(self.data["mastery"]["premature_mastery_blocked"])
+        mastery_step_failures = int(self.data["mastery"]["step_failures"])
+        p14_checks = [
+            self._check(
+                "P14.mastery_verifications",
+                "3-step mastery verifications completed",
+                ">=1 when exercises mastered",
+                mastery_verified if mastery_verified > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    mastery_verified if mastery_verified > 0 else None,
+                    min_value=1,
+                ),
+                "mastery.verifications_completed",
+            ),
+            self._check(
+                "P14.premature_mastery_blocked",
+                "Premature mastery attempts blocked",
+                "tracked (informational)",
+                mastery_blocked,
+                "pass" if mastery_blocked >= 0 else "not_tested",
+                "mastery.premature_mastery_blocked",
+                "Counts times tutor tried to mark mastered without verification.",
+            ),
+            self._check(
+                "P14.mastery_protocol_active",
+                "Mastery protocol tool called",
+                ">=1 when tutoring phase active",
+                (mastery_verified + mastery_blocked + mastery_step_failures)
+                if (mastery_verified + mastery_blocked + mastery_step_failures) > 0
+                else None,
+                _check_status_pass_fail_not_tested(
+                    (mastery_verified + mastery_blocked + mastery_step_failures)
+                    if (mastery_verified + mastery_blocked + mastery_step_failures) > 0
+                    else None,
+                    min_value=1,
+                ),
+                "mastery.*",
+                "At least one mastery-related tool call observed.",
+            ),
+        ]
+        pocs["poc_14_mastery_verification"] = {
+            "status": _status_from_checks(p14_checks),
+            "checks": p14_checks,
         }
 
         # ------------------------------------------------------------------

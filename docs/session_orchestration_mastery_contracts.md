@@ -582,15 +582,14 @@ Evaluation formula:
 
 All checks must pass for `approved`.
 
-## Backward Compatibility
+## V1 Reset (No Compatibility Layer)
 
-- Existing `sessions/{session_id}` fields remain valid.
-- Existing `log_progress(..., "mastered")` should be replaced by:
-  - `propose_mastery` tool -> `/mastery/propose` endpoint.
-- Existing topic progress location remains authoritative:
-  - `students/{student_id}/tracks/{track_id}/topics/{topic_id}`
+- This is the first production-ready V1 contract.
+- No backward-compatibility constraints are assumed.
+- Session creation/selection before WebSocket start is mandatory.
+- Mastery should be persisted through deterministic `/mastery/propose` evaluation, not legacy direct `mastered` writes.
 
 ## Non-goals for Steps 1-2
 
 - Resource ingestion/indexing (NotebookLM-like flow) is Step 3.
-- Language policy refactor is a separate stream; this contract is subject-agnostic.
+- Language-specific tutoring contracts/metrics are intentionally out of scope; V1 runtime is subject-agnostic.
