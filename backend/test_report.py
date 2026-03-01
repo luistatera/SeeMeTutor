@@ -98,6 +98,13 @@ class SessionReport:
                 "ws_connected": True,
                 "backlog_context_sent": False,
             },
+            "run_config": {
+                "compression_enabled": None,
+                "compression_field": None,
+                "resumption_enabled": None,
+                "resumption_field": None,
+                "resumption_requested": False,
+            },
             "audio": {
                 "chunks_in": 0,
                 "chunks_out": 0,
@@ -121,6 +128,37 @@ class SessionReport:
                 "stream_retry_attempts": 0,
                 "stream_reconnect_successes": 0,
                 "stream_reconnect_failures": 0,
+                "retry_backoff_seconds": [],
+                "session_resume_attempts": 0,
+                "session_resume_successes": 0,
+                "session_resume_fallbacks": 0,
+                "resumption_handles_saved": 0,
+                "events": [],
+            },
+            "compression": {
+                "events": 0,
+                "last_token_estimate": 0,
+                "trigger_tokens": 0,
+                "target_tokens": 0,
+                "events_detail": [],
+            },
+            "memory": {
+                "recall_checks": 0,
+                "checkpoints_saved": 0,
+                "cells_saved": 0,
+                "recalls_applied": 0,
+                "recall_candidates_last": 0,
+                "recall_candidates_total": 0,
+                "recall_selected_total": 0,
+                "last_recall_token_estimate": 0,
+                "recall_token_estimates": [],
+                "checkpoint_attempts": 0,
+                "checkpoint_skipped": 0,
+                "checkpoint_failed": 0,
+                "checkpoint_reasons": {},
+                "checkpoint_skip_reasons": {},
+                "checkpoint_failure_reasons": {},
+                "budget_violations": 0,
                 "events": [],
             },
             "tools": {
@@ -196,6 +234,15 @@ class SessionReport:
     def record_backlog_sent(self):
         self.data["connection"]["backlog_context_sent"] = True
 
+    def record_run_config(self, meta: dict | None, *, resumption_requested: bool = False):
+        payload = meta or {}
+        run_cfg = self.data["run_config"]
+        run_cfg["compression_enabled"] = bool(payload.get("compression_enabled"))
+        run_cfg["compression_field"] = payload.get("compression_field")
+        run_cfg["resumption_enabled"] = bool(payload.get("resumption_enabled"))
+        run_cfg["resumption_field"] = payload.get("resumption_field")
+        run_cfg["resumption_requested"] = bool(resumption_requested)
+
     # --- Audio ---
 
     def record_audio_in(self):
@@ -253,6 +300,16 @@ class SessionReport:
             "timestamp": time.time(),
         })
 
+    def record_stream_retry_backoff(self, attempt: int, backoff_seconds: float):
+        delay = round(float(backoff_seconds), 3)
+        self.data["resilience"]["retry_backoff_seconds"].append(delay)
+        self.data["resilience"]["events"].append({
+            "type": "stream_retry_backoff",
+            "attempt": int(attempt),
+            "backoff_seconds": delay,
+            "timestamp": time.time(),
+        })
+
     def record_stream_reconnect_success(self, attempt: int):
         self.data["resilience"]["stream_reconnect_successes"] += 1
         self.data["resilience"]["events"].append({
@@ -267,6 +324,131 @@ class SessionReport:
             "type": "stream_reconnect_failure",
             "attempt": int(attempt),
             "reason": str(reason),
+            "timestamp": time.time(),
+        })
+
+    def record_session_resume_attempt(self):
+        self.data["resilience"]["session_resume_attempts"] += 1
+        self.data["resilience"]["events"].append({
+            "type": "session_resume_attempt",
+            "timestamp": time.time(),
+        })
+
+    def record_session_resume_success(self):
+        self.data["resilience"]["session_resume_successes"] += 1
+        self.data["resilience"]["events"].append({
+            "type": "session_resume_success",
+            "timestamp": time.time(),
+        })
+
+    def record_session_resume_fallback(self, reason: str):
+        self.data["resilience"]["session_resume_fallbacks"] += 1
+        self.data["resilience"]["events"].append({
+            "type": "session_resume_fallback",
+            "reason": str(reason),
+            "timestamp": time.time(),
+        })
+
+    def record_session_resumption_handle_saved(self):
+        self.data["resilience"]["resumption_handles_saved"] += 1
+        self.data["resilience"]["events"].append({
+            "type": "session_resumption_handle_saved",
+            "timestamp": time.time(),
+        })
+
+    def record_context_compression(
+        self,
+        token_estimate: int,
+        trigger_tokens: int,
+        *,
+        target_tokens: int = 0,
+    ):
+        self.data["compression"]["events"] += 1
+        self.data["compression"]["last_token_estimate"] = int(token_estimate)
+        self.data["compression"]["trigger_tokens"] = int(trigger_tokens)
+        self.data["compression"]["target_tokens"] = int(target_tokens)
+        self.data["compression"]["events_detail"].append({
+            "token_estimate": int(token_estimate),
+            "trigger_tokens": int(trigger_tokens),
+            "target_tokens": int(target_tokens),
+            "timestamp": time.time(),
+        })
+
+    def record_memory_recall_applied(
+        self,
+        *,
+        selected_count: int,
+        token_estimate: int,
+        candidate_count: int = 0,
+    ):
+        self.data["memory"]["recall_checks"] += 1
+        selected = int(max(0, int(selected_count)))
+        candidates = int(max(0, int(candidate_count)))
+        if selected > 0:
+            self.data["memory"]["recalls_applied"] += 1
+        self.data["memory"]["recall_selected_total"] += selected
+        self.data["memory"]["recall_candidates_last"] = candidates
+        self.data["memory"]["recall_candidates_total"] += candidates
+        self.data["memory"]["last_recall_token_estimate"] = int(token_estimate)
+        self.data["memory"]["recall_token_estimates"].append(int(max(0, int(token_estimate))))
+        self.data["memory"]["events"].append({
+            "type": "memory_recall_applied",
+            "selected_count": selected,
+            "candidate_count": candidates,
+            "token_estimate": int(token_estimate),
+            "timestamp": time.time(),
+        })
+
+    def record_memory_checkpoint_attempt(self, *, reason: str):
+        self.data["memory"]["checkpoint_attempts"] += 1
+        self.data["memory"]["events"].append({
+            "type": "memory_checkpoint_attempt",
+            "reason": str(reason),
+            "timestamp": time.time(),
+        })
+
+    def record_memory_checkpoint_skipped(self, *, reason: str):
+        self.data["memory"]["checkpoint_skipped"] += 1
+        reasons = self.data["memory"]["checkpoint_skip_reasons"]
+        key = str(reason or "unknown")
+        reasons[key] = int(reasons.get(key, 0)) + 1
+        self.data["memory"]["events"].append({
+            "type": "memory_checkpoint_skipped",
+            "reason": key,
+            "timestamp": time.time(),
+        })
+
+    def record_memory_checkpoint_failure(self, *, reason: str, error: str):
+        self.data["memory"]["checkpoint_failed"] += 1
+        reasons = self.data["memory"]["checkpoint_failure_reasons"]
+        key = str(reason or "unknown")
+        reasons[key] = int(reasons.get(key, 0)) + 1
+        self.data["memory"]["events"].append({
+            "type": "memory_checkpoint_failed",
+            "reason": key,
+            "error": str(error),
+            "timestamp": time.time(),
+        })
+
+    def record_memory_checkpoint(self, *, saved_cells: int, reason: str):
+        self.data["memory"]["checkpoints_saved"] += 1
+        self.data["memory"]["cells_saved"] += int(max(0, int(saved_cells)))
+        reasons = self.data["memory"]["checkpoint_reasons"]
+        key = str(reason or "unknown")
+        reasons[key] = int(reasons.get(key, 0)) + 1
+        self.data["memory"]["events"].append({
+            "type": "memory_checkpoint_saved",
+            "saved_cells": int(saved_cells),
+            "reason": key,
+            "timestamp": time.time(),
+        })
+
+    def record_memory_budget_violation(self, *, token_estimate: int, budget_tokens: int):
+        self.data["memory"]["budget_violations"] += 1
+        self.data["memory"]["events"].append({
+            "type": "memory_budget_violation",
+            "token_estimate": int(token_estimate),
+            "budget_tokens": int(budget_tokens),
             "timestamp": time.time(),
         })
 
@@ -802,6 +984,9 @@ class SessionReport:
         retries = int(self.data["resilience"]["stream_retry_attempts"])
         successes = int(self.data["resilience"]["stream_reconnect_successes"])
         reconnect_success_rate = _safe_ratio(float(successes) * 100.0, float(retries))
+        resume_attempts = int(self.data["resilience"]["session_resume_attempts"])
+        resume_successes = int(self.data["resilience"]["session_resume_successes"])
+        resume_success_rate = _safe_ratio(float(resume_successes) * 100.0, float(resume_attempts))
         p06_checks = [
             self._check(
                 "P06.reconnect_success_rate",
@@ -825,6 +1010,18 @@ class SessionReport:
                     max_value=3,
                 ),
                 "resilience.stream_retry_attempts",
+            ),
+            self._check(
+                "P06.session_resumption_success_rate",
+                "Session resumption success rate",
+                "100% when resumption is attempted",
+                _round_or_none(resume_success_rate, 1) if resume_attempts > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    resume_success_rate if resume_attempts > 0 else None,
+                    min_value=100,
+                    max_value=100,
+                ),
+                "resilience.session_resume_successes / session_resume_attempts",
             ),
         ]
         pocs["poc_06_session_resilience"] = {
@@ -1052,17 +1249,71 @@ class SessionReport:
         }
 
         # ------------------------------------------------------------------
-        # POC 13 — Memory Management (post-event)
+        # POC 13 — Memory Management
         # ------------------------------------------------------------------
+        memory_checkpoints = int(self.data["memory"]["checkpoints_saved"])
+        memory_cells_saved = int(self.data["memory"]["cells_saved"])
+        memory_recalls_applied = int(self.data["memory"]["recalls_applied"])
+        memory_checkpoint_attempts = int(self.data["memory"]["checkpoint_attempts"])
+        memory_checkpoint_failed = int(self.data["memory"]["checkpoint_failed"])
+        memory_budget_violations = int(self.data["memory"]["budget_violations"])
+        memory_checkpoint_failure_rate = _safe_ratio(
+            float(memory_checkpoint_failed) * 100.0,
+            float(memory_checkpoint_attempts),
+        )
         p13_checks = [
             self._check(
-                "P13.memory_recall_pipeline",
-                "Long-horizon memory recall",
-                "implemented + measured",
-                None,
-                "not_tested",
-                "manual",
-                "Post-event feature; requires memory ingestion + retrieval pipeline.",
+                "P13.memory_recall_applied",
+                "Memory recall applied at session start",
+                ">=1 when prior memory exists",
+                memory_recalls_applied if memory_recalls_applied > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    memory_recalls_applied if memory_recalls_applied > 0 else None,
+                    min_value=1,
+                ),
+                "memory.recalls_applied",
+            ),
+            self._check(
+                "P13.checkpoints_saved",
+                "Checkpoint summaries saved",
+                ">=1 in long session",
+                memory_checkpoints if tutor_turn_count > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    memory_checkpoints if tutor_turn_count > 0 else None,
+                    min_value=1,
+                ),
+                "memory.checkpoints_saved",
+            ),
+            self._check(
+                "P13.cells_saved",
+                "Typed memory cells persisted",
+                ">=1 when checkpoints saved",
+                memory_cells_saved if memory_checkpoints > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    memory_cells_saved if memory_checkpoints > 0 else None,
+                    min_value=1,
+                ),
+                "memory.cells_saved",
+            ),
+            self._check(
+                "P13.memory_budget_violations",
+                "Memory injection budget violations",
+                "0",
+                memory_budget_violations,
+                _check_status_pass_fail_not_tested(memory_budget_violations, max_value=0),
+                "memory.budget_violations",
+            ),
+            self._check(
+                "P13.checkpoint_failure_rate",
+                "Checkpoint persistence failure rate",
+                "0%",
+                _round_or_none(memory_checkpoint_failure_rate, 1)
+                if memory_checkpoint_attempts > 0 else None,
+                _check_status_pass_fail_not_tested(
+                    memory_checkpoint_failure_rate if memory_checkpoint_attempts > 0 else None,
+                    max_value=0,
+                ),
+                "memory.checkpoint_failed / memory.checkpoint_attempts",
             ),
         ]
         pocs["poc_13_memory_management"] = {
@@ -1155,6 +1406,28 @@ class SessionReport:
             1 for c in all_checks if c.get("source") != "manual" and c.get("status") == "not_tested"
         )
         auto_pass_rate = _safe_ratio(float(auto_passed) * 100.0, float(auto_checks))
+        stream_retry_success_rate = _safe_ratio(float(successes) * 100.0, float(retries))
+        resume_success_rate_percent = _safe_ratio(float(resume_successes) * 100.0, float(resume_attempts))
+        retry_backoffs = self.data["resilience"].get("retry_backoff_seconds", [])
+        retry_backoff_avg = None
+        if isinstance(retry_backoffs, list) and retry_backoffs:
+            retry_backoff_avg = sum(float(v) for v in retry_backoffs) / len(retry_backoffs)
+
+        recall_token_estimates = self.data["memory"].get("recall_token_estimates", [])
+        recall_avg_tokens = None
+        if isinstance(recall_token_estimates, list) and recall_token_estimates:
+            recall_avg_tokens = sum(float(v) for v in recall_token_estimates) / len(recall_token_estimates)
+
+        memory_checkpoint_attempts = int(self.data["memory"]["checkpoint_attempts"])
+        memory_checkpoint_failed = int(self.data["memory"]["checkpoint_failed"])
+        checkpoint_success_rate = _safe_ratio(
+            float(self.data["memory"]["checkpoints_saved"]) * 100.0,
+            float(memory_checkpoint_attempts),
+        )
+        memory_avg_cells_per_checkpoint = _safe_ratio(
+            float(self.data["memory"]["cells_saved"]),
+            float(self.data["memory"]["checkpoints_saved"]),
+        )
 
         poc_status_counts = {
             "pass": 0,
@@ -1194,6 +1467,22 @@ class SessionReport:
                 "socratic_compliance_percent": _round_or_none(socratic_compliance, 1),
                 "whiteboard_delivery_p95_ms": _round_or_none(whiteboard_p95, 1),
                 "proactive_trigger_total": proactive_total,
+                "compression_events": int(self.data["compression"]["events"]),
+                "compression_last_token_estimate": int(self.data["compression"]["last_token_estimate"]),
+                "memory_checkpoints_saved": int(self.data["memory"]["checkpoints_saved"]),
+                "memory_cells_saved": int(self.data["memory"]["cells_saved"]),
+                "memory_avg_cells_per_checkpoint": _round_or_none(memory_avg_cells_per_checkpoint, 2),
+                "memory_checkpoint_attempts": memory_checkpoint_attempts,
+                "memory_checkpoint_failed": memory_checkpoint_failed,
+                "memory_checkpoint_success_rate_percent": _round_or_none(checkpoint_success_rate, 1),
+                "memory_recalls_applied": int(self.data["memory"]["recalls_applied"]),
+                "memory_recall_checks": int(self.data["memory"]["recall_checks"]),
+                "memory_recall_avg_tokens": _round_or_none(recall_avg_tokens, 1),
+                "session_resume_attempts": int(self.data["resilience"]["session_resume_attempts"]),
+                "session_resume_successes": int(self.data["resilience"]["session_resume_successes"]),
+                "session_resume_success_rate_percent": _round_or_none(resume_success_rate_percent, 1),
+                "stream_retry_success_rate_percent": _round_or_none(stream_retry_success_rate, 1),
+                "stream_retry_backoff_avg_seconds": _round_or_none(retry_backoff_avg, 3),
             },
         }
 

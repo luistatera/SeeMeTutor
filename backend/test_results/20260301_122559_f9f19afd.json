@@ -1,0 +1,2303 @@
+{
+  "session_id": "f9f19afd-2f52-4cbe-bd67-8264146029a3",
+  "student_id": "luis-german",
+  "started_at": 1772364165.504521,
+  "ended_at": 1772364358.945908,
+  "duration_seconds": 193.4,
+  "ended_reason": "student_ended",
+  "connection": {
+    "ws_connected": true,
+    "backlog_context_sent": true
+  },
+  "run_config": {
+    "compression_enabled": true,
+    "compression_field": "context_window_compression",
+    "resumption_enabled": false,
+    "resumption_field": null,
+    "resumption_requested": false
+  },
+  "audio": {
+    "chunks_in": 1254,
+    "chunks_out": 134,
+    "first_response_ms": 54.5,
+    "latency_samples_ms": [
+      54.5,
+      2.6,
+      44.5,
+      14.9,
+      3.1,
+      2.1,
+      1.0,
+      28.6,
+      18.5,
+      46.1,
+      36.5,
+      38.3,
+      19.8,
+      16.4,
+      34.9,
+      35.1,
+      3.7,
+      44.4,
+      48.3,
+      21.3,
+      35.8,
+      5.1,
+      40.7,
+      17.4,
+      7.3,
+      9.1,
+      49.4,
+      50.1,
+      15.6,
+      7.6,
+      19.0,
+      6.0,
+      44.8,
+      33.4,
+      38.8,
+      36.0,
+      23.1,
+      5.1,
+      25.6,
+      12.4,
+      4.2,
+      42.1,
+      21.9,
+      24.9,
+      10.9,
+      46.8,
+      43.3,
+      26.8,
+      10.9,
+      60.0,
+      52.7,
+      41.0,
+      38.2,
+      20.7,
+      7.6,
+      3.7,
+      57.8,
+      26.8,
+      26.8,
+      12.1,
+      7.5,
+      1.6,
+      39.7,
+      26.6,
+      13.2,
+      48.9,
+      41.4,
+      20.2,
+      10.3,
+      10.9
+    ]
+  },
+  "video": {
+    "frames_in": 25
+  },
+  "latency": {
+    "events": [
+      {
+        "metric": "first_byte",
+        "value_ms": 2137.0,
+        "is_alert": false,
+        "timestamp": 1772364167.565207
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 54.0,
+        "is_alert": false,
+        "timestamp": 1772364217.422763
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 1207.0,
+        "is_alert": true,
+        "timestamp": 1772364246.32963
+      }
+    ],
+    "latest_report": {
+      "metrics": {
+        "response_start": {
+          "name": "response_start",
+          "count": 2,
+          "current": 1207,
+          "avg": 631,
+          "min": 54,
+          "max": 1207,
+          "p95": 1207,
+          "target_ms": 500,
+          "alert_ms": 800
+        },
+        "interruption_stop": {
+          "name": "interruption_stop",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 200,
+          "alert_ms": 400
+        },
+        "turn_to_turn": {
+          "name": "turn_to_turn",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 1500,
+          "alert_ms": 2500
+        },
+        "first_byte": {
+          "name": "first_byte",
+          "count": 1,
+          "current": 2137,
+          "avg": 2137,
+          "min": 2137,
+          "max": 2137,
+          "p95": 2137,
+          "target_ms": 3000,
+          "alert_ms": 5000
+        }
+      },
+      "turns": 6,
+      "alerts": 1
+    },
+    "reports": [
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 1,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 2137,
+            "avg": 2137,
+            "min": 2137,
+            "max": 2137,
+            "p95": 2137,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 2,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 2137,
+            "avg": 2137,
+            "min": 2137,
+            "max": 2137,
+            "p95": 2137,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 3,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 2137,
+            "avg": 2137,
+            "min": 2137,
+            "max": 2137,
+            "p95": 2137,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 4,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 1,
+            "current": 54,
+            "avg": 54,
+            "min": 54,
+            "max": 54,
+            "p95": 54,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 2137,
+            "avg": 2137,
+            "min": 2137,
+            "max": 2137,
+            "p95": 2137,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 5,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 2,
+            "current": 1207,
+            "avg": 631,
+            "min": 54,
+            "max": 1207,
+            "p95": 1207,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 2137,
+            "avg": 2137,
+            "min": 2137,
+            "max": 2137,
+            "p95": 2137,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 6,
+        "alerts": 1
+      }
+    ]
+  },
+  "language": {
+    "events": [],
+    "latest_metric": {
+      "tutor_turns": 3,
+      "purity_rate": 100.0,
+      "mixed_turns": 0,
+      "guided_adherence": 100.0,
+      "guided_expected_turns": 3,
+      "guided_matched_turns": 3,
+      "fallback_triggers": 0,
+      "fallback_latency_turns": [],
+      "confusion_signals": 0,
+      "language_flips": 0,
+      "l1_words": 95,
+      "l2_words": 0,
+      "l2_ratio": 0.0,
+      "recap_triggers": 0,
+      "control_prompts_sent": 0
+    },
+    "metrics_history": [
+      {
+        "tutor_turns": 0,
+        "purity_rate": 0.0,
+        "mixed_turns": 0,
+        "guided_adherence": 0.0,
+        "guided_expected_turns": 0,
+        "guided_matched_turns": 0,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 0,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 1,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 1,
+        "guided_matched_turns": 1,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 34,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 1,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 1,
+        "guided_matched_turns": 1,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 34,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 1,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 1,
+        "guided_matched_turns": 1,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 34,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 2,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 2,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 76,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 3,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 3,
+        "guided_matched_turns": 3,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 95,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      }
+    ]
+  },
+  "resilience": {
+    "stream_retry_attempts": 0,
+    "stream_reconnect_successes": 0,
+    "stream_reconnect_failures": 0,
+    "retry_backoff_seconds": [],
+    "session_resume_attempts": 0,
+    "session_resume_successes": 0,
+    "session_resume_fallbacks": 0,
+    "resumption_handles_saved": 105,
+    "events": [
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364166.8687842
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364166.9494898
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364167.0179179
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364168.597934
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364168.645556
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364170.233869
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364170.289222
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364211.718281
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364211.767657
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364215.451861
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364215.501461
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364220.4139369
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364220.461659
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364222.1617768
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364222.2232351
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364223.04971
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364223.1073332
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364223.746185
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364223.795352
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364224.651555
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364224.7122319
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364226.953996
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364227.037865
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364229.24608
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364229.331181
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364231.93529
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364232.003793
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364232.870534
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364232.94516
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364236.24608
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364236.293055
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364239.597554
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364239.652558
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364241.903323
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364241.9560971
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364244.177977
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364244.233501
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364245.064735
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364245.1152399
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364247.96241
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364248.010035
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364251.307989
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364251.355443
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364255.447364
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364255.492586
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364258.337249
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364258.386661
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364262.921768
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364262.967773
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364265.6044202
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364265.6607308
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364269.207689
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364269.2497761
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364273.274613
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364273.3186822
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364277.058055
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364277.101544
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364281.679669
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364281.727999
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364283.690953
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364283.747403
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364287.8149178
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364287.878432
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364292.716699
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364292.773556
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364296.7586298
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364296.81083
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364301.681195
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364301.73966
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364305.4342542
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364305.480354
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364309.544822
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364309.594379
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364313.2599602
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364313.305648
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364315.984235
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364316.028341
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364319.344646
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364319.39279
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364322.448896
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364322.4926982
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364325.937968
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364325.9889102
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364328.952272
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364328.997793
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364332.911617
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364332.9592562
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364335.45718
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364335.517834
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364338.976751
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364339.031301
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364342.1958
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364342.245445
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364345.052313
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364345.11846
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364347.56284
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364347.623443
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364350.029558
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364350.091699
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364352.34954
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364352.3936372
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364352.6847758
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364352.733609
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364357.406525
+      },
+      {
+        "type": "session_resumption_handle_saved",
+        "timestamp": 1772364357.450976
+      }
+    ]
+  },
+  "compression": {
+    "events": 0,
+    "last_token_estimate": 0,
+    "trigger_tokens": 0,
+    "target_tokens": 0,
+    "events_detail": []
+  },
+  "memory": {
+    "recall_checks": 1,
+    "checkpoints_saved": 3,
+    "cells_saved": 14,
+    "recalls_applied": 0,
+    "recall_candidates_last": 0,
+    "recall_candidates_total": 0,
+    "recall_selected_total": 0,
+    "last_recall_token_estimate": 0,
+    "recall_token_estimates": [
+      0
+    ],
+    "checkpoint_attempts": 8,
+    "checkpoint_skipped": 5,
+    "checkpoint_failed": 0,
+    "checkpoint_reasons": {
+      "interval_turn": 1,
+      "topic_switch": 1,
+      "session_end": 1
+    },
+    "checkpoint_skip_reasons": {
+      "interval_guardrail": 5
+    },
+    "checkpoint_failure_reasons": {},
+    "budget_violations": 0,
+    "events": [
+      {
+        "type": "memory_recall_applied",
+        "selected_count": 0,
+        "candidate_count": 0,
+        "token_estimate": 0,
+        "timestamp": 1772364165.5079198
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364167.0236568
+      },
+      {
+        "type": "memory_checkpoint_saved",
+        "saved_cells": 3,
+        "reason": "interval_turn",
+        "timestamp": 1772364167.271134
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364170.290793
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772364170.290802
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "topic_switch",
+        "timestamp": 1772364211.360713
+      },
+      {
+        "type": "memory_checkpoint_saved",
+        "saved_cells": 5,
+        "reason": "topic_switch",
+        "timestamp": 1772364211.662397
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364211.769113
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772364211.7691479
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364215.5020878
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772364215.5020952
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364220.463213
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772364220.463222
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "interval_turn",
+        "timestamp": 1772364248.013598
+      },
+      {
+        "type": "memory_checkpoint_skipped",
+        "reason": "interval_guardrail",
+        "timestamp": 1772364248.013605
+      },
+      {
+        "type": "memory_checkpoint_attempt",
+        "reason": "session_end",
+        "timestamp": 1772364358.15152
+      },
+      {
+        "type": "memory_checkpoint_saved",
+        "saved_cells": 6,
+        "reason": "session_end",
+        "timestamp": 1772364358.464299
+      }
+    ]
+  },
+  "tools": {
+    "calls": [
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "tutoring"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.4,
+        "timestamp": 1772364166.873288
+      },
+      {
+        "name": "switch_topic",
+        "args": {
+          "topic_id": "german-grammar",
+          "topic_title": "German Grammar: Präteritum"
+        },
+        "result_status": "switched",
+        "duration_ms": 807.6,
+        "timestamp": 1772364211.3589828
+      },
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "capture"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.3,
+        "timestamp": 1772364211.666997
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6a: Bildlexikon",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 75.4,
+        "timestamp": 1772364213.214613
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6b: Fragen formulieren",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 50.9,
+        "timestamp": 1772364214.036156
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6c: Wahrheitsspiel",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 53.7,
+        "timestamp": 1772364214.3844512
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung c: Verben ergänzen",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 51.2,
+        "timestamp": 1772364214.928407
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Präteritum: sein/haben",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 59.6,
+        "timestamp": 1772364215.339829
+      },
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "tutoring"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.1,
+        "timestamp": 1772364215.4012742
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6c: Präteritum",
+          "note_type": "checklist_item"
+        },
+        "result_status": "displayed",
+        "duration_ms": 68.7,
+        "timestamp": 1772364216.6390028
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6b: Fragen formulieren",
+          "note_type": "checklist_item"
+        },
+        "result_status": "already_exists",
+        "duration_ms": 0.3,
+        "timestamp": 1772364216.996224
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Übung 6b: Fragen formulieren",
+          "note_type": "checklist_item"
+        },
+        "result_status": "already_exists",
+        "duration_ms": 0.2,
+        "timestamp": 1772364222.1030211
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 144.4,
+        "timestamp": 1772364234.062352
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364240.284807
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 51.1,
+        "timestamp": 1772364242.669877
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 58.4,
+        "timestamp": 1772364242.9604611
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "done"
+        },
+        "result_status": "updated",
+        "duration_ms": 49.3,
+        "timestamp": 1772364248.9934442
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 52.7,
+        "timestamp": 1772364249.2791731
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364251.925187
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 82.0,
+        "timestamp": 1772364252.293301
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364263.537908
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 49.9,
+        "timestamp": 1772364263.9070709
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364264.1809568
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 69.8,
+        "timestamp": 1772364266.247883
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364266.4900749
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 51.7,
+        "timestamp": 1772364269.1582222
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 46.1,
+        "timestamp": 1772364270.0268679
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "done"
+        },
+        "result_status": "updated",
+        "duration_ms": 46.8,
+        "timestamp": 1772364274.01708
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 45.8,
+        "timestamp": 1772364274.333736
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 47.4,
+        "timestamp": 1772364277.7768939
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "done"
+        },
+        "result_status": "updated",
+        "duration_ms": 43.6,
+        "timestamp": 1772364278.092133
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364284.358457
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 49.1,
+        "timestamp": 1772364288.6031308
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "pending"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364288.724769
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364214330",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 50.1,
+        "timestamp": 1772364289.0748842
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364215280",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 46.5,
+        "timestamp": 1772364289.3366652
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 50.0,
+        "timestamp": 1772364306.216558
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364313.949121
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "done"
+        },
+        "result_status": "updated",
+        "duration_ms": 60.5,
+        "timestamp": 1772364329.781504
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364216570",
+          "status": "pending"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364330.1295092
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "pending"
+        },
+        "result_status": "updated",
+        "duration_ms": 51.9,
+        "timestamp": 1772364342.141935
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 51.3,
+        "timestamp": 1772364353.528384
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364353.7964969
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "done"
+        },
+        "result_status": "updated",
+        "duration_ms": 52.3,
+        "timestamp": 1772364354.171699
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213139",
+          "status": "in_progress"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364354.445709
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772364213985",
+          "status": "done"
+        },
+        "result_status": "error",
+        "duration_ms": 0.0,
+        "timestamp": 1772364358.0595682
+      }
+    ],
+    "total_calls": 46,
+    "unique_tools_used": [
+      "set_session_phase",
+      "switch_topic",
+      "write_notes",
+      "update_note_status"
+    ]
+  },
+  "phases": {
+    "transitions": [
+      {
+        "from": "greeting",
+        "to": "tutoring",
+        "timestamp": 1772364166.8733041
+      },
+      {
+        "from": "tutoring",
+        "to": "capture",
+        "timestamp": 1772364211.667003
+      },
+      {
+        "from": "capture",
+        "to": "tutoring",
+        "timestamp": 1772364215.4012759
+      }
+    ],
+    "final_phase": "tutoring"
+  },
+  "whiteboard": {
+    "notes_created": 7,
+    "notes_duplicate_skipped": 2,
+    "status_updates": 22,
+    "clear_events": 1,
+    "notes_delivered": 7,
+    "delivery_latency_ms": [
+      464.0,
+      512.0,
+      466.4,
+      480.8,
+      476.7,
+      455.5,
+      527.2
+    ],
+    "sync_speaking_count": 0,
+    "sync_deadline_count": 7
+  },
+  "interruptions": {
+    "count": 0,
+    "stale_filtered": 1
+  },
+  "turns": {
+    "count": 6,
+    "audio_chunks_per_turn": [
+      0,
+      50,
+      0,
+      0,
+      55,
+      29
+    ]
+  },
+  "conversation": {
+    "awaiting_reply_prompts": 3,
+    "suspected_repetition_loops": 0
+  },
+  "idle": {
+    "checkin_1_count": 1,
+    "checkin_2_count": 1,
+    "away_activated_count": 0,
+    "away_resumed_count": 0
+  },
+  "proactive": {
+    "poke_count": 0,
+    "nudge_count": 0
+  },
+  "transcripts": {
+    "student": [
+      {
+        "text": "Help me with the exercise number 6. Can you see it?",
+        "timestamp": 1772364209.686188
+      },
+      {
+        "text": "6 8",
+        "timestamp": 1772364245.1225688
+      }
+    ],
+    "tutor": [
+      {
+        "text": "Hallo Luis! Schön, dass du wieder da bist. Du hast dich super mit den deutschen Essensvokabeln geschlagen. Heute schauen wir uns JavaScript Debugging an. Hast du schon eine Aufgabe, die du mir zeigen möchtest?",
+        "timestamp": 1772364170.173345
+      },
+      {
+        "text": "OK, we're switching gears to German grammar! I see exercise 6c which asks you to fill in a table with verbs in the Präteritum tense, and also exercise 6b which is about writing questions. Which one would you like to start with?",
+        "timestamp": 1772364220.355456
+      },
+      {
+        "text": "Great, we'll start with exercise 6b. Um,steigen ins Deutsche: Was ist die erste Frage, die du formulieren möchtest?",
+        "timestamp": 1772364247.911814
+      }
+    ]
+  },
+  "guardrails": {
+    "refusals_total": 0,
+    "answer_leaks": 0,
+    "content_flags": 0,
+    "prompt_injections": 0,
+    "drift_reinforcements": 0,
+    "events": []
+  },
+  "grounding": {
+    "events": 0,
+    "citations_sent": 0,
+    "search_queries": []
+  },
+  "screen_share": {
+    "source_switches": 0,
+    "stop_sharing_count": 0,
+    "switch_log": []
+  },
+  "errors": [],
+  "manual": {},
+  "prd_scorecard": {
+    "version": "v1",
+    "generated_at": 1772364358.946327,
+    "pocs": {
+      "poc_00_onboarding": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P00.context_retention",
+            "metric": "Context retention baseline",
+            "target": "100%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "connection.backlog_context_sent",
+            "notes": "Proxy for profile/context injection on session start."
+          },
+          {
+            "id": "P00.onboarding_dropoff",
+            "metric": "Onboarding drop-off",
+            "target": "<10%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Requires frontend onboarding funnel instrumentation (post-event POC 00)."
+          }
+        ]
+      },
+      "poc_01_interruption": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P01.interruption_stop_p95",
+            "metric": "Gemini interruption stop p95",
+            "target": "<=500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P01.student_heard_rate",
+            "metric": "Student-heard rate proxy",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "turns.count / transcripts.student",
+            "notes": "Proxy metric: tutor turns relative to student transcripts."
+          },
+          {
+            "id": "P01.interruptions_observed",
+            "metric": "Interruption events observed in run",
+            "target": ">=1 (when testing interruption scenario)",
+            "actual": 0,
+            "status": "not_tested",
+            "source": "interruptions.count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_02_proactive_vision": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P02.proactive_trigger_count",
+            "metric": "Proactive triggers with visual input",
+            "target": ">=1",
+            "actual": 0,
+            "status": "fail",
+            "source": "proactive.poke_count + proactive.nudge_count",
+            "notes": ""
+          },
+          {
+            "id": "P02.question_turn_ratio",
+            "metric": "Question-ending turn ratio",
+            "target": "35-50%",
+            "actual": 100.0,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": "Only meaningful for longer tutoring sessions."
+          },
+          {
+            "id": "P02.question_streak_max",
+            "metric": "Max consecutive question turns",
+            "target": "<=2",
+            "actual": 3,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": ""
+          },
+          {
+            "id": "P02.repetition_loop_suspected",
+            "metric": "Suspected repetitive tutor prompt loops",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "conversation.suspected_repetition_loops",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_03_multilingual": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P03.language_purity_rate",
+            "metric": "Language purity rate",
+            "target": ">=98%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "language.latest_metric.purity_rate",
+            "notes": ""
+          },
+          {
+            "id": "P03.guided_bilingual_adherence",
+            "metric": "Guided bilingual adherence",
+            "target": ">=95%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "language.latest_metric.guided_adherence",
+            "notes": ""
+          },
+          {
+            "id": "P03.fallback_trigger_latency",
+            "metric": "Fallback trigger latency (turns)",
+            "target": "<=1 turn",
+            "actual": null,
+            "status": "not_tested",
+            "source": "language.latest_metric.fallback_latency_turns",
+            "notes": ""
+          },
+          {
+            "id": "P03.l2_distribution",
+            "metric": "L2 word ratio",
+            "target": ">=70%",
+            "actual": 0.0,
+            "status": "fail",
+            "source": "language.latest_metric.l2_ratio",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_04_whiteboard_sync": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P04.whiteboard_usage_rate",
+            "metric": "Notes created",
+            "target": ">=1 note/session",
+            "actual": 7,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P04.note_delivery_latency_p95",
+            "metric": "Whiteboard delivery latency p95",
+            "target": "<=500ms",
+            "actual": 527.2,
+            "status": "fail",
+            "source": "whiteboard.delivery_latency_ms",
+            "notes": ""
+          },
+          {
+            "id": "P04.audio_continuity_proxy",
+            "metric": "Audio continuity while using whiteboard",
+            "target": "audio_out > 0 when notes created",
+            "actual": 134,
+            "status": "pass",
+            "source": "audio.chunks_out",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_05_search_grounding": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P05.grounding_event_count",
+            "metric": "Grounding events on factual/search turns",
+            "target": ">=1 when factual search tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.citation_render_rate",
+            "metric": "Citation render rate",
+            "target": "100%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.citations_sent / grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.search_queries_logged",
+            "metric": "Grounding search query logs",
+            "target": ">=1 query when grounding occurs",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.search_queries",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_06_session_resilience": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P06.reconnect_success_rate",
+            "metric": "Backend stream reconnect success rate",
+            "target": "100% (for transient drops)",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes / stream_retry_attempts",
+            "notes": ""
+          },
+          {
+            "id": "P06.retry_attempt_cap",
+            "metric": "Retry attempts capped",
+            "target": "<=3",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_retry_attempts",
+            "notes": ""
+          },
+          {
+            "id": "P06.session_resumption_success_rate",
+            "metric": "Session resumption success rate",
+            "target": "100% when resumption is attempted",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.session_resume_successes / session_resume_attempts",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_07_latency": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P07.response_start_avg",
+            "metric": "Response start avg latency",
+            "target": "<=500ms",
+            "actual": 631,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.avg",
+            "notes": ""
+          },
+          {
+            "id": "P07.response_start_p95",
+            "metric": "Response start p95 latency",
+            "target": "<=800ms",
+            "actual": 1207,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.interruption_stop_p95",
+            "metric": "Interruption stop p95 latency",
+            "target": "<=400ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.turn_to_turn_p95",
+            "metric": "Turn-to-turn p95 latency",
+            "target": "<=2500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.turn_to_turn.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.first_byte_p95",
+            "metric": "First-byte p95 latency",
+            "target": "<=5000ms",
+            "actual": 2137,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.first_byte.p95",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_08_tool_action_moment": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P08.a2a_summary_pipeline",
+            "metric": "A2A summary pipeline",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; requires reflection agent pipeline instrumentation."
+          }
+        ]
+      },
+      "poc_09_safety_guardrails": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P09.direct_answer_leak_rate",
+            "metric": "Direct answer leak count",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "guardrails.answer_leaks",
+            "notes": ""
+          },
+          {
+            "id": "P09.socratic_compliance_rate",
+            "metric": "Socratic compliance rate",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "(turns.count - guardrails.answer_leaks) / turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P09.prompt_injection_detection",
+            "metric": "Prompt-injection detection events",
+            "target": ">=1 when injection test is run",
+            "actual": null,
+            "status": "not_tested",
+            "source": "guardrails.prompt_injections",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_10_screen_share_toggle": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P10.source_switch_count",
+            "metric": "Source switches observed",
+            "target": ">=1 when screen-share flow tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.source_switches",
+            "notes": ""
+          },
+          {
+            "id": "P10.switch_session_continuity",
+            "metric": "Switching without fatal backend errors",
+            "target": "errors == 0",
+            "actual": null,
+            "status": "not_tested",
+            "source": "errors",
+            "notes": ""
+          },
+          {
+            "id": "P10.stop_sharing_path",
+            "metric": "Stop sharing events",
+            "target": ">=1 when stop-sharing tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.stop_sharing_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_11_idle_orchestration": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P11.gentle_check_nag_limit",
+            "metric": "Gentle check count",
+            "target": "<=1",
+            "actual": 1,
+            "status": "pass",
+            "source": "idle.checkin_1_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.options_check_nag_limit",
+            "metric": "Options check count",
+            "target": "<=1",
+            "actual": 1,
+            "status": "pass",
+            "source": "idle.checkin_2_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.away_resume_flow_observed",
+            "metric": "Away/resume flow observed",
+            "target": "away_activated >=1 and away_resumed >=1 when tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "idle.away_activated_count + idle.away_resumed_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_12_final_student_report": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P12.final_report_pipeline",
+            "metric": "Final student report generation",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; not part of current live backend runtime path."
+          }
+        ]
+      },
+      "poc_13_memory_management": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P13.memory_recall_applied",
+            "metric": "Memory recall applied at session start",
+            "target": ">=1 when prior memory exists",
+            "actual": null,
+            "status": "not_tested",
+            "source": "memory.recalls_applied",
+            "notes": ""
+          },
+          {
+            "id": "P13.checkpoints_saved",
+            "metric": "Checkpoint summaries saved",
+            "target": ">=1 in long session",
+            "actual": 3,
+            "status": "pass",
+            "source": "memory.checkpoints_saved",
+            "notes": ""
+          },
+          {
+            "id": "P13.cells_saved",
+            "metric": "Typed memory cells persisted",
+            "target": ">=1 when checkpoints saved",
+            "actual": 14,
+            "status": "pass",
+            "source": "memory.cells_saved",
+            "notes": ""
+          },
+          {
+            "id": "P13.memory_budget_violations",
+            "metric": "Memory injection budget violations",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "memory.budget_violations",
+            "notes": ""
+          },
+          {
+            "id": "P13.checkpoint_failure_rate",
+            "metric": "Checkpoint persistence failure rate",
+            "target": "0%",
+            "actual": 0.0,
+            "status": "pass",
+            "source": "memory.checkpoint_failed / memory.checkpoint_attempts",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_99_hero_flow_rehearsal": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P99.proactive_vision_checkpoint",
+            "metric": "Checklist: proactive vision",
+            "target": "triggered",
+            "actual": 0,
+            "status": "fail",
+            "source": "proactive.*",
+            "notes": ""
+          },
+          {
+            "id": "P99.whiteboard_checkpoint",
+            "metric": "Checklist: whiteboard note",
+            "target": ">=1 note",
+            "actual": 7,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P99.interruption_checkpoint",
+            "metric": "Checklist: interruption handled",
+            "target": ">=1 interruption",
+            "actual": 0,
+            "status": "fail",
+            "source": "interruptions.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.grounding_checkpoint",
+            "metric": "Checklist: search citation shown",
+            "target": ">=1 citation",
+            "actual": 0,
+            "status": "fail",
+            "source": "grounding.citations_sent",
+            "notes": ""
+          },
+          {
+            "id": "P99.action_moment_checkpoint",
+            "metric": "Checklist: action moment (3+ exchanges)",
+            "target": "turns >= 3",
+            "actual": 6,
+            "status": "pass",
+            "source": "turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.reconnect_checkpoint",
+            "metric": "Checklist: reconnect survived",
+            "target": ">=1 successful reconnect",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes",
+            "notes": ""
+          }
+        ],
+        "checklist_completed": 2,
+        "checklist_total": 6
+      }
+    },
+    "summary": {
+      "checks_passed": 21,
+      "checks_failed": 10,
+      "checks_not_tested": 18,
+      "checks_total": 49,
+      "auto_checks_total": 46,
+      "auto_checks_passed": 21,
+      "auto_checks_failed": 10,
+      "auto_checks_not_tested": 15,
+      "auto_pass_rate_percent": 45.7,
+      "poc_status_counts": {
+        "pass": 0,
+        "partial": 5,
+        "fail": 5,
+        "not_tested": 5
+      }
+    },
+    "derived_metrics": {
+      "student_turns": 2,
+      "tutor_turns": 6,
+      "question_turns": 3,
+      "question_turn_ratio_percent": 100.0,
+      "max_question_streak": 3,
+      "student_heard_rate_percent": 100.0,
+      "socratic_compliance_percent": 100.0,
+      "whiteboard_delivery_p95_ms": 527.2,
+      "proactive_trigger_total": 0,
+      "compression_events": 0,
+      "compression_last_token_estimate": 0,
+      "memory_checkpoints_saved": 3,
+      "memory_cells_saved": 14,
+      "memory_avg_cells_per_checkpoint": 4.67,
+      "memory_checkpoint_attempts": 8,
+      "memory_checkpoint_failed": 0,
+      "memory_checkpoint_success_rate_percent": 37.5,
+      "memory_recalls_applied": 0,
+      "memory_recall_checks": 1,
+      "memory_recall_avg_tokens": 0.0,
+      "session_resume_attempts": 0,
+      "session_resume_successes": 0,
+      "session_resume_success_rate_percent": null,
+      "stream_retry_success_rate_percent": null,
+      "stream_retry_backoff_avg_seconds": null
+    }
+  }
+}

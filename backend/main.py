@@ -95,6 +95,28 @@ from modules.latency import (
     build_latency_report,
     format_latency_summary,
 )
+from modules.live_session import (
+    build_live_run_config,
+    compute_retry_backoff,
+    extract_session_resumption_handle,
+    extract_total_token_estimate,
+    load_latest_resumption_handle,
+    save_resumption_handle,
+)
+from modules.memory_manager import (
+    append_transcript_piece,
+    build_checkpoint_summary,
+    build_hidden_memory_context,
+    build_recall_payload,
+    extract_cells_from_checkpoint,
+    init_memory_state,
+)
+from modules.memory_store import (
+    load_recent_checkpoint,
+    load_recent_memory_cells,
+    save_checkpoint,
+    upsert_memory_cells,
+)
 from modules.security import (
     SlidingWindowRateLimiter,
     build_security_headers,
@@ -163,10 +185,17 @@ IDLE_CHECKIN_1_SECONDS = 10
 IDLE_CHECKIN_2_SECONDS = 25
 IDLE_AUTO_AWAY_SECONDS = 90
 MIC_KICKOFF_SECONDS = 5
-ADK_STREAM_MAX_RETRIES = 1
+ADK_STREAM_MAX_RETRIES = 3
 ADK_STREAM_RETRY_BACKOFF_S = 0.6
 TURN_TO_TURN_MAX_GAP_MS = 3000
 RESPONSE_REF_MAX_AGE_MS = 2500
+LIVE_COMPRESSION_ENABLED = True
+LIVE_COMPRESSION_TRIGGER_TOKENS = 32000
+LIVE_COMPRESSION_TARGET_TOKENS = 16000
+MEMORY_CHECKPOINT_INTERVAL_S = 300
+MEMORY_RECALL_BUDGET_TOKENS = 500
+MEMORY_RECALL_MAX_CELLS = 6
+MEMORY_CHECKPOINT_MAX_AGE_S = 24 * 60 * 60
 PACE_CONTROL_INSTRUCTIONS: dict[str, str] = {
     "slow": (
         "Preference update: from now on, speak noticeably slower. "
@@ -213,6 +242,59 @@ def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 10000)
     except ValueError:
         return default
     return max(minimum, min(maximum, parsed))
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0, maximum: float = 10000.0) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+ADK_STREAM_MAX_RETRIES = _env_int("ADK_STREAM_MAX_RETRIES", ADK_STREAM_MAX_RETRIES, minimum=1, maximum=8)
+ADK_STREAM_RETRY_BACKOFF_S = _env_float(
+    "ADK_STREAM_RETRY_BACKOFF_S",
+    ADK_STREAM_RETRY_BACKOFF_S,
+    minimum=0.1,
+    maximum=5.0,
+)
+LIVE_COMPRESSION_ENABLED = _env_bool("LIVE_COMPRESSION_ENABLED", LIVE_COMPRESSION_ENABLED)
+LIVE_COMPRESSION_TRIGGER_TOKENS = _env_int(
+    "LIVE_COMPRESSION_TRIGGER_TOKENS",
+    LIVE_COMPRESSION_TRIGGER_TOKENS,
+    minimum=2048,
+    maximum=512000,
+)
+LIVE_COMPRESSION_TARGET_TOKENS = _env_int(
+    "LIVE_COMPRESSION_TARGET_TOKENS",
+    LIVE_COMPRESSION_TARGET_TOKENS,
+    minimum=1024,
+    maximum=512000,
+)
+MEMORY_CHECKPOINT_INTERVAL_S = _env_int(
+    "MEMORY_CHECKPOINT_INTERVAL_S",
+    MEMORY_CHECKPOINT_INTERVAL_S,
+    minimum=60,
+    maximum=3600,
+)
+MEMORY_RECALL_BUDGET_TOKENS = _env_int(
+    "MEMORY_RECALL_BUDGET_TOKENS",
+    MEMORY_RECALL_BUDGET_TOKENS,
+    minimum=120,
+    maximum=8000,
+)
+MEMORY_RECALL_MAX_CELLS = _env_int(
+    "MEMORY_RECALL_MAX_CELLS",
+    MEMORY_RECALL_MAX_CELLS,
+    minimum=1,
+    maximum=20,
+)
+if LIVE_COMPRESSION_TARGET_TOKENS >= LIVE_COMPRESSION_TRIGGER_TOKENS:
+    LIVE_COMPRESSION_TARGET_TOKENS = max(1024, int(LIVE_COMPRESSION_TRIGGER_TOKENS * 0.75))
 
 
 _DEFAULT_CORS_ORIGINS = ["http://localhost:8000", "http://127.0.0.1:8000"]
@@ -819,7 +901,7 @@ runner = Runner(
     session_service=session_service,
 )
 
-ADK_RUN_CONFIG = RunConfig(
+ADK_BASE_RUN_CONFIG = RunConfig(
     streaming_mode=StreamingMode.BIDI,
     response_modalities=["AUDIO"],
     speech_config=types.SpeechConfig(
@@ -840,6 +922,19 @@ ADK_RUN_CONFIG = RunConfig(
     input_audio_transcription=types.AudioTranscriptionConfig(),
     output_audio_transcription=types.AudioTranscriptionConfig(),
 )
+
+
+def _build_session_run_config(resumption_handle: str | None = None) -> tuple[RunConfig, dict]:
+    """Build per-session RunConfig with optional compression + resumption."""
+    run_config, meta = build_live_run_config(
+        ADK_BASE_RUN_CONFIG,
+        types,
+        compression_enabled=LIVE_COMPRESSION_ENABLED,
+        compression_trigger_tokens=LIVE_COMPRESSION_TRIGGER_TOKENS,
+        compression_target_tokens=LIVE_COMPRESSION_TARGET_TOKENS,
+        resumption_handle=resumption_handle,
+    )
+    return run_config, meta
 
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 if not FRONTEND_DIR.is_dir():
@@ -1049,6 +1144,25 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=1008)
         return
 
+    resume_requested = str(websocket.query_params.get("resume", "")).strip().lower() in {"1", "true", "yes", "on"}
+    requested_resume_session_id = str(websocket.query_params.get("resume_session_id", "")).strip()
+    resumption_record: dict | None = None
+    if resume_requested:
+        resumption_record = await load_latest_resumption_handle(
+            firestore_client,
+            student_id=raw_student_id,
+        )
+        if resumption_record and requested_resume_session_id:
+            stored_sid = str(resumption_record.get("session_id") or "")
+            if stored_sid and stored_sid != requested_resume_session_id:
+                logger.info(
+                    "Ignoring stale resumption handle for student '%s' (requested=%s stored=%s)",
+                    raw_student_id,
+                    requested_resume_session_id,
+                    stored_sid,
+                )
+                resumption_record = None
+
     backlog_context = await _load_backlog_context(raw_student_id)
     if not backlog_context:
         await _send_json(
@@ -1060,6 +1174,38 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
         await websocket.close(code=1008)
         return
+    memory_recall = await _load_memory_recall(
+        raw_student_id,
+        str(backlog_context.get("topic_id") or ""),
+    )
+    memory_recall_available = bool(
+        isinstance(memory_recall, dict)
+        and (
+            int(memory_recall.get("selected_count", 0)) > 0
+            or str(memory_recall.get("summary") or "").strip()
+        )
+    )
+    if memory_recall_available:
+        backlog_context["memory_recall"] = {
+            "candidate_count": int(memory_recall.get("candidate_count", 0)),
+            "selected_count": int(memory_recall.get("selected_count", 0)),
+            "token_estimate": int(memory_recall.get("token_estimate", 0)),
+            "budget_utilization_percent": float(memory_recall.get("budget_utilization_percent", 0.0)),
+            "summary": str(memory_recall.get("summary") or ""),
+        }
+        backlog_context["resume_message"] = _merge_resume_message(
+            str(backlog_context.get("resume_message") or ""),
+            str(memory_recall.get("summary") or ""),
+        )
+
+    resumption_handle = (
+        str((resumption_record or {}).get("handle") or "").strip()
+        if resume_requested
+        else ""
+    )
+    session_run_config, run_config_meta = _build_session_run_config(
+        resumption_handle=resumption_handle or None
+    )
 
     session_id = str(uuid.uuid4())
     session_start = time.time()
@@ -1099,13 +1245,49 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "tutor_preferences": backlog_context.get("tutor_preferences"),
         "previous_notes": backlog_context.get("previous_notes", []),
         "resume_message": backlog_context.get("resume_message"),
+        "memory_recall": memory_recall,
         "session_phase": "greeting",
     }
     report = create_report(session_id, raw_student_id)
-    await _send_json(websocket, {"type": "backlog_context", "data": backlog_context})
+    report.record_run_config(
+        run_config_meta,
+        resumption_requested=bool(resumption_handle),
+    )
+    backlog_context_payload = dict(backlog_context)
+    backlog_context_payload["session_id"] = session_id
+    backlog_context_payload["resumption_requested"] = bool(resumption_handle)
+    await _send_json(websocket, {"type": "backlog_context", "data": backlog_context_payload})
     report.record_backlog_sent()
+    report.record_memory_recall_applied(
+        selected_count=int(memory_recall.get("selected_count", 0)),
+        token_estimate=int(memory_recall.get("token_estimate", 0)),
+        candidate_count=int(memory_recall.get("candidate_count", 0)),
+    )
+    if memory_recall_available:
+        await _send_json(
+            websocket,
+            {
+                "type": "memory_recall",
+                "data": {
+                    "candidate_count": int(memory_recall.get("candidate_count", 0)),
+                    "selected_count": int(memory_recall.get("selected_count", 0)),
+                    "token_estimate": int(memory_recall.get("token_estimate", 0)),
+                    "budget_utilization_percent": float(memory_recall.get("budget_utilization_percent", 0.0)),
+                    "summary": str(memory_recall.get("summary") or ""),
+                },
+            },
+        )
     for note in backlog_context.get("previous_notes", []):
         await _send_json(websocket, {"type": "whiteboard", "data": note})
+    if resumption_handle:
+        await _send_json(
+            websocket,
+            {
+                "type": "assistant_state",
+                "data": {"state": "reconnecting", "reason": "session_resumption_requested"},
+            },
+        )
+        report.record_session_resume_attempt()
 
     replaced_session_id, replaced_socket = await _register_active_student_session(
         raw_student_id,
@@ -1172,6 +1354,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
         "track_id": backlog_context.get("track_id"),
+        "session_run_config": session_run_config,
+        "session_run_config_meta": run_config_meta,
+        "session_resumption_handle": resumption_handle,
+        "session_resumption_requested": bool(resumption_handle),
+        "session_resumption_active": False,
+        "session_resumption_fallback_used": False,
+        "live_token_estimate": 0,
+        "live_compression_trigger_tokens": LIVE_COMPRESSION_TRIGGER_TOKENS,
+        "live_compression_target_tokens": LIVE_COMPRESSION_TARGET_TOKENS,
+        "live_compression_last_notified_at": 0.0,
+        "memory_recall": memory_recall,
         **init_proactive_state(),
         **init_screen_share_state(),
         **init_whiteboard_state(),
@@ -1182,10 +1375,22 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             backlog_context.get("preferred_language"),
         ),
         **init_latency_state(session_start),
+        **init_memory_state(
+            checkpoint_interval_s=MEMORY_CHECKPOINT_INTERVAL_S,
+            recall_budget_tokens=MEMORY_RECALL_BUDGET_TOKENS,
+            recall_max_cells=MEMORY_RECALL_MAX_CELLS,
+        ),
         "topic_id": backlog_context.get("topic_id"),
         "topic_title": backlog_context.get("topic_title"),
         "_report": report,
     }
+    recall_token_estimate = int(memory_recall.get("token_estimate", 0) or 0)
+    if recall_token_estimate > int(runtime_state.get("memory_recall_budget_tokens", MEMORY_RECALL_BUDGET_TOKENS)):
+        runtime_state["memory_budget_violations"] = int(runtime_state.get("memory_budget_violations", 0)) + 1
+        report.record_memory_budget_violation(
+            token_estimate=recall_token_estimate,
+            budget_tokens=int(runtime_state.get("memory_recall_budget_tokens", MEMORY_RECALL_BUDGET_TOKENS)),
+        )
     wb_queue = register_whiteboard_queue(session_id)
     topic_queue = register_topic_update_queue(session_id)
     ended_reason = "disconnect"
@@ -1212,6 +1417,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "language_contract": session_state.get("language_contract"),
                 "tutor_preferences": session_state.get("tutor_preferences"),
                 "previous_notes_count": len(session_state.get("previous_notes", [])),
+                "memory_recall_count": int(memory_recall.get("selected_count", 0)),
             }
             import json as _json
             live_queue.send_content(
@@ -1226,6 +1432,23 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "When the student speaks, greet them naturally and begin the session.]"
                     ))],
                 )
+            )
+            memory_context = build_hidden_memory_context(memory_recall)
+            if memory_context:
+                live_queue.send_content(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=memory_context)],
+                    )
+                )
+                runtime_state["memory_recall_count"] = int(runtime_state.get("memory_recall_count", 0)) + 1
+            logger.info(
+                "Session %s run config: compression=%s(%s) resumption=%s(%s)",
+                session_id,
+                bool(run_config_meta.get("compression_enabled")),
+                run_config_meta.get("compression_field"),
+                bool(run_config_meta.get("resumption_enabled")),
+                run_config_meta.get("resumption_field"),
             )
 
             forward_task = asyncio.create_task(
@@ -1304,6 +1527,28 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             ended_reason = "gemini_error"
 
     finally:
+        try:
+            await _persist_memory_checkpoint(
+                runtime_state,
+                session_id,
+                reason="session_end",
+                websocket=None,
+                report=report,
+                force=True,
+            )
+        except Exception:
+            logger.warning("Session %s: final memory checkpoint failed", session_id, exc_info=True)
+        try:
+            latest_handle = str(runtime_state.get("session_resumption_handle") or "").strip()
+            if latest_handle:
+                await save_resumption_handle(
+                    firestore_client,
+                    student_id=raw_student_id,
+                    session_id=session_id,
+                    handle=latest_handle,
+                )
+        except Exception:
+            logger.warning("Session %s: final resumption handle persist failed", session_id, exc_info=True)
         await _unregister_active_student_session(raw_student_id, session_id)
         unregister_whiteboard_queue(session_id)
         unregister_topic_update_queue(session_id)
@@ -1374,6 +1619,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Save test report
         if report:
             report.finalize(ended_reason)
+            if firestore_client:
+                try:
+                    await _persist_session_metrics_summary(session_id, report)
+                except Exception:
+                    logger.warning("Session %s: failed to persist telemetry summary", session_id, exc_info=True)
             try:
                 report.save()
             except Exception:
@@ -1568,6 +1818,242 @@ async def _apply_checkpoint_decision(runtime_state: dict, session_id: str, decis
         "persisted": True,
         "checkpoint_id": checkpoint_id,
     }
+
+
+def _merge_resume_message(base_resume_message: str, recall_summary: str) -> str:
+    """Attach concise memory summary to the normal resume message."""
+    base = str(base_resume_message or "").strip() or "Let's continue where we left off."
+    summary = str(recall_summary or "").strip()
+    if not summary:
+        return base
+    if len(summary) > 220:
+        summary = summary[:217].rstrip() + "..."
+    return f"{base} Quick recap: {summary}"
+
+
+async def _load_memory_recall(student_id: str, topic_id: str) -> dict:
+    """Load ranked memory recall payload for session bootstrap."""
+    if not firestore_client:
+        return {}
+    sid = str(student_id or "").strip().lower()
+    if not sid:
+        return {}
+    try:
+        cells = await load_recent_memory_cells(
+            firestore_client,
+            student_id=sid,
+            limit=80,
+        )
+        recall_payload = build_recall_payload(
+            cells,
+            topic_id=topic_id,
+            budget_tokens=MEMORY_RECALL_BUDGET_TOKENS,
+            max_cells=MEMORY_RECALL_MAX_CELLS,
+        )
+        latest_checkpoint = await load_recent_checkpoint(
+            firestore_client,
+            student_id=sid,
+            max_age_seconds=MEMORY_CHECKPOINT_MAX_AGE_S,
+        )
+        if latest_checkpoint:
+            recall_payload["latest_checkpoint"] = latest_checkpoint
+            if not str(recall_payload.get("summary") or "").strip():
+                recall_payload["summary"] = str(latest_checkpoint.get("summary_text") or "").strip()
+        return recall_payload
+    except Exception:
+        logger.warning("Failed to load memory recall for student '%s'", sid, exc_info=True)
+        return {}
+
+
+async def _persist_memory_checkpoint(
+    runtime_state: dict,
+    session_id: str,
+    *,
+    reason: str,
+    websocket: WebSocket | None = None,
+    report: "SessionReport | None" = None,
+    force: bool = False,
+) -> dict | None:
+    """
+    Create + persist checkpoint and derived memory cells.
+
+    Returns payload with checkpoint_id and saved cell count when persisted.
+    """
+    if report:
+        report.record_memory_checkpoint_attempt(reason=str(reason or ""))
+
+    if not firestore_client:
+        if report:
+            report.record_memory_checkpoint_skipped(reason="firestore_unavailable")
+        return None
+    student_id = str(runtime_state.get("student_id") or "").strip().lower()
+    if not student_id:
+        if report:
+            report.record_memory_checkpoint_skipped(reason="missing_student_id")
+        return None
+
+    now = time.time()
+    interval_s = max(60, int(runtime_state.get("memory_checkpoint_interval_s", MEMORY_CHECKPOINT_INTERVAL_S)))
+    last_at = float(runtime_state.get("memory_last_checkpoint_at", 0.0))
+    if (not force) and last_at > 0 and (now - last_at) < interval_s:
+        if report:
+            report.record_memory_checkpoint_skipped(reason="interval_guardrail")
+        return None
+
+    checkpoint = build_checkpoint_summary(runtime_state, reason=reason)
+    if not checkpoint.get("summary_text"):
+        if report:
+            report.record_memory_checkpoint_skipped(reason="empty_summary")
+        return None
+
+    checkpoint_id = await save_checkpoint(
+        firestore_client,
+        student_id=student_id,
+        session_id=session_id,
+        checkpoint=checkpoint,
+    )
+    if not checkpoint_id:
+        if report:
+            report.record_memory_checkpoint_failure(
+                reason=str(reason or ""),
+                error="checkpoint_save_failed",
+            )
+        return None
+
+    try:
+        derived_cells = extract_cells_from_checkpoint(
+            checkpoint,
+            source_session_id=session_id,
+            tutor_preferences=runtime_state.get("tutor_preferences"),
+        )
+        saved_cells = await upsert_memory_cells(
+            firestore_client,
+            student_id=student_id,
+            cells=derived_cells,
+        )
+    except Exception as exc:
+        if report:
+            report.record_memory_checkpoint_failure(
+                reason=str(reason or ""),
+                error=f"cell_upsert_failed:{type(exc).__name__}",
+            )
+        return None
+
+    runtime_state["memory_last_checkpoint_at"] = now
+    runtime_state["memory_checkpoint_count"] = int(runtime_state.get("memory_checkpoint_count", 0)) + 1
+    runtime_state["memory_cells_saved"] = int(runtime_state.get("memory_cells_saved", 0)) + int(saved_cells)
+    runtime_state["memory_last_checkpoint_reason"] = str(reason or "")
+    payload = {
+        "checkpoint_id": checkpoint_id,
+        "reason": str(reason or ""),
+        "saved_cells": int(saved_cells),
+        "topic_id": str(checkpoint.get("topic_id") or ""),
+        "topic_title": str(checkpoint.get("topic_title") or ""),
+        "summary": str(checkpoint.get("summary_text") or ""),
+        "created_at": checkpoint.get("created_at"),
+    }
+    if websocket is not None:
+        await _send_json(websocket, {"type": "memory_checkpoint", "data": payload})
+    if report:
+        report.record_memory_checkpoint(saved_cells=saved_cells, reason=str(reason or ""))
+    return payload
+
+
+async def _persist_session_metrics_summary(
+    session_id: str,
+    report: "SessionReport | None",
+) -> None:
+    """Persist compact session telemetry for longitudinal analysis in Firestore."""
+    if not firestore_client or report is None:
+        return
+
+    report_data = report.data if isinstance(report.data, dict) else {}
+    scorecard = report_data.get("prd_scorecard", {}) if isinstance(report_data, dict) else {}
+    score_summary = scorecard.get("summary", {}) if isinstance(scorecard, dict) else {}
+    derived = scorecard.get("derived_metrics", {}) if isinstance(scorecard, dict) else {}
+    pocs = scorecard.get("pocs", {}) if isinstance(scorecard, dict) else {}
+    p99 = pocs.get("poc_99_hero_flow_rehearsal", {}) if isinstance(pocs, dict) else {}
+    run_config = report_data.get("run_config", {}) if isinstance(report_data, dict) else {}
+    resilience = report_data.get("resilience", {}) if isinstance(report_data, dict) else {}
+    memory = report_data.get("memory", {}) if isinstance(report_data, dict) else {}
+    compression = report_data.get("compression", {}) if isinstance(report_data, dict) else {}
+
+    telemetry_payload = {
+        "version": "v1",
+        "updated_at": time.time(),
+        "run_config": {
+            "compression_enabled": bool(run_config.get("compression_enabled")),
+            "compression_field": run_config.get("compression_field"),
+            "resumption_enabled": bool(run_config.get("resumption_enabled")),
+            "resumption_field": run_config.get("resumption_field"),
+            "resumption_requested": bool(run_config.get("resumption_requested")),
+        },
+        "proof_signals": {
+            "compression_events": int(compression.get("events", 0)),
+            "memory_recalls_applied": int(memory.get("recalls_applied", 0)),
+            "memory_checkpoints_saved": int(memory.get("checkpoints_saved", 0)),
+            "session_resume_successes": int(resilience.get("session_resume_successes", 0)),
+            "auto_pass_rate_percent": score_summary.get("auto_pass_rate_percent"),
+            "hero_flow_checklist_completed": p99.get("checklist_completed"),
+            "hero_flow_checklist_total": p99.get("checklist_total"),
+        },
+        "resilience": {
+            "stream_retry_attempts": int(resilience.get("stream_retry_attempts", 0)),
+            "stream_reconnect_successes": int(resilience.get("stream_reconnect_successes", 0)),
+            "stream_reconnect_failures": int(resilience.get("stream_reconnect_failures", 0)),
+            "session_resume_attempts": int(resilience.get("session_resume_attempts", 0)),
+            "session_resume_successes": int(resilience.get("session_resume_successes", 0)),
+            "session_resume_fallbacks": int(resilience.get("session_resume_fallbacks", 0)),
+            "retry_backoff_seconds": resilience.get("retry_backoff_seconds", []),
+        },
+        "memory": {
+            "recall_checks": int(memory.get("recall_checks", 0)),
+            "recalls_applied": int(memory.get("recalls_applied", 0)),
+            "recall_candidates_total": int(memory.get("recall_candidates_total", 0)),
+            "recall_selected_total": int(memory.get("recall_selected_total", 0)),
+            "last_recall_token_estimate": int(memory.get("last_recall_token_estimate", 0)),
+            "recall_avg_tokens": derived.get("memory_recall_avg_tokens"),
+            "checkpoint_attempts": int(memory.get("checkpoint_attempts", 0)),
+            "checkpoint_saved": int(memory.get("checkpoints_saved", 0)),
+            "checkpoint_skipped": int(memory.get("checkpoint_skipped", 0)),
+            "checkpoint_failed": int(memory.get("checkpoint_failed", 0)),
+            "checkpoint_reasons": memory.get("checkpoint_reasons", {}),
+            "checkpoint_skip_reasons": memory.get("checkpoint_skip_reasons", {}),
+            "checkpoint_failure_reasons": memory.get("checkpoint_failure_reasons", {}),
+            "cells_saved": int(memory.get("cells_saved", 0)),
+            "budget_violations": int(memory.get("budget_violations", 0)),
+        },
+        "compression": {
+            "events": int(compression.get("events", 0)),
+            "last_token_estimate": int(compression.get("last_token_estimate", 0)),
+            "trigger_tokens": int(compression.get("trigger_tokens", 0)),
+            "target_tokens": int(compression.get("target_tokens", 0)),
+        },
+        "scorecard": {
+            "checks_passed": score_summary.get("checks_passed"),
+            "checks_failed": score_summary.get("checks_failed"),
+            "checks_not_tested": score_summary.get("checks_not_tested"),
+            "auto_checks_total": score_summary.get("auto_checks_total"),
+            "auto_checks_passed": score_summary.get("auto_checks_passed"),
+            "auto_checks_failed": score_summary.get("auto_checks_failed"),
+            "auto_pass_rate_percent": score_summary.get("auto_pass_rate_percent"),
+            "poc_status_counts": score_summary.get("poc_status_counts", {}),
+        },
+        "derived_metrics": {
+            "compression_events": derived.get("compression_events"),
+            "memory_checkpoints_saved": derived.get("memory_checkpoints_saved"),
+            "memory_cells_saved": derived.get("memory_cells_saved"),
+            "memory_checkpoint_success_rate_percent": derived.get("memory_checkpoint_success_rate_percent"),
+            "memory_recall_avg_tokens": derived.get("memory_recall_avg_tokens"),
+            "session_resume_success_rate_percent": derived.get("session_resume_success_rate_percent"),
+            "stream_retry_success_rate_percent": derived.get("stream_retry_success_rate_percent"),
+            "stream_retry_backoff_avg_seconds": derived.get("stream_retry_backoff_avg_seconds"),
+        },
+    }
+    await firestore_client.collection("sessions").document(session_id).set(
+        {"telemetry": telemetry_payload},
+        merge=True,
+    )
 
 
 async def _log_command_event(session_id: str, runtime_state: dict, payload: dict) -> None:
@@ -1946,19 +2432,40 @@ async def _iter_runner_events_with_retry(
     user_id: str,
     session_id: str,
     live_queue: LiveRequestQueue,
+    runtime_state: dict | None = None,
     report: "SessionReport | None" = None,
 ):
-    """Yield ADK stream events with a single reconnect retry on stream errors."""
+    """Yield ADK stream events with resumption fallback and bounded retries."""
     attempt = 0
     while True:
         sent_reconnected = False
+        active_run_config = None
+        if isinstance(runtime_state, dict):
+            active_run_config = runtime_state.get("session_run_config")
+        if active_run_config is None:
+            active_run_config, _ = _build_session_run_config()
         try:
             async for event in adk_runner.run_live(
                 user_id=user_id,
                 session_id=session_id,
                 live_request_queue=live_queue,
-                run_config=ADK_RUN_CONFIG,
+                run_config=active_run_config,
             ):
+                if (
+                    isinstance(runtime_state, dict)
+                    and runtime_state.get("session_resumption_requested")
+                    and not runtime_state.get("session_resumption_active")
+                ):
+                    runtime_state["session_resumption_active"] = True
+                    await _send_json(
+                        websocket,
+                        {
+                            "type": "assistant_state",
+                            "data": {"state": "active", "reason": "session_resumed"},
+                        },
+                    )
+                    if report:
+                        report.record_session_resume_success()
                 if attempt > 0 and not sent_reconnected:
                     sent_reconnected = True
                     await _send_json(
@@ -1975,6 +2482,32 @@ async def _iter_runner_events_with_retry(
         except WebSocketDisconnect:
             raise
         except Exception as exc:
+            if (
+                isinstance(runtime_state, dict)
+                and runtime_state.get("session_resumption_requested")
+                and not runtime_state.get("session_resumption_fallback_used")
+            ):
+                runtime_state["session_resumption_fallback_used"] = True
+                runtime_state["session_resumption_requested"] = False
+                runtime_state["session_resumption_active"] = False
+                fallback_cfg, fallback_meta = _build_session_run_config(resumption_handle=None)
+                runtime_state["session_run_config"] = fallback_cfg
+                runtime_state["session_run_config_meta"] = fallback_meta
+                await _send_json(
+                    websocket,
+                    {
+                        "type": "assistant_state",
+                        "data": {"state": "reconnecting", "reason": "resume_failed_fallback_fresh"},
+                    },
+                )
+                if report:
+                    report.record_session_resume_fallback(str(exc))
+                logger.warning(
+                    "Session %s: resumption failed, falling back to fresh stream: %s",
+                    session_id,
+                    exc,
+                )
+                continue
             if attempt >= ADK_STREAM_MAX_RETRIES:
                 if report:
                     report.record_stream_reconnect_failure(attempt, str(exc))
@@ -1996,7 +2529,10 @@ async def _iter_runner_events_with_retry(
                     "data": {"state": "reconnecting", "reason": "stream_error", "attempt": attempt},
                 },
             )
-            await asyncio.sleep(ADK_STREAM_RETRY_BACKOFF_S * attempt)
+            backoff_seconds = compute_retry_backoff(attempt, ADK_STREAM_RETRY_BACKOFF_S)
+            if report:
+                report.record_stream_retry_backoff(attempt, backoff_seconds)
+            await asyncio.sleep(backoff_seconds)
 
 
 def _question_answer_signature(question: str, answer: str) -> str:
@@ -2202,6 +2738,7 @@ async def _forward_to_client(
             user_id=user_id,
             session_id=session_id,
             live_queue=live_queue,
+            runtime_state=runtime_state,
             report=report,
         ):
             # Whiteboard notes are dispatched by the whiteboard_dispatcher task
@@ -2215,12 +2752,83 @@ async def _forward_to_client(
                         runtime_state["topic_id"] = update["topic_id"]
                         runtime_state["topic_title"] = update["topic_title"]
                         await _send_json(websocket, {"type": "topic_update", "data": update})
+                        await _persist_memory_checkpoint(
+                            runtime_state,
+                            session_id,
+                            reason="topic_switch",
+                            websocket=websocket,
+                            report=report,
+                            force=True,
+                        )
                     except asyncio.QueueEmpty:
                         break
 
             dc = _debug_counters.get(session_id)
             if dc is not None:
                 dc["last_gemini_event_at"] = time.time()
+
+            # Capture and persist session resumption handles emitted by Live API.
+            new_resumption_handle = extract_session_resumption_handle(event)
+            if new_resumption_handle:
+                previous_handle = str(runtime_state.get("session_resumption_handle") or "")
+                if new_resumption_handle != previous_handle:
+                    runtime_state["session_resumption_handle"] = new_resumption_handle
+                    runtime_state["session_resumption_last_updated_at"] = time.time()
+                    await save_resumption_handle(
+                        firestore_client,
+                        student_id=str(runtime_state.get("student_id") or ""),
+                        session_id=session_id,
+                        handle=new_resumption_handle,
+                    )
+                    if report:
+                        report.record_session_resumption_handle_saved()
+
+            token_estimate = extract_total_token_estimate(event)
+            if token_estimate is not None and token_estimate > 0:
+                runtime_state["live_token_estimate"] = int(token_estimate)
+                trigger_tokens = int(runtime_state.get("live_compression_trigger_tokens", LIVE_COMPRESSION_TRIGGER_TOKENS))
+                last_notified = float(runtime_state.get("live_compression_last_notified_at", 0.0))
+                now_ts = time.time()
+                if token_estimate >= trigger_tokens and (now_ts - last_notified) >= 20.0:
+                    runtime_state["live_compression_last_notified_at"] = now_ts
+                    await _send_json(
+                        websocket,
+                        {
+                            "type": "context_compression",
+                            "data": {
+                                "token_estimate": int(token_estimate),
+                                "trigger_tokens": trigger_tokens,
+                                "target_tokens": int(runtime_state.get("live_compression_target_tokens", LIVE_COMPRESSION_TARGET_TOKENS)),
+                            },
+                        },
+                    )
+                    await _send_json(
+                        websocket,
+                        {
+                            "type": "assistant_state",
+                            "data": {
+                                "state": "compressing_context",
+                                "reason": "token_threshold",
+                                "token_estimate": int(token_estimate),
+                            },
+                        },
+                    )
+                    if report:
+                        report.record_context_compression(
+                            int(token_estimate),
+                            trigger_tokens,
+                            target_tokens=int(
+                                runtime_state.get("live_compression_target_tokens", LIVE_COMPRESSION_TARGET_TOKENS)
+                            ),
+                        )
+                    await _persist_memory_checkpoint(
+                        runtime_state,
+                        session_id,
+                        reason="compression_threshold",
+                        websocket=websocket,
+                        report=report,
+                        force=False,
+                    )
 
             # If a turn was gated out due missing student/proactive trigger, discard
             # all events until the matching turn_complete boundary.
@@ -2462,6 +3070,14 @@ async def _forward_to_client(
                 )
                 if report:
                     report.record_language_metric(language_metric)
+                await _persist_memory_checkpoint(
+                    runtime_state,
+                    session_id,
+                    reason="interval_turn",
+                    websocket=websocket,
+                    report=report,
+                    force=False,
+                )
 
                 # Track whether the tutor is waiting on a student reply and detect
                 # near-duplicate prompt loops when no new student activity happened.
@@ -2740,6 +3356,12 @@ async def _forward_to_client(
                     elif is_student_question(student_text):
                         runtime_state["pending_study_question"] = None
 
+                append_transcript_piece(
+                    runtime_state,
+                    role="student",
+                    text=student_text,
+                    at=now,
+                )
                 if report:
                     report.record_student_transcript(student_text)
 
@@ -2780,6 +3402,11 @@ async def _forward_to_client(
 
                 if report:
                     report.record_tutor_transcript(tutor_text)
+                append_transcript_piece(
+                    runtime_state,
+                    role="tutor",
+                    text=tutor_text,
+                )
 
     except WebSocketDisconnect:
         logger.info("Browser disconnected (forward_to_client)")

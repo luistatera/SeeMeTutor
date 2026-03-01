@@ -1732,6 +1732,11 @@
             <span class="diag-main" id="diag-language-main">No language events yet</span>
             <span class="diag-sub" id="diag-language-sub">Tutor turns: 0</span>
           </div>
+          <div class="diag-card">
+            <span class="diag-title">Memory</span>
+            <span class="diag-main" id="diag-memory-main">No memory recall yet</span>
+            <span class="diag-sub" id="diag-memory-sub">Recall: 0 · Checkpoints: 0 · Compression: 0</span>
+          </div>
         </div>
         <div class="diag-log-wrap">
           <div class="diag-log-title">Recent backend events</div>
@@ -1970,6 +1975,8 @@
       cameraFacingMode: 'environment',
       commandAttempts: {},
       whiteboardNotes: [],
+      lastSessionId: '',
+      restoreMicAfterReconnect: false,
       tutorPreferencesSaveError: '',
       speechPace: 'normal',
       diagnostics: {
@@ -1978,6 +1985,12 @@
         latencyAlerts: 0,
         languageEventCount: 0,
         languageTutorTurns: 0,
+        memoryRecallCount: 0,
+        memoryRecallCandidates: 0,
+        memoryRecallSelected: 0,
+        memoryCheckpointCount: 0,
+        memoryCompressionCount: 0,
+        sessionResumeCount: 0,
       },
     };
 
@@ -2044,6 +2057,8 @@
     const diagLatencySub = $('diag-latency-sub');
     const diagLanguageMain = $('diag-language-main');
     const diagLanguageSub = $('diag-language-sub');
+    const diagMemoryMain = $('diag-memory-main');
+    const diagMemorySub = $('diag-memory-sub');
     const diagLog = $('diag-log');
 
     // =========================================================================
@@ -2101,19 +2116,29 @@
 
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const backendHost = document.querySelector('meta[name="backend-host"]')?.content || location.host;
+      const shouldResume = state.wsAttempts > 0 && Boolean(state.lastSessionId);
+      const resumeQuery = shouldResume
+        ? `&resume=1&resume_session_id=${encodeURIComponent(state.lastSessionId)}`
+        : '';
       ws = new WebSocket(
-        `${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}&student_id=${encodeURIComponent(profileId)}`
+        `${protocol}//${backendHost}/ws?code=${encodeURIComponent(demoCode)}&student_id=${encodeURIComponent(profileId)}${resumeQuery}`
       );
 
       ws.onopen = () => {
+        const wasReconnect = state.wsAttempts > 0;
+        const shouldRestoreMic = Boolean(state.restoreMicAfterReconnect);
+        state.restoreMicAfterReconnect = false;
         state.lastServerError = '';
         state.wsStatus = 'connected';
         state.wsAttempts = 0;
         setStatus('connected');
         enableMicBtn();
         setAwayModeUI(false);
-        showToast('Connected — tap the mic to begin', 3000);
+        showToast(wasReconnect ? 'Reconnected — restoring session...' : 'Connected — tap the mic to begin', 3000);
         wsSend({ type: 'consent_ack' });
+        if (wasReconnect && shouldRestoreMic) {
+          void startMic();
+        }
       };
 
       ws.onmessage = (event) => {
@@ -2135,7 +2160,10 @@
         disableMicBtn();
 
         if (state.micActive) {
+          state.restoreMicAfterReconnect = true;
           stopMic();
+        } else {
+          state.restoreMicAfterReconnect = false;
         }
         if (state.isSpeaking) {
           setSpeakingState(false, { hardStop: true });
@@ -2217,6 +2245,8 @@
           disableMicBtn();
           cameraBtn.classList.add('disabled');
           showToast('Great session! Reload to start a new one.', 0);
+          state.lastSessionId = '';
+          state.restoreMicAfterReconnect = false;
           break;
 
         case 'error':
@@ -2274,6 +2304,18 @@
 
         case 'language_metric':
           if (msg.data) applyLanguageMetric(msg.data);
+          break;
+
+        case 'context_compression':
+          if (msg.data) applyContextCompressionEvent(msg.data);
+          break;
+
+        case 'memory_recall':
+          if (msg.data) applyMemoryRecallEvent(msg.data);
+          break;
+
+        case 'memory_checkpoint':
+          if (msg.data) applyMemoryCheckpointEvent(msg.data);
           break;
 
         case 'source_switch_ack':
@@ -2567,6 +2609,12 @@
       if (!context || typeof context !== 'object') return;
       const topic = context.topic_title || '--';
       const track = context.track_title || state.selectedProfile?.track || '--';
+      const recall = context.memory_recall && typeof context.memory_recall === 'object'
+        ? context.memory_recall
+        : null;
+      if (context.session_id) {
+        state.lastSessionId = String(context.session_id);
+      }
       trackPill.textContent = `Track: ${track}`;
       topicPill.textContent = `Topic: ${topic}`;
       if (context.tutor_preferences) {
@@ -2575,20 +2623,56 @@
           renderTutorPreferencesForm(normalized);
         }
       }
+      if (recall) {
+        const selectedCount = Number(recall.selected_count || 0);
+        const candidateCount = Number(recall.candidate_count || 0);
+        if (Number.isFinite(selectedCount) && selectedCount >= 0) {
+          state.diagnostics.memoryRecallSelected = Math.round(selectedCount);
+        }
+        if (Number.isFinite(candidateCount) && candidateCount >= 0) {
+          state.diagnostics.memoryRecallCandidates = Math.round(candidateCount);
+        }
+        updateMemoryDiagSub();
+      }
       if (topic && topic !== '--') updateWhiteboardTopicHeader(topic);
     }
 
     function applyAssistantState(data) {
       const nextState = String(data?.state || '');
       if (!nextState) return;
+      const reason = clipText(data?.reason || '', 56);
 
       if (nextState === 'away') {
         setAwayModeUI(true);
+        appendDiagnosticLog('assistant-state', 'away');
         return;
       }
 
       if (nextState === 'active') {
         setAwayModeUI(false);
+        if (reason === 'session_resumed' || reason === 'reconnected') {
+          state.diagnostics.sessionResumeCount += 1;
+          updateMemoryDiagSub();
+        }
+        appendDiagnosticLog('assistant-state', reason ? `active (${reason})` : 'active');
+        return;
+      }
+
+      if (nextState === 'reconnecting') {
+        setStatus('connecting', 'Reconnecting…');
+        appendDiagnosticLog('assistant-state', reason ? `reconnecting (${reason})` : 'reconnecting');
+        return;
+      }
+
+      if (nextState === 'compressing_context') {
+        state.diagnostics.memoryCompressionCount += 1;
+        updateMemoryDiagSub();
+        const tokenEstimate = Number(data?.token_estimate || 0);
+        diagMemoryMain.textContent = Number.isFinite(tokenEstimate) && tokenEstimate > 0
+          ? `Context compression near ${Math.round(tokenEstimate)} tokens`
+          : 'Context compression active';
+        appendDiagnosticLog('memory', 'context compression event');
+        showToast('Optimizing context memory for continuity.', 2600);
         return;
       }
     }
@@ -2708,6 +2792,68 @@
       diagLanguageMain.textContent = `purity ${Math.round(purity)}% · l2 ${Math.round(l2Ratio)}%`;
       diagLanguageSub.textContent = `Tutor turns: ${state.diagnostics.languageTutorTurns} · fallback ${Math.max(0, fallbackTriggers)} · recap ${Math.max(0, recapTriggers)}`;
       appendDiagnosticLog('language-metric', `turns=${state.diagnostics.languageTutorTurns} purity=${Math.round(purity)}%`);
+    }
+
+    function updateMemoryDiagSub() {
+      diagMemorySub.textContent =
+        `Recall: ${state.diagnostics.memoryRecallCount} ` +
+        `(${state.diagnostics.memoryRecallSelected}/${state.diagnostics.memoryRecallCandidates}) · ` +
+        `Checkpoints: ${state.diagnostics.memoryCheckpointCount} · ` +
+        `Compression: ${state.diagnostics.memoryCompressionCount} · ` +
+        `Resumed: ${state.diagnostics.sessionResumeCount}`;
+    }
+
+    function applyContextCompressionEvent(data) {
+      state.diagnostics.memoryCompressionCount += 1;
+      const estimate = Number(data?.token_estimate || 0);
+      const trigger = Number(data?.trigger_tokens || 0);
+      diagMemoryMain.textContent = Number.isFinite(estimate) && estimate > 0
+        ? `Context compression near ${Math.round(estimate)} tokens`
+        : 'Context compression active';
+      updateMemoryDiagSub();
+      appendDiagnosticLog(
+        'memory',
+        `compression estimate=${Math.max(0, Math.round(estimate))} trigger=${Math.max(0, Math.round(trigger))}`,
+      );
+    }
+
+    function applyMemoryRecallEvent(data) {
+      state.diagnostics.memoryRecallCount += 1;
+      const selectedCount = Number(data?.selected_count || 0);
+      const candidateCount = Number(data?.candidate_count || 0);
+      const tokenEstimate = Number(data?.token_estimate || 0);
+      const budgetPct = Number(data?.budget_utilization_percent || 0);
+      const safeSelected = Number.isFinite(selectedCount) ? Math.max(0, Math.round(selectedCount)) : 0;
+      const safeCandidate = Number.isFinite(candidateCount) ? Math.max(0, Math.round(candidateCount)) : 0;
+      const safeTokens = Number.isFinite(tokenEstimate) ? Math.max(0, Math.round(tokenEstimate)) : 0;
+      const safeBudgetPct = Number.isFinite(budgetPct) ? Math.max(0, Math.round(budgetPct)) : 0;
+      const summary = clipText(data?.summary || '', 82);
+      if (Number.isFinite(candidateCount) && candidateCount >= 0) {
+        state.diagnostics.memoryRecallCandidates = Math.round(candidateCount);
+      }
+      if (Number.isFinite(selectedCount) && selectedCount >= 0) {
+        state.diagnostics.memoryRecallSelected = Math.round(selectedCount);
+      }
+      diagMemoryMain.textContent = selectedCount > 0
+        ? `Recalled ${safeSelected} memory anchors`
+        : 'Memory recall applied';
+      updateMemoryDiagSub();
+      appendDiagnosticLog(
+        'memory',
+        summary || `recall cells=${safeSelected}/${safeCandidate} tokens=${safeTokens} budget=${safeBudgetPct}%`,
+      );
+    }
+
+    function applyMemoryCheckpointEvent(data) {
+      state.diagnostics.memoryCheckpointCount += 1;
+      const reason = clipText(data?.reason || 'checkpoint', 40);
+      const cells = Number(data?.saved_cells || 0);
+      const topic = clipText(data?.topic_title || data?.topic_id || '', 40);
+      diagMemoryMain.textContent = topic
+        ? `Checkpoint saved for ${topic}`
+        : 'Checkpoint saved';
+      updateMemoryDiagSub();
+      appendDiagnosticLog('memory', `checkpoint ${reason} cells=${Math.max(0, cells)}`);
     }
 
     // =========================================================================
@@ -3499,6 +3645,8 @@
       disableMicBtn();
       cameraBtn.classList.add('disabled');
       showToast('Session ended. Reload to start again.', 0);
+      state.lastSessionId = '';
+      state.restoreMicAfterReconnect = false;
     }
 
     function switchProfile() {
@@ -3513,6 +3661,8 @@
       if (ws) { ws.close(); ws = null; }
       disableMicBtn();
       setStatus('idle', 'Select profile');
+      state.lastSessionId = '';
+      state.restoreMicAfterReconnect = false;
       void loadProfiles();
       profileModal.classList.add('visible');
       showToast('Select a profile to continue.', 2500);
