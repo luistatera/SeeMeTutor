@@ -162,6 +162,13 @@ class TestFinalizeTutorTurn:
             "l1": "en-US",
             "l2": "de-DE",
             "max_l2_turns_before_recap": 1,
+            "recap_policy": {
+                "min_l2_streak": 1,
+                "base_l2_streak": 1
+            },
+            "detection_patterns": {
+                "de": [r"\b[Ii]ch\b"]
+            }
         }
         state = init_language_state(policy, preferred_language="de")
         append_tutor_text_part(state, "Ich verstehe das gut.", source="transcript")

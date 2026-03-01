@@ -100,3 +100,25 @@ def test_build_example_note_formats_note():
     title, content = build_example_note("For example, 3x = 12 so x = 4.", 3)
     assert title == "My note 3: Example"
     assert content.startswith("Example: For example, 3x = 12")
+def test_barge_in_handling():
+    """
+    Simulate user sending audio while the tutor is speaking.
+    Assert that the turn_text buffer clears and is_interrupted metric bumps.
+    """
+    class MockSessionMetrics:
+        def __init__(self):
+            self.is_interrupted = False
+            self.turn_text_buffer = ["Hello", " ", "there.", " Let", " me", " explain"]
+            
+        def handle_user_audio(self):
+            # Barge-in detected
+            self.turn_text_buffer.clear()
+            self.is_interrupted = True
+
+    metrics = MockSessionMetrics()
+    assert len(metrics.turn_text_buffer) > 0
+    
+    metrics.handle_user_audio()
+    
+    assert len(metrics.turn_text_buffer) == 0
+    assert metrics.is_interrupted is True

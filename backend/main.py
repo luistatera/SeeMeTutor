@@ -2521,7 +2521,7 @@ async def _forward_to_client(
                     else:
                         runtime_state["question_like_streak"] = 0
 
-                    if runtime_state.get("question_like_streak", 0) >= 3:
+                    if runtime_state.get("question_like_streak", 0) >= 2:
                         now = time.time()
                         if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
                             live_queue.send_content(

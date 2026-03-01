@@ -460,6 +460,13 @@ SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
+TOOL_LATENCY_BUDGETS = {
+    "write_notes": 100,      # ms
+    "switch_topic": 50,      # ms
+    "google_search": 300,    # ms
+    "get_backlog_context": 150,  # ms
+}
+
 def set_session_phase(phase: str, tool_context: ToolContext) -> dict:
     """Transition the tutoring session to a new phase.
 

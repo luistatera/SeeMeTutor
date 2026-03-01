@@ -1014,11 +1014,13 @@ def finalize_tutor_turn(runtime_state: dict) -> dict[str, Any]:
             phase_turns = 0
         runtime_state["language_guided_phase_turns"] = phase_turns
 
+        phase = runtime_state.get("language_guided_phase")
+        default_min_turns = 3 if phase == "practice" else 1
         guided_min_turns = parse_int(
             policy.get("guided_phase_min_turns"),
-            2,
+            default_min_turns,
             minimum=1,
-            maximum=4,
+            maximum=6,
         )
         if phase_turns >= guided_min_turns:
             runtime_state["language_guided_phase"] = (

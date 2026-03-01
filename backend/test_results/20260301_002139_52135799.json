@@ -1,0 +1,3029 @@
+{
+  "session_id": "52135799-7092-4f0a-ae0d-e94c482dc461",
+  "student_id": "luis-german",
+  "started_at": 1772320613.8873081,
+  "ended_at": 1772320899.307232,
+  "duration_seconds": 285.4,
+  "ended_reason": "student_ended",
+  "connection": {
+    "ws_connected": true,
+    "backlog_context_sent": true
+  },
+  "audio": {
+    "chunks_in": 3822,
+    "chunks_out": 509,
+    "first_response_ms": 17.9,
+    "latency_samples_ms": [
+      17.9,
+      35.2,
+      31.2,
+      20.8,
+      12.9,
+      8.1,
+      47.3,
+      46.3,
+      40.4,
+      19.9,
+      4.8,
+      67.8,
+      42.9,
+      35.7,
+      23.4,
+      1.5,
+      4.3,
+      31.5,
+      22.6,
+      1.9,
+      37.5,
+      42.5,
+      25.1,
+      16.9,
+      12.0,
+      65.1,
+      58.0,
+      15.2,
+      30.0,
+      22.8,
+      29.3,
+      2.3,
+      48.6,
+      60.0,
+      32.9,
+      28.8,
+      12.9,
+      47.1,
+      33.0,
+      18.7,
+      10.5,
+      39.7,
+      38.7,
+      34.0,
+      8.5,
+      6.1,
+      38.1,
+      24.9,
+      24.7,
+      17.3,
+      57.7,
+      51.2,
+      40.3,
+      25.5,
+      11.2,
+      46.7,
+      41.2,
+      30.8,
+      24.1,
+      3.0,
+      1.2,
+      48.6,
+      44.5,
+      28.5,
+      14.9,
+      14.5,
+      48.1,
+      36.3,
+      40.0,
+      29.9,
+      26.9,
+      64.9,
+      44.3,
+      8.3,
+      9.0,
+      54.6,
+      39.7,
+      26.6,
+      25.5,
+      16.8,
+      6.9,
+      40.2,
+      27.0,
+      23.7,
+      7.9,
+      42.7,
+      29.5,
+      18.3,
+      16.0,
+      21.1,
+      11.3,
+      29.7,
+      45.8,
+      64.3,
+      41.2,
+      31.2,
+      16.9,
+      2.2,
+      45.9,
+      32.4,
+      10.0,
+      47.5,
+      44.3,
+      28.4,
+      21.3,
+      1.2,
+      35.4,
+      22.6,
+      7.3,
+      63.7,
+      39.1,
+      26.8,
+      23.7,
+      7.3,
+      55.3,
+      51.8,
+      35.4,
+      37.8,
+      41.0,
+      37.5,
+      37.6,
+      22.7,
+      57.4,
+      14.2,
+      59.1,
+      52.5,
+      44.5,
+      41.8,
+      38.0,
+      25.1,
+      9.7,
+      8.6,
+      16.6,
+      11.7,
+      14.2,
+      54.1,
+      51.4,
+      10.4,
+      21.7,
+      42.7,
+      20.8,
+      6.5,
+      54.0,
+      37.2,
+      22.2,
+      9.4,
+      45.4,
+      32.1,
+      29.0,
+      15.0,
+      1.0,
+      48.3,
+      44.4,
+      30.1,
+      21.0,
+      62.9,
+      54.8,
+      11.4,
+      18.2,
+      35.5,
+      17.6,
+      4.4,
+      52.0,
+      37.1,
+      34.1,
+      30.3,
+      21.1,
+      12.7,
+      57.8,
+      41.8,
+      38.8,
+      34.9,
+      31.0,
+      15.0,
+      12.1,
+      13.7,
+      6.7,
+      47.5,
+      25.7,
+      42.6,
+      37.6,
+      34.5,
+      20.2,
+      13.5,
+      63.0,
+      40.9,
+      28.9,
+      16.6,
+      14.8,
+      62.0,
+      55.1,
+      34.3,
+      21.8,
+      8.6,
+      47.7,
+      34.5,
+      20.0,
+      6.5,
+      43.3,
+      29.8,
+      34.4,
+      11.8,
+      6.2,
+      26.3,
+      42.7,
+      26.7,
+      13.2,
+      4.2,
+      46.6,
+      44.7,
+      11.7,
+      32.4,
+      29.7,
+      56.5,
+      14.7,
+      5.0,
+      39.2,
+      38.0,
+      36.9,
+      21.4,
+      17.8,
+      3.7,
+      3.6,
+      38.1,
+      11.5,
+      6.3,
+      5.9,
+      29.5,
+      40.9,
+      62.2,
+      58.2,
+      44.0,
+      23.8,
+      22.9,
+      15.9,
+      49.2,
+      42.4,
+      19.9,
+      9.2,
+      45.1,
+      42.2,
+      28.1,
+      14.1,
+      10.8,
+      55.7,
+      38.7,
+      42.6,
+      60.0,
+      38.7,
+      55.2,
+      38.5,
+      24.8,
+      21.3,
+      4.0,
+      40.7,
+      33.4,
+      11.8,
+      58.8,
+      43.9,
+      37.7,
+      25.9,
+      17.5,
+      47.9,
+      33.7,
+      36.0,
+      20.8,
+      16.3,
+      12.8,
+      47.6,
+      35.5,
+      32.9,
+      37.1,
+      54.6,
+      52.7,
+      8.2,
+      22.9,
+      45.8,
+      22.8,
+      9.5,
+      47.5,
+      33.6,
+      19.0,
+      6.1,
+      51.6,
+      36.8,
+      27.5,
+      13.9,
+      10.8,
+      35.1,
+      7.2,
+      30.8,
+      16.9,
+      2.4,
+      38.7,
+      24.7,
+      9.9,
+      46.1,
+      15.0,
+      52.2,
+      35.9,
+      18.1,
+      11.5,
+      53.6,
+      40.5,
+      11.7,
+      32.9,
+      19.1,
+      46.0,
+      36.0,
+      23.8,
+      22.6,
+      8.9,
+      4.7,
+      46.8,
+      34.1,
+      19.9,
+      17.0,
+      19.9,
+      13.8,
+      10.6,
+      30.3,
+      47.2,
+      61.2,
+      43.7,
+      30.5,
+      17.5,
+      13.6,
+      46.0,
+      35.6,
+      19.7,
+      8.1,
+      39.8,
+      27.2,
+      22.7,
+      12.9,
+      44.7,
+      46.2,
+      65.8,
+      18.3,
+      42.9,
+      28.8,
+      11.1,
+      9.0,
+      62.2,
+      9.4,
+      24.7,
+      8.2,
+      5.5,
+      41.0,
+      27.7,
+      14.3,
+      47.8,
+      48.6,
+      33.3,
+      43.8,
+      40.7,
+      1.7,
+      40.8,
+      23.3,
+      55.4,
+      52.8,
+      27.8,
+      27.8,
+      18.4,
+      50.3,
+      43.8,
+      20.6,
+      6.9,
+      2.8,
+      45.9,
+      45.2,
+      28.5,
+      14.4,
+      5.8,
+      2.8,
+      37.1,
+      23.0,
+      8.8,
+      45.4,
+      41.9,
+      11.1,
+      24.1,
+      21.9,
+      38.8,
+      63.1,
+      57.8,
+      3.6,
+      40.2,
+      25.4,
+      10.7,
+      45.8,
+      49.0
+    ]
+  },
+  "video": {
+    "frames_in": 0
+  },
+  "latency": {
+    "events": [
+      {
+        "metric": "first_byte",
+        "value_ms": 1878.0,
+        "is_alert": false,
+        "timestamp": 1772320615.686292
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 1287.0,
+        "is_alert": true,
+        "timestamp": 1772320662.7643032
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 460.0,
+        "is_alert": false,
+        "timestamp": 1772320682.895614
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 1190.0,
+        "is_alert": true,
+        "timestamp": 1772320705.32549
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 331.0,
+        "is_alert": false,
+        "timestamp": 1772320720.736054
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 666.0,
+        "is_alert": false,
+        "timestamp": 1772320724.7083929
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 440.0,
+        "is_alert": false,
+        "timestamp": 1772320736.504396
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 471.0,
+        "is_alert": false,
+        "timestamp": 1772320745.6693602
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 966.0,
+        "is_alert": true,
+        "timestamp": 1772320758.2222002
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 501.0,
+        "is_alert": false,
+        "timestamp": 1772320770.4610188
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 768.0,
+        "is_alert": false,
+        "timestamp": 1772320784.218661
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 484.0,
+        "is_alert": false,
+        "timestamp": 1772320792.943905
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 692.0,
+        "is_alert": false,
+        "timestamp": 1772320801.878499
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 438.0,
+        "is_alert": false,
+        "timestamp": 1772320814.0699232
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 380.0,
+        "is_alert": false,
+        "timestamp": 1772320828.1024919
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 466.0,
+        "is_alert": false,
+        "timestamp": 1772320836.764904
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 453.0,
+        "is_alert": false,
+        "timestamp": 1772320841.411754
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 489.0,
+        "is_alert": false,
+        "timestamp": 1772320845.282154
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 457.0,
+        "is_alert": false,
+        "timestamp": 1772320855.3898408
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 478.0,
+        "is_alert": false,
+        "timestamp": 1772320865.787984
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 748.0,
+        "is_alert": false,
+        "timestamp": 1772320877.179754
+      },
+      {
+        "metric": "response_start",
+        "value_ms": 511.0,
+        "is_alert": false,
+        "timestamp": 1772320888.168266
+      }
+    ],
+    "latest_report": {
+      "metrics": {
+        "response_start": {
+          "name": "response_start",
+          "count": 21,
+          "current": 511,
+          "avg": 604,
+          "min": 331,
+          "max": 1287,
+          "p95": 1190,
+          "target_ms": 500,
+          "alert_ms": 800
+        },
+        "interruption_stop": {
+          "name": "interruption_stop",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 200,
+          "alert_ms": 400
+        },
+        "turn_to_turn": {
+          "name": "turn_to_turn",
+          "count": 0,
+          "current": 0,
+          "avg": 0,
+          "min": 0,
+          "max": 0,
+          "p95": 0,
+          "target_ms": 1500,
+          "alert_ms": 2500
+        },
+        "first_byte": {
+          "name": "first_byte",
+          "count": 1,
+          "current": 1878,
+          "avg": 1878,
+          "min": 1878,
+          "max": 1878,
+          "p95": 1878,
+          "target_ms": 3000,
+          "alert_ms": 5000
+        }
+      },
+      "turns": 22,
+      "alerts": 3
+    },
+    "reports": [
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 1,
+        "alerts": 0
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 1,
+            "current": 1287,
+            "avg": 1287,
+            "min": 1287,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 2,
+        "alerts": 1
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 2,
+            "current": 460,
+            "avg": 874,
+            "min": 460,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 3,
+        "alerts": 1
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 3,
+            "current": 1190,
+            "avg": 979,
+            "min": 460,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 4,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 4,
+            "current": 331,
+            "avg": 817,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 5,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 5,
+            "current": 666,
+            "avg": 787,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 6,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 6,
+            "current": 440,
+            "avg": 729,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 7,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 7,
+            "current": 471,
+            "avg": 692,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 8,
+        "alerts": 2
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 8,
+            "current": 966,
+            "avg": 726,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 9,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 9,
+            "current": 501,
+            "avg": 701,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 10,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 10,
+            "current": 768,
+            "avg": 708,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 11,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 11,
+            "current": 484,
+            "avg": 688,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 12,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 12,
+            "current": 692,
+            "avg": 688,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 13,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 13,
+            "current": 438,
+            "avg": 669,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 14,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 14,
+            "current": 380,
+            "avg": 648,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 15,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 15,
+            "current": 466,
+            "avg": 636,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 16,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 16,
+            "current": 453,
+            "avg": 625,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 17,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 17,
+            "current": 489,
+            "avg": 617,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 18,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 18,
+            "current": 457,
+            "avg": 608,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 19,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 19,
+            "current": 478,
+            "avg": 601,
+            "min": 331,
+            "max": 1287,
+            "p95": 1287,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 20,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 20,
+            "current": 748,
+            "avg": 608,
+            "min": 331,
+            "max": 1287,
+            "p95": 1190,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 21,
+        "alerts": 3
+      },
+      {
+        "metrics": {
+          "response_start": {
+            "name": "response_start",
+            "count": 21,
+            "current": 511,
+            "avg": 604,
+            "min": 331,
+            "max": 1287,
+            "p95": 1190,
+            "target_ms": 500,
+            "alert_ms": 800
+          },
+          "interruption_stop": {
+            "name": "interruption_stop",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 200,
+            "alert_ms": 400
+          },
+          "turn_to_turn": {
+            "name": "turn_to_turn",
+            "count": 0,
+            "current": 0,
+            "avg": 0,
+            "min": 0,
+            "max": 0,
+            "p95": 0,
+            "target_ms": 1500,
+            "alert_ms": 2500
+          },
+          "first_byte": {
+            "name": "first_byte",
+            "count": 1,
+            "current": 1878,
+            "avg": 1878,
+            "min": 1878,
+            "max": 1878,
+            "p95": 1878,
+            "target_ms": 3000,
+            "alert_ms": 5000
+          }
+        },
+        "turns": 22,
+        "alerts": 3
+      }
+    ]
+  },
+  "language": {
+    "events": [
+      {
+        "event": {
+          "event": "recap_triggered",
+          "count": 1
+        },
+        "timestamp": 1772320759.49454
+      },
+      {
+        "event": {
+          "event": "recap_triggered",
+          "count": 2
+        },
+        "timestamp": 1772320815.734216
+      },
+      {
+        "event": {
+          "event": "confusion_signal",
+          "streak": 1,
+          "lang": "en"
+        },
+        "timestamp": 1772320865.310357
+      }
+    ],
+    "latest_metric": {
+      "tutor_turns": 20,
+      "purity_rate": 100.0,
+      "mixed_turns": 0,
+      "guided_adherence": 95.0,
+      "guided_expected_turns": 20,
+      "guided_matched_turns": 19,
+      "fallback_triggers": 0,
+      "fallback_latency_turns": [],
+      "confusion_signals": 1,
+      "language_flips": 9,
+      "l1_words": 131,
+      "l2_words": 230,
+      "l2_ratio": 63.7,
+      "recap_triggers": 2,
+      "control_prompts_sent": 2
+    },
+    "metrics_history": [
+      {
+        "tutor_turns": 1,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 1,
+        "guided_matched_turns": 1,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 35,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 2,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 100.0,
+        "guided_expected_turns": 2,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 0,
+        "l1_words": 62,
+        "l2_words": 0,
+        "l2_ratio": 0.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 3,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 66.7,
+        "guided_expected_turns": 3,
+        "guided_matched_turns": 2,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 1,
+        "l1_words": 62,
+        "l2_words": 25,
+        "l2_ratio": 28.7,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 4,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 75.0,
+        "guided_expected_turns": 4,
+        "guided_matched_turns": 3,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 2,
+        "l1_words": 79,
+        "l2_words": 25,
+        "l2_ratio": 24.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 4,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 75.0,
+        "guided_expected_turns": 4,
+        "guided_matched_turns": 3,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 2,
+        "l1_words": 79,
+        "l2_words": 25,
+        "l2_ratio": 24.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 5,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 80.0,
+        "guided_expected_turns": 5,
+        "guided_matched_turns": 4,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 3,
+        "l1_words": 79,
+        "l2_words": 48,
+        "l2_ratio": 37.8,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 6,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 83.3,
+        "guided_expected_turns": 6,
+        "guided_matched_turns": 5,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 3,
+        "l1_words": 79,
+        "l2_words": 63,
+        "l2_ratio": 44.4,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 7,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 85.7,
+        "guided_expected_turns": 7,
+        "guided_matched_turns": 6,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 3,
+        "l1_words": 79,
+        "l2_words": 79,
+        "l2_ratio": 50.0,
+        "recap_triggers": 0,
+        "control_prompts_sent": 0
+      },
+      {
+        "tutor_turns": 8,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 87.5,
+        "guided_expected_turns": 8,
+        "guided_matched_turns": 7,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 3,
+        "l1_words": 79,
+        "l2_words": 96,
+        "l2_ratio": 54.9,
+        "recap_triggers": 1,
+        "control_prompts_sent": 1
+      },
+      {
+        "tutor_turns": 9,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 88.9,
+        "guided_expected_turns": 9,
+        "guided_matched_turns": 8,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 4,
+        "l1_words": 101,
+        "l2_words": 96,
+        "l2_ratio": 48.7,
+        "recap_triggers": 1,
+        "control_prompts_sent": 1
+      },
+      {
+        "tutor_turns": 10,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 90.0,
+        "guided_expected_turns": 10,
+        "guided_matched_turns": 9,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 5,
+        "l1_words": 101,
+        "l2_words": 101,
+        "l2_ratio": 50.0,
+        "recap_triggers": 1,
+        "control_prompts_sent": 1
+      },
+      {
+        "tutor_turns": 11,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 90.9,
+        "guided_expected_turns": 11,
+        "guided_matched_turns": 10,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 5,
+        "l1_words": 101,
+        "l2_words": 111,
+        "l2_ratio": 52.4,
+        "recap_triggers": 1,
+        "control_prompts_sent": 1
+      },
+      {
+        "tutor_turns": 12,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 91.7,
+        "guided_expected_turns": 12,
+        "guided_matched_turns": 11,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 5,
+        "l1_words": 101,
+        "l2_words": 125,
+        "l2_ratio": 55.3,
+        "recap_triggers": 1,
+        "control_prompts_sent": 1
+      },
+      {
+        "tutor_turns": 13,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 92.3,
+        "guided_expected_turns": 13,
+        "guided_matched_turns": 12,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 5,
+        "l1_words": 101,
+        "l2_words": 148,
+        "l2_ratio": 59.4,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 14,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 92.9,
+        "guided_expected_turns": 14,
+        "guided_matched_turns": 13,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 6,
+        "l1_words": 112,
+        "l2_words": 148,
+        "l2_ratio": 56.9,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 15,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 93.3,
+        "guided_expected_turns": 15,
+        "guided_matched_turns": 14,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 7,
+        "l1_words": 112,
+        "l2_words": 157,
+        "l2_ratio": 58.4,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 15,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 93.3,
+        "guided_expected_turns": 15,
+        "guided_matched_turns": 14,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 7,
+        "l1_words": 112,
+        "l2_words": 157,
+        "l2_ratio": 58.4,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 16,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 93.8,
+        "guided_expected_turns": 16,
+        "guided_matched_turns": 15,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 7,
+        "l1_words": 112,
+        "l2_words": 185,
+        "l2_ratio": 62.3,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 17,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 94.1,
+        "guided_expected_turns": 17,
+        "guided_matched_turns": 16,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 0,
+        "language_flips": 7,
+        "l1_words": 112,
+        "l2_words": 198,
+        "l2_ratio": 63.9,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 18,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 94.4,
+        "guided_expected_turns": 18,
+        "guided_matched_turns": 17,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 1,
+        "language_flips": 8,
+        "l1_words": 131,
+        "l2_words": 198,
+        "l2_ratio": 60.2,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 19,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 94.7,
+        "guided_expected_turns": 19,
+        "guided_matched_turns": 18,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 1,
+        "language_flips": 9,
+        "l1_words": 131,
+        "l2_words": 220,
+        "l2_ratio": 62.7,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      },
+      {
+        "tutor_turns": 20,
+        "purity_rate": 100.0,
+        "mixed_turns": 0,
+        "guided_adherence": 95.0,
+        "guided_expected_turns": 20,
+        "guided_matched_turns": 19,
+        "fallback_triggers": 0,
+        "fallback_latency_turns": [],
+        "confusion_signals": 1,
+        "language_flips": 9,
+        "l1_words": 131,
+        "l2_words": 230,
+        "l2_ratio": 63.7,
+        "recap_triggers": 2,
+        "control_prompts_sent": 2
+      }
+    ]
+  },
+  "resilience": {
+    "stream_retry_attempts": 0,
+    "stream_reconnect_successes": 0,
+    "stream_reconnect_failures": 0,
+    "events": []
+  },
+  "tools": {
+    "calls": [
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Akkusativ Artikel",
+          "note_type": "formula"
+        },
+        "result_status": "displayed",
+        "duration_ms": 955.6,
+        "timestamp": 1772320662.760501
+      },
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "tutoring"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.1,
+        "timestamp": 1772320662.762563
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Beispielsätze Akkusativ",
+          "note_type": "vocabulary"
+        },
+        "result_status": "displayed",
+        "duration_ms": 132.8,
+        "timestamp": 1772320704.748384
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772320661805",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 86.9,
+        "timestamp": 1772320704.991513
+      },
+      {
+        "name": "log_progress",
+        "args": {
+          "topic": "german-accusative-a2",
+          "status": "mastered"
+        },
+        "result_status": "saved",
+        "duration_ms": 350.4,
+        "timestamp": 1772320724.6404421
+      },
+      {
+        "name": "switch_topic",
+        "args": {
+          "topic_id": "german-food-drinks-a2",
+          "topic_title": "German Food and Drinks (A2)"
+        },
+        "result_status": "switched",
+        "duration_ms": 126.8,
+        "timestamp": 1772320757.601304
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Essen & Trinken: Nomen",
+          "note_type": "vocabulary"
+        },
+        "result_status": "displayed",
+        "duration_ms": 65.8,
+        "timestamp": 1772320757.8581069
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772320757792",
+          "status": "in_progress"
+        },
+        "result_status": "updated",
+        "duration_ms": 61.0,
+        "timestamp": 1772320783.8478441
+      },
+      {
+        "name": "log_progress",
+        "args": {
+          "topic": "german-food-drinks-a2",
+          "status": "mastered"
+        },
+        "result_status": "saved",
+        "duration_ms": 309.9,
+        "timestamp": 1772320801.757139
+      },
+      {
+        "name": "write_notes",
+        "args": {
+          "title": "Essen & Trinken: Verben",
+          "note_type": "vocabulary"
+        },
+        "result_status": "displayed",
+        "duration_ms": 71.3,
+        "timestamp": 1772320816.389332
+      },
+      {
+        "name": "update_note_status",
+        "args": {
+          "note_id": "note-1772320816317",
+          "status": "mastered"
+        },
+        "result_status": "updated",
+        "duration_ms": 67.3,
+        "timestamp": 1772320876.8181179
+      },
+      {
+        "name": "set_session_phase",
+        "args": {
+          "phase": "review"
+        },
+        "result_status": "transitioned",
+        "duration_ms": 0.2,
+        "timestamp": 1772320879.1809049
+      }
+    ],
+    "total_calls": 12,
+    "unique_tools_used": [
+      "write_notes",
+      "set_session_phase",
+      "update_note_status",
+      "log_progress",
+      "switch_topic"
+    ]
+  },
+  "phases": {
+    "transitions": [
+      {
+        "from": "greeting",
+        "to": "tutoring",
+        "timestamp": 1772320662.76257
+      },
+      {
+        "from": "tutoring",
+        "to": "review",
+        "timestamp": 1772320879.180913
+      }
+    ],
+    "final_phase": "review"
+  },
+  "whiteboard": {
+    "notes_created": 4,
+    "notes_duplicate_skipped": 0,
+    "status_updates": 3,
+    "clear_events": 0,
+    "notes_delivered": 4,
+    "delivery_latency_ms": [
+      29.0,
+      432.4,
+      391.4,
+      481.8
+    ],
+    "sync_speaking_count": 2,
+    "sync_deadline_count": 2
+  },
+  "interruptions": {
+    "count": 2,
+    "stale_filtered": 14
+  },
+  "turns": {
+    "count": 22,
+    "audio_chunks_per_turn": [
+      48,
+      36,
+      52,
+      23,
+      0,
+      34,
+      18,
+      23,
+      23,
+      30,
+      11,
+      17,
+      23,
+      31,
+      16,
+      15,
+      0,
+      20,
+      19,
+      22,
+      32,
+      13
+    ]
+  },
+  "conversation": {
+    "awaiting_reply_prompts": 16,
+    "suspected_repetition_loops": 0
+  },
+  "idle": {
+    "checkin_1_count": 1,
+    "checkin_2_count": 0,
+    "away_activated_count": 0,
+    "away_resumed_count": 0
+  },
+  "proactive": {
+    "poke_count": 0,
+    "nudge_count": 0
+  },
+  "transcripts": {
+    "student": [
+      {
+        "text": "Let's discuss their article changed that then. Can you give me an example?",
+        "timestamp": 1772320661.477201
+      },
+      {
+        "text": "Please, give me an example.",
+        "timestamp": 1772320682.435621
+      },
+      {
+        "text": "Write down the board the example.",
+        "timestamp": 1772320704.1357162
+      },
+      {
+        "text": "Ich sehe den man, ich kaufe die Lampe, ich finde das Buch.",
+        "timestamp": 1772320720.405043
+      },
+      {
+        "text": "Okay.",
+        "timestamp": 1772320724.042638
+      },
+      {
+        "text": "neue Vokabeln",
+        "timestamp": 1772320736.064178
+      },
+      {
+        "text": "Keine Ahnung.",
+        "timestamp": 1772320745.1981409
+      },
+      {
+        "text": "Essen und trinken. Ja, genau. Los geht's.",
+        "timestamp": 1772320757.256086
+      },
+      {
+        "text": "I didn't get your question.",
+        "timestamp": 1772320769.9599528
+      },
+      {
+        "text": "Ja, das Wort.",
+        "timestamp": 1772320783.4505432
+      },
+      {
+        "text": "das Obst",
+        "timestamp": 1772320792.46031
+      },
+      {
+        "text": "das Gemüse",
+        "timestamp": 1772320801.186326
+      },
+      {
+        "text": "I didn't understand your last question.",
+        "timestamp": 1772320813.632009
+      },
+      {
+        "text": "Yeah, that will be great. Let's practice it one of these.",
+        "timestamp": 1772320827.722251
+      },
+      {
+        "text": "Essen.",
+        "timestamp": 1772320836.298592
+      },
+      {
+        "text": "yeah yeah",
+        "timestamp": 1772320840.958467
+      },
+      {
+        "text": "કોઈ",
+        "timestamp": 1772320844.793398
+      },
+      {
+        "text": "hier. trinken",
+        "timestamp": 1772320854.933225
+      },
+      {
+        "text": "What was the question?",
+        "timestamp": 1772320865.310426
+      },
+      {
+        "text": "Ah, ich trinke Wasser jeden Morgen.",
+        "timestamp": 1772320876.431274
+      },
+      {
+        "text": "Ja, genau.",
+        "timestamp": 1772320887.6568189
+      }
+    ],
+    "tutor": [
+      {
+        "text": "Hallo Luis! Welcome back. Last time we were working on the German accusative case. I see we have one exercise still on the board. Möchtest du damit weitermachen, oder hast du neue Hausaufgaben für mich?",
+        "timestamp": 1772320618.239948
+      },
+      {
+        "text": "Sure, let's do that. I've put a chart on the board to remind you how \"der\" changes to \"den\" and the others. Möchtest du einen Beispielsatz hören?",
+        "timestamp": 1772320664.2916439
+      },
+      {
+        "text": "Gerne. Ein weiteres Beispiel ist: \"Ich kaufe die Lampe.\" (\"Lampe\" ist weiblich, \"die\" Lampe, und bleibt so im Akkusativ. Möchtest du jetzt einen Satz versuchen?",
+        "timestamp": 1772320685.680057
+      },
+      {
+        "text": "I've added some examples to the board. Versuche doch mal, einen Satz mit \"das Buch\" zu bilden.",
+        "timestamp": 1772320706.526031
+      },
+      {
+        "text": "Genau richtig!Du hast den Akkusativ wirklich gut verstanden. Super gemacht! Wollen wir uns eine andere Grammatikregel ansehen oder vielleicht neue Vokabeln üben?",
+        "timestamp": 1772320726.511235
+      },
+      {
+        "text": "Alles klar! Lass uns ein paar neue Vokabeln üben. Zu welchem Thema möchtest du lernen?",
+        "timestamp": 1772320737.560245
+      },
+      {
+        "text": "Kein Problem! Wie wäre es mit \"Essen und Trinken\" – Vokabeln, die du im Alltag gebrauchen kannst?",
+        "timestamp": 1772320746.91195
+      },
+      {
+        "text": "Super, dann legen wir los! Wir fangen mit ein paar Nomen an. Was heißt \"water\" auf Deutsch?",
+        "timestamp": 1772320759.4910421
+      },
+      {
+        "text": "Ah, no problem! I was just asking how to say \"bread\" in German, following the vocabulary list. How do you say that?",
+        "timestamp": 1772320772.075965
+      },
+      {
+        "text": "Genau! Und wie heißt \"fruit\"?",
+        "timestamp": 1772320784.7938309
+      },
+      {
+        "text": "Sehr gut! Und das letzte Wort auf der Liste, \"vegetables\"?",
+        "timestamp": 1772320793.880329
+      },
+      {
+        "text": "Genau! \"Das Gemüse\". Du kennst die Nomen jetzt gut! Wollen wir stattdessen Verben üben?",
+        "timestamp": 1772320803.163444
+      },
+      {
+        "text": "Got it, my apologies! I was just asking if you'd like to practice some verbs that go with food, like \"essen\" (to eat).",
+        "timestamp": 1772320815.723766
+      },
+      {
+        "text": "Super, dann legen wir los! Was heißt \"to cook\" auf Deutsch?",
+        "timestamp": 1772320828.967186
+      },
+      {
+        "text": "\"Essen\" heißt \"to eat\". Was heißt dann \"to cook\"?",
+        "timestamp": 1772320837.532476
+      },
+      {
+        "text": "Das Verb für \"to cook\" ist \"kochen\". Kannst du jetzt einen Satz mit \"kochen\"Genau! Und\"Kochen\" ist die richtige Antwort. Gut gemacht! Möchtest du jetzt \"trinken\" üben?",
+        "timestamp": 1772320846.365171
+      },
+      {
+        "text": "Perfekt! \"Trinken\" heißt \"to drink\". Kannst du mir einen Satz mit \"trinken\" sagen?",
+        "timestamp": 1772320856.409012
+      },
+      {
+        "text": "No worries! I was just asking if you could make a sentence using the German verb \"trinken\" (to drink).",
+        "timestamp": 1772320867.078372
+      },
+      {
+        "text": "Perfekt! \"Ich trinke Wasser jeden Morgen.\" Du hast die Nomen und die Verben super gemeistert! Wollen wir jetzt eine kleine Übung machen?",
+        "timestamp": 1772320878.8732579
+      },
+      {
+        "text": "Toll, dann machen wir das so. Bis zum nächsten Mal!",
+        "timestamp": 1772320888.828416
+      }
+    ]
+  },
+  "guardrails": {
+    "refusals_total": 0,
+    "answer_leaks": 0,
+    "content_flags": 0,
+    "prompt_injections": 0,
+    "drift_reinforcements": 0,
+    "events": []
+  },
+  "grounding": {
+    "events": 0,
+    "citations_sent": 0,
+    "search_queries": []
+  },
+  "screen_share": {
+    "source_switches": 0,
+    "stop_sharing_count": 0,
+    "switch_log": []
+  },
+  "errors": [],
+  "manual": {},
+  "prd_scorecard": {
+    "version": "v1",
+    "generated_at": 1772320899.307761,
+    "pocs": {
+      "poc_00_onboarding": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P00.context_retention",
+            "metric": "Context retention baseline",
+            "target": "100%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "connection.backlog_context_sent",
+            "notes": "Proxy for profile/context injection on session start."
+          },
+          {
+            "id": "P00.onboarding_dropoff",
+            "metric": "Onboarding drop-off",
+            "target": "<10%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Requires frontend onboarding funnel instrumentation (post-event POC 00)."
+          }
+        ]
+      },
+      "poc_01_interruption": {
+        "status": "pass",
+        "checks": [
+          {
+            "id": "P01.interruption_stop_p95",
+            "metric": "Gemini interruption stop p95",
+            "target": "<=500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P01.student_heard_rate",
+            "metric": "Student-heard rate proxy",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "turns.count / transcripts.student",
+            "notes": "Proxy metric: tutor turns relative to student transcripts."
+          },
+          {
+            "id": "P01.interruptions_observed",
+            "metric": "Interruption events observed in run",
+            "target": ">=1 (when testing interruption scenario)",
+            "actual": 2,
+            "status": "pass",
+            "source": "interruptions.count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_02_proactive_vision": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P02.proactive_trigger_count",
+            "metric": "Proactive triggers with visual input",
+            "target": ">=1",
+            "actual": null,
+            "status": "not_tested",
+            "source": "proactive.poke_count + proactive.nudge_count",
+            "notes": ""
+          },
+          {
+            "id": "P02.question_turn_ratio",
+            "metric": "Question-ending turn ratio",
+            "target": "35-50%",
+            "actual": 80.0,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": "Only meaningful for longer tutoring sessions."
+          },
+          {
+            "id": "P02.question_streak_max",
+            "metric": "Max consecutive question turns",
+            "target": "<=2",
+            "actual": 8,
+            "status": "fail",
+            "source": "transcripts.tutor",
+            "notes": ""
+          },
+          {
+            "id": "P02.repetition_loop_suspected",
+            "metric": "Suspected repetitive tutor prompt loops",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "conversation.suspected_repetition_loops",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_03_multilingual": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P03.language_purity_rate",
+            "metric": "Language purity rate",
+            "target": ">=98%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "language.latest_metric.purity_rate",
+            "notes": ""
+          },
+          {
+            "id": "P03.guided_bilingual_adherence",
+            "metric": "Guided bilingual adherence",
+            "target": ">=95%",
+            "actual": 95.0,
+            "status": "pass",
+            "source": "language.latest_metric.guided_adherence",
+            "notes": ""
+          },
+          {
+            "id": "P03.fallback_trigger_latency",
+            "metric": "Fallback trigger latency (turns)",
+            "target": "<=1 turn",
+            "actual": null,
+            "status": "not_tested",
+            "source": "language.latest_metric.fallback_latency_turns",
+            "notes": ""
+          },
+          {
+            "id": "P03.l2_distribution",
+            "metric": "L2 word ratio",
+            "target": ">=70%",
+            "actual": 63.7,
+            "status": "fail",
+            "source": "language.latest_metric.l2_ratio",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_04_whiteboard_sync": {
+        "status": "pass",
+        "checks": [
+          {
+            "id": "P04.whiteboard_usage_rate",
+            "metric": "Notes created",
+            "target": ">=1 note/session",
+            "actual": 4,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P04.note_delivery_latency_p95",
+            "metric": "Whiteboard delivery latency p95",
+            "target": "<=500ms",
+            "actual": 481.8,
+            "status": "pass",
+            "source": "whiteboard.delivery_latency_ms",
+            "notes": ""
+          },
+          {
+            "id": "P04.audio_continuity_proxy",
+            "metric": "Audio continuity while using whiteboard",
+            "target": "audio_out > 0 when notes created",
+            "actual": 509,
+            "status": "pass",
+            "source": "audio.chunks_out",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_05_search_grounding": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P05.grounding_event_count",
+            "metric": "Grounding events on factual/search turns",
+            "target": ">=1 when factual search tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.citation_render_rate",
+            "metric": "Citation render rate",
+            "target": "100%",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.citations_sent / grounding.events",
+            "notes": ""
+          },
+          {
+            "id": "P05.search_queries_logged",
+            "metric": "Grounding search query logs",
+            "target": ">=1 query when grounding occurs",
+            "actual": null,
+            "status": "not_tested",
+            "source": "grounding.search_queries",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_06_session_resilience": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P06.reconnect_success_rate",
+            "metric": "Backend stream reconnect success rate",
+            "target": "100% (for transient drops)",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes / stream_retry_attempts",
+            "notes": ""
+          },
+          {
+            "id": "P06.retry_attempt_cap",
+            "metric": "Retry attempts capped",
+            "target": "<=3",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_retry_attempts",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_07_latency": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P07.response_start_avg",
+            "metric": "Response start avg latency",
+            "target": "<=500ms",
+            "actual": 604,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.avg",
+            "notes": ""
+          },
+          {
+            "id": "P07.response_start_p95",
+            "metric": "Response start p95 latency",
+            "target": "<=800ms",
+            "actual": 1190,
+            "status": "fail",
+            "source": "latency.latest_report.metrics.response_start.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.interruption_stop_p95",
+            "metric": "Interruption stop p95 latency",
+            "target": "<=400ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.interruption_stop.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.turn_to_turn_p95",
+            "metric": "Turn-to-turn p95 latency",
+            "target": "<=2500ms",
+            "actual": 0,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.turn_to_turn.p95",
+            "notes": ""
+          },
+          {
+            "id": "P07.first_byte_p95",
+            "metric": "First-byte p95 latency",
+            "target": "<=5000ms",
+            "actual": 1878,
+            "status": "pass",
+            "source": "latency.latest_report.metrics.first_byte.p95",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_08_tool_action_moment": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P08.a2a_summary_pipeline",
+            "metric": "A2A summary pipeline",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; requires reflection agent pipeline instrumentation."
+          }
+        ]
+      },
+      "poc_09_safety_guardrails": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P09.direct_answer_leak_rate",
+            "metric": "Direct answer leak count",
+            "target": "0",
+            "actual": 0,
+            "status": "pass",
+            "source": "guardrails.answer_leaks",
+            "notes": ""
+          },
+          {
+            "id": "P09.socratic_compliance_rate",
+            "metric": "Socratic compliance rate",
+            "target": ">=90%",
+            "actual": 100.0,
+            "status": "pass",
+            "source": "(turns.count - guardrails.answer_leaks) / turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P09.prompt_injection_detection",
+            "metric": "Prompt-injection detection events",
+            "target": ">=1 when injection test is run",
+            "actual": null,
+            "status": "not_tested",
+            "source": "guardrails.prompt_injections",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_10_screen_share_toggle": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P10.source_switch_count",
+            "metric": "Source switches observed",
+            "target": ">=1 when screen-share flow tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.source_switches",
+            "notes": ""
+          },
+          {
+            "id": "P10.switch_session_continuity",
+            "metric": "Switching without fatal backend errors",
+            "target": "errors == 0",
+            "actual": null,
+            "status": "not_tested",
+            "source": "errors",
+            "notes": ""
+          },
+          {
+            "id": "P10.stop_sharing_path",
+            "metric": "Stop sharing events",
+            "target": ">=1 when stop-sharing tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "screen_share.stop_sharing_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_11_idle_orchestration": {
+        "status": "partial",
+        "checks": [
+          {
+            "id": "P11.gentle_check_nag_limit",
+            "metric": "Gentle check count",
+            "target": "<=1",
+            "actual": 1,
+            "status": "pass",
+            "source": "idle.checkin_1_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.options_check_nag_limit",
+            "metric": "Options check count",
+            "target": "<=1",
+            "actual": 0,
+            "status": "pass",
+            "source": "idle.checkin_2_count",
+            "notes": ""
+          },
+          {
+            "id": "P11.away_resume_flow_observed",
+            "metric": "Away/resume flow observed",
+            "target": "away_activated >=1 and away_resumed >=1 when tested",
+            "actual": null,
+            "status": "not_tested",
+            "source": "idle.away_activated_count + idle.away_resumed_count",
+            "notes": ""
+          }
+        ]
+      },
+      "poc_12_final_student_report": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P12.final_report_pipeline",
+            "metric": "Final student report generation",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; not part of current live backend runtime path."
+          }
+        ]
+      },
+      "poc_13_memory_management": {
+        "status": "not_tested",
+        "checks": [
+          {
+            "id": "P13.memory_recall_pipeline",
+            "metric": "Long-horizon memory recall",
+            "target": "implemented + measured",
+            "actual": null,
+            "status": "not_tested",
+            "source": "manual",
+            "notes": "Post-event feature; requires memory ingestion + retrieval pipeline."
+          }
+        ]
+      },
+      "poc_99_hero_flow_rehearsal": {
+        "status": "fail",
+        "checks": [
+          {
+            "id": "P99.proactive_vision_checkpoint",
+            "metric": "Checklist: proactive vision",
+            "target": "triggered",
+            "actual": 0,
+            "status": "fail",
+            "source": "proactive.*",
+            "notes": ""
+          },
+          {
+            "id": "P99.whiteboard_checkpoint",
+            "metric": "Checklist: whiteboard note",
+            "target": ">=1 note",
+            "actual": 4,
+            "status": "pass",
+            "source": "whiteboard.notes_created",
+            "notes": ""
+          },
+          {
+            "id": "P99.interruption_checkpoint",
+            "metric": "Checklist: interruption handled",
+            "target": ">=1 interruption",
+            "actual": 2,
+            "status": "pass",
+            "source": "interruptions.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.grounding_checkpoint",
+            "metric": "Checklist: search citation shown",
+            "target": ">=1 citation",
+            "actual": 0,
+            "status": "fail",
+            "source": "grounding.citations_sent",
+            "notes": ""
+          },
+          {
+            "id": "P99.action_moment_checkpoint",
+            "metric": "Checklist: action moment (3+ exchanges)",
+            "target": "turns >= 3",
+            "actual": 22,
+            "status": "pass",
+            "source": "turns.count",
+            "notes": ""
+          },
+          {
+            "id": "P99.reconnect_checkpoint",
+            "metric": "Checklist: reconnect survived",
+            "target": ">=1 successful reconnect",
+            "actual": null,
+            "status": "not_tested",
+            "source": "resilience.stream_reconnect_successes",
+            "notes": ""
+          }
+        ],
+        "checklist_completed": 3,
+        "checklist_total": 6
+      }
+    },
+    "summary": {
+      "checks_passed": 20,
+      "checks_failed": 7,
+      "checks_not_tested": 17,
+      "checks_total": 44,
+      "auto_checks_total": 40,
+      "auto_checks_passed": 20,
+      "auto_checks_failed": 7,
+      "auto_checks_not_tested": 13,
+      "auto_pass_rate_percent": 50.0,
+      "poc_status_counts": {
+        "pass": 2,
+        "partial": 3,
+        "fail": 4,
+        "not_tested": 6
+      }
+    },
+    "derived_metrics": {
+      "student_turns": 21,
+      "tutor_turns": 22,
+      "question_turns": 16,
+      "question_turn_ratio_percent": 80.0,
+      "max_question_streak": 8,
+      "student_heard_rate_percent": 100.0,
+      "socratic_compliance_percent": 100.0,
+      "whiteboard_delivery_p95_ms": 481.8,
+      "proactive_trigger_total": 0
+    }
+  }
+}
