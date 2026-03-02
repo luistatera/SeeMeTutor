@@ -108,6 +108,15 @@ class TestWriteNotes:
         assert result["note_type"] == "insight"
 
     @pytest.mark.asyncio
+    async def test_source_note_sets_source_pending_flag(self, tool_context, wb_queue):
+        p_fs, p_rpt, p_wbq = _patch_infra(wb_queue)
+        with p_fs, p_rpt, p_wbq:
+            result = await write_notes("Source", "Content", note_type="source", tool_context=tool_context)
+
+        assert result["note_type"] == "source"
+        assert tool_context.state.get("_source_note_pending") is True
+
+    @pytest.mark.asyncio
     async def test_no_queue_still_succeeds(self, tool_context):
         p_fs, p_rpt, p_wbq = _patch_infra(None)
         with p_fs, p_rpt, p_wbq:

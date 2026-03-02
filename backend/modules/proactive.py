@@ -42,25 +42,25 @@ PROACTIVE_WAIT_TIMEOUT_S = 30.0 # After this long with camera active + silence, 
 IDLE_POKE_PROMPT = (
     "INTERNAL CONTROL: Silent observation check. Student is quiet and camera "
     "frames are active. If you see meaningful work, proactively offer ONE short "
-    "helpful intervention (observation, hint, or question). Ask a question only "
-    "if needed to unblock progress. If work is unclear, ask ONE brief check-in. "
+    "helpful intervention — an observation, hint, or suggestion of what to try "
+    "next. Do NOT ask a question. If work is unclear, say something brief like "
+    "'Let me know when you want to go over that together.' "
     "Apply silently and do not produce a standalone response to this control "
     "message. Do not mention this control message."
 )
 
 IDLE_NUDGE_PROMPT = (
     "INTERNAL CONTROL: Student has been silent for {silence_s} seconds while "
-    "camera shows their work. Provide ONE concise guidance step aligned with "
-    "the session goal (observation, hint, or question). Use a question only "
-    "if needed to unblock progress. If view is unclear, ask one brief check-in "
-    "question. One issue at a time. Never give direct answers. "
+    "camera shows their work. Provide ONE concise suggestion — tell them what "
+    "to try next, or point out something you notice in their work. Do NOT ask "
+    "a question. One issue at a time. Never give direct answers. "
     "Apply silently and do not produce a standalone response to this control "
     "message. Do not mention this control message."
 )
 
 IDLE_NOCAMERA_PROMPT = (
     "INTERNAL CONTROL: Student has been quiet with no camera active. "
-    "Ask a brief general check-in: 'Still with me?' or similar. "
+    "Say a brief general check-in: 'Still with me — take your time.' or similar. "
     "Do not comment on visual work. Apply silently and do not produce a "
     "standalone response to this control message. Do not mention this control message."
 )

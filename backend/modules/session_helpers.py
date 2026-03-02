@@ -14,7 +14,7 @@ import math
 import time
 from typing import Callable, Awaitable, Any
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 from modules.proactive import reset_silence_tracking
 from modules.conversation import normalize_for_similarity

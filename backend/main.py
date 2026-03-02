@@ -8,12 +8,10 @@ and text transcripts flow back to the browser.
 
 import asyncio
 import hashlib
-import json
 import logging
 import os
 import re
 import time
-import uuid
 from pathlib import Path
 import sys
 
@@ -22,9 +20,8 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from google.adk.agents.live_request_queue import LiveRequestQueue
@@ -33,7 +30,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.genai import types
 
-from agent import tutor_agent, SYSTEM_PROMPT
+from agent import tutor_agent
 from queues import (
     register_whiteboard_queue,
     unregister_whiteboard_queue,
@@ -65,36 +62,17 @@ from modules.security import (
     parse_allowed_origins,
 )
 from modules.tutor_preferences import (
-    _SEARCH_REQUEST_PATTERNS_BY_LANG,
-    _SEARCH_EDU_HINT_PATTERNS_BY_LANG,
-    _SEARCH_NON_EDU_PATTERNS,
-    _TUTOR_PREFERENCE_OPTIONS,
-    _DEFAULT_TUTOR_PREFERENCES,
-    _PROFILE_CONTEXT_MAX_LEN,
-    _PROFILE_CONTEXT_FIELDS,
-    _RESOURCE_MATERIAL_MAX_ITEMS,
     _PLAN_MILESTONE_MIN_DEFAULT,
-    _normalize_preference_choice,
-    _normalize_tutor_preferences,
     _sanitize_text,
-    _sanitize_long_text,
-    _normalize_resource_materials,
     _agent_phase_from_session_phase,
-    _normalize_profile_context,
-    _build_tutor_preferences_control_prompt,
-    _dedupe_patterns,
-    _all_patterns,
 )
 from modules.student_profile import (
     _anonymize_ip,
     _is_adk_session_exists_error,
     _parse_int,
-    _safe_order_index,
-    _default_backlog_context,
     _register_active_student_session as _register_active_student_session_impl,
     _unregister_active_student_session as _unregister_active_student_session_impl,
     _load_backlog_context as _load_backlog_context_impl,
-    _build_profile_summary,
     _init_local_profiles as _init_local_profiles_impl,
     _build_local_profile_summary as _build_local_profile_summary_impl,
 )
@@ -282,16 +260,6 @@ _ws_rate_limiter = SlidingWindowRateLimiter()
 
 
 
-# _anonymize_ip, _is_adk_session_exists_error, _parse_int, _safe_order_index
-# moved to modules.student_profile
-
-
-# _append_tutor_turn_part, _finalize_tutor_turn moved to modules.session_helpers
-
-# _default_backlog_context, _register_active_student_session, _unregister_active_student_session
-# moved to modules.student_profile
-
-
 async def _register_active_student_session(student_id: str, session_id: str, websocket: WebSocket) -> tuple[str | None, WebSocket | None]:
     """Thin wrapper — delegates to student_profile module with main.py globals."""
     return await _register_active_student_session_impl(
@@ -312,8 +280,6 @@ async def _load_backlog_context(student_id: str, session_data: dict | None = Non
     """Thin wrapper — delegates to student_profile module with firestore_client."""
     return await _load_backlog_context_impl(firestore_client, student_id, session_data)
 
-
-# _build_profile_summary moved to modules.student_profile (imported directly)
 
 # Firestore client for session logging (optional — works without it for local dev)
 firestore_client = None
@@ -626,8 +592,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "topic_title": backlog_context.get("topic_title"),
         "topic_status": backlog_context.get("topic_status"),
         "available_topics": backlog_context.get("available_topics", []),
-        "search_intent_policy": backlog_context.get("search_intent_policy"),
-        "search_context_terms": backlog_context.get("search_context_terms", []),
         "tutor_preferences": backlog_context.get("tutor_preferences"),
         "profile_context": backlog_context.get("profile_context", {}),
         "session_setup": backlog_context.get("session_setup", {}),
@@ -761,10 +725,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "example_note_counter": 0,
         "example_note_signatures": set(),
         "_tutor_turn_parts": {"text": [], "transcript": []},
-        "last_forced_search_query": "",
-        "last_forced_search_at": 0.0,
-        "search_intent_policy": backlog_context.get("search_intent_policy"),
-        "search_context_terms": backlog_context.get("search_context_terms", []),
         "tutor_preferences": backlog_context.get("tutor_preferences"),
         "profile_context": backlog_context.get("profile_context", {}),
         "session_setup": backlog_context.get("session_setup", {}),
@@ -885,7 +845,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     session_state.get("plan_bootstrap_source"),
                     max_len=40,
                 ),
-                "search_context_terms": session_state.get("search_context_terms", []),
                 "session_phase": session_state.get("session_phase"),
                 "previous_notes_count": len(session_state.get("previous_notes", [])),
                 "memory_recall_count": int(memory_recall.get("selected_count", 0)),
@@ -926,7 +885,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     startup_parts.append(
                         "INTERNAL CONTROL: This session requires plan bootstrap and no structured resource text is available. "
                         "On your first spoken response after greeting, call mark_plan_fallback with a short reason, "
-                        "then ask the student which milestone to start and call set_session_phase('tutoring')."
+                        "then suggest which milestone to start with and call set_session_phase('tutoring')."
                     )
                 else:
                     startup_parts.append(
@@ -934,7 +893,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "On your first spoken response after greeting, you MUST call write_notes 6 to 10 times "
                         "with note_type='checklist_item' using unique titles 'Milestone 1 — ...', "
                         "'Milestone 2 — ...', etc., based on session_setup and any resource transcript context when available. "
-                        "Then ask the student which milestone to start and call set_session_phase('tutoring')."
+                        "Then suggest which milestone to start with and call set_session_phase('tutoring')."
                     )
 
             # Final instruction

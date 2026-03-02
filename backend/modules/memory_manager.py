@@ -134,7 +134,7 @@ def build_checkpoint_summary(runtime_state: dict, *, reason: str) -> dict[str, A
     open_questions = _extract_open_questions(student_turns, limit=3)
     latest_student = student_turns[-1] if student_turns else ""
     next_step = (
-        "Continue with one small practice step, then ask the student to explain their reasoning."
+        "Continue with one small practice step, then invite the student to explain their reasoning."
     )
     if open_questions:
         next_step = "Address the latest open question before introducing new material."

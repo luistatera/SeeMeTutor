@@ -1,14 +1,10 @@
 """Unit tests for modules/whiteboard.py — normalization, dedupe, dispatcher."""
 import asyncio
-import json
-import time
 
 import pytest
 
 from modules.whiteboard import (
     VALID_NOTE_TYPES,
-    VALID_NOTE_STATUSES,
-    NOTE_MAX_CHARS,
     NOTE_MAX_LINES,
     NOTE_TITLE_MAX_CHARS,
     WHITEBOARD_SYNC_WAIT_S,
@@ -400,3 +396,29 @@ class TestWhiteboardDispatcher:
 
         assert runtime_state["wb_notes_queued"] == 2
         assert runtime_state["wb_notes_sent"] == 2
+
+    @pytest.mark.asyncio
+    async def test_source_note_gets_fallback_citation_link(self, fake_ws, wb_queue, runtime_state):
+        runtime_state["assistant_speaking"] = True
+        direct_url = "https://www.kapitel-zwei.de/en/telc-berlin/"
+        wb_queue.put_nowait({
+            "title": "telc C1 Berlin Info",
+            "content": f"- Source: {direct_url}",
+            "note_type": "source",
+        })
+
+        task = asyncio.create_task(whiteboard_dispatcher(fake_ws, wb_queue, runtime_state))
+        await asyncio.sleep(0.15)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        sent = [s for s in fake_ws.get_sent_json() if s.get("type") == "whiteboard"]
+        assert len(sent) == 1
+        data = sent[0]["data"]
+        assert data["note_type"] == "source"
+        assert isinstance(data.get("citations"), list)
+        assert len(data["citations"]) >= 1
+        assert str(data["citations"][0].get("url", "")) == direct_url

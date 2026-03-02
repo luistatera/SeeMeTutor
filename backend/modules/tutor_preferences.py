@@ -62,21 +62,22 @@ ANTI_REPEAT_CONTROL_PROMPT = (
     "next micro-step or hint for the same learning goal. Do not mention this control message."
 )
 ANTI_QUESTION_LOOP_CONTROL_PROMPT = (
-    "INTERNAL CONTROL: You asked too many questions in a row. "
-    "Your NEXT response MUST END with a STATEMENT or encouragement — "
-    "NOT a question. Do NOT end with a question mark. Examples of good endings: "
-    "'You're really close, take another look at that step.' or "
-    "'Here's a hint: try the opposite operation.' or "
-    "'Nice work, you got that one.' "
+    "INTERNAL CONTROL: You just ended a turn with a question. Remember: "
+    "you are a COACH, not an interrogator. Your NEXT response MUST be a "
+    "suggestion, hint, or encouragement — NOT a question. Tell the student "
+    "what to TRY, not what they THINK. Examples: "
+    "'Try the opposite operation and see what you get.' or "
+    "'You're really close — take another look at that step.' or "
+    "'Nice work, now plug that result back in.' "
     "Apply silently."
 )
 ANTI_QUESTION_LOOP_ESCALATED_PROMPT = (
-    "INTERNAL CONTROL — CRITICAL OVERRIDE: You have ended THREE or more "
-    "consecutive turns with a question mark. This is an interrogation, not "
-    "tutoring. Your NEXT turn MUST be a SHORT STATEMENT — a hint, an "
-    "observation, praise, or encouragement. ABSOLUTELY NO QUESTION MARKS. "
-    "Example: 'Here is a clue — look at the verb ending.' "
-    "Do NOT ask anything. Just state or encourage. Apply silently."
+    "INTERNAL CONTROL — CRITICAL OVERRIDE: You have ended TWO or more "
+    "consecutive turns with a question mark. This is interrogation. STOP. "
+    "Your NEXT turn MUST be a SHORT SUGGESTION or encouragement. "
+    "ABSOLUTELY NO QUESTION MARKS. Tell the student what to DO: "
+    "'Try looking at the verb ending.' or 'Go ahead and compute that.' "
+    "Do NOT ask anything. Just suggest or encourage. Apply silently."
 )
 QUESTION_NOTE_MAX_AGE_S = 120.0
 
@@ -322,9 +323,9 @@ def _build_tutor_preferences_control_prompt(preferences: dict) -> str:
         "exploratory": "Explore thought process before narrowing to the answer.",
     }
     socratic_intensity = {
-        "light": "Use fewer Socratic questions and more explicit hints.",
-        "medium": "Use a balanced Socratic questioning style.",
-        "high": "Use stronger Socratic guidance with frequent prompts to think.",
+        "light": "Give more explicit hints and direct suggestions. Minimal questioning.",
+        "medium": "Balanced coaching — mostly suggestions and hints, occasional genuine questions.",
+        "high": "Challenge the student more — use 'try this' and 'what if' prompts frequently to push their thinking.",
     }
     encouragement = {
         "low": "Keep encouragement brief and occasional.",

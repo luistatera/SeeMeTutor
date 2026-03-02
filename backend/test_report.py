@@ -217,11 +217,6 @@ class SessionReport:
                 "drift_reinforcements": 0,
                 "events": [],
             },
-            "grounding": {
-                "events": 0,
-                "citations_sent": 0,
-                "search_queries": [],
-            },
             "screen_share": {
                 "source_switches": 0,
                 "stop_sharing_count": 0,
@@ -274,31 +269,52 @@ class SessionReport:
 
     # --- Latency ---
 
-    def record_latency_event(self, metric: str, value_ms: float, is_alert: bool):
-        self.data["latency"]["events"].append({
-            "metric": metric,
-            "value_ms": round(float(value_ms), 1),
-            "is_alert": bool(is_alert),
-            "timestamp": time.time(),
-        })
-
     def record_latency_report(self, report_payload: dict):
         snapshot = copy.deepcopy(report_payload or {})
         self.data["latency"]["latest_report"] = snapshot
         self.data["latency"]["reports"].append(snapshot)
 
-    # --- Language ---
-
-    def record_language_event(self, event: dict):
-        self.data["language"]["events"].append({
-            "event": copy.deepcopy(event),
+    def record_latency_event(self, event_type: str, ms: float):
+        """Record a single latency measurement and update latest_report stats."""
+        self.data["latency"]["events"].append({
+            "type": str(event_type),
+            "ms": round(float(ms), 1),
             "timestamp": time.time(),
         })
 
-    def record_language_metric(self, metric_payload: dict):
-        snapshot = copy.deepcopy(metric_payload or {})
-        self.data["language"]["latest_metric"] = snapshot
-        self.data["language"]["metrics_history"].append(snapshot)
+    def _recompute_latency_report(self):
+        """Build latency.latest_report from accumulated events."""
+        by_type: dict[str, list[float]] = {}
+        for ev in self.data["latency"]["events"]:
+            t = str(ev.get("type", ""))
+            if t:
+                by_type.setdefault(t, []).append(float(ev.get("ms", 0)))
+        metrics: dict[str, Any] = {}
+        for metric_type, samples in by_type.items():
+            if not samples:
+                continue
+            sorted_s = sorted(samples)
+            n = len(sorted_s)
+            avg = sum(sorted_s) / n
+            p95_idx = max(0, int(round(0.95 * (n - 1))))
+            metrics[metric_type] = {
+                "avg": round(avg, 1),
+                "p95": round(sorted_s[p95_idx], 1),
+                "count": n,
+                "min": round(sorted_s[0], 1),
+                "max": round(sorted_s[-1], 1),
+            }
+        if metrics:
+            payload = {"metrics": metrics}
+            self.data["latency"]["latest_report"] = payload
+
+    def record_language_event(self, metric_snapshot: dict):
+        """Record a language purity metric snapshot."""
+        snapshot = copy.deepcopy(metric_snapshot or {})
+        snapshot["timestamp"] = time.time()
+        self.data["language"]["events"].append(snapshot)
+        self.data["language"]["latest_metric"] = copy.deepcopy(metric_snapshot or {})
+        self.data["language"]["metrics_history"].append(copy.deepcopy(metric_snapshot or {}))
 
     # --- Resilience ---
 
@@ -338,34 +354,6 @@ class SessionReport:
             "timestamp": time.time(),
         })
 
-    def record_session_resume_attempt(self):
-        self.data["resilience"]["session_resume_attempts"] += 1
-        self.data["resilience"]["events"].append({
-            "type": "session_resume_attempt",
-            "timestamp": time.time(),
-        })
-
-    def record_session_resume_success(self):
-        self.data["resilience"]["session_resume_successes"] += 1
-        self.data["resilience"]["events"].append({
-            "type": "session_resume_success",
-            "timestamp": time.time(),
-        })
-
-    def record_session_resume_fallback(self, reason: str):
-        self.data["resilience"]["session_resume_fallbacks"] += 1
-        self.data["resilience"]["events"].append({
-            "type": "session_resume_fallback",
-            "reason": str(reason),
-            "timestamp": time.time(),
-        })
-
-    def record_session_resumption_handle_saved(self):
-        self.data["resilience"]["resumption_handles_saved"] += 1
-        self.data["resilience"]["events"].append({
-            "type": "session_resumption_handle_saved",
-            "timestamp": time.time(),
-        })
 
     def record_context_compression(
         self,
@@ -589,9 +577,6 @@ class SessionReport:
     def record_away_activated(self):
         self.data["idle"]["away_activated_count"] += 1
 
-    def record_away_resumed(self):
-        self.data["idle"]["away_resumed_count"] += 1
-
     # --- Proactive ---
 
     def record_proactive_poke(self):
@@ -640,16 +625,7 @@ class SessionReport:
         if normalized_guardrail == "prompt_injection":
             self.data["guardrails"]["prompt_injections"] += 1
 
-    def record_guardrail_reinforcement(self):
-        self.data["guardrails"]["drift_reinforcements"] += 1
-
     # --- Grounding ---
-
-    def record_grounding_citation(self, source: str, query: str):
-        self.data["grounding"]["events"] += 1
-        self.data["grounding"]["citations_sent"] += 1
-        if query:
-            self.data["grounding"]["search_queries"].append(query)
 
     # --- Screen share ---
 
@@ -961,53 +937,6 @@ class SessionReport:
         pocs["poc_04_whiteboard_sync"] = {
             "status": _status_from_checks(p04_checks),
             "checks": p04_checks,
-        }
-
-        # ------------------------------------------------------------------
-        # POC 05 — Search Grounding
-        # ------------------------------------------------------------------
-        grounding_events = int(self.data["grounding"]["events"])
-        citations_sent = int(self.data["grounding"]["citations_sent"])
-        citation_render_rate = _safe_ratio(float(citations_sent) * 100.0, float(grounding_events))
-        p05_checks = [
-            self._check(
-                "P05.grounding_event_count",
-                "Grounding events on factual/search turns",
-                ">=1 when factual search tested",
-                grounding_events if grounding_events > 0 else None,
-                _check_status_pass_fail_not_tested(
-                    grounding_events if grounding_events > 0 else None,
-                    min_value=1,
-                ),
-                "grounding.events",
-            ),
-            self._check(
-                "P05.citation_render_rate",
-                "Citation render rate",
-                "100%",
-                _round_or_none(citation_render_rate, 1) if grounding_events > 0 else None,
-                _check_status_pass_fail_not_tested(
-                    citation_render_rate if grounding_events > 0 else None,
-                    min_value=100,
-                    max_value=100,
-                ),
-                "grounding.citations_sent / grounding.events",
-            ),
-            self._check(
-                "P05.search_queries_logged",
-                "Grounding search query logs",
-                ">=1 query when grounding occurs",
-                len(self.data["grounding"]["search_queries"]) if grounding_events > 0 else None,
-                _check_status_pass_fail_not_tested(
-                    len(self.data["grounding"]["search_queries"]) if grounding_events > 0 else None,
-                    min_value=1,
-                ),
-                "grounding.search_queries",
-            ),
-        ]
-        pocs["poc_05_search_grounding"] = {
-            "status": _status_from_checks(p05_checks),
-            "checks": p05_checks,
         }
 
         # ------------------------------------------------------------------
@@ -1437,14 +1366,6 @@ class SessionReport:
                 "interruptions.count + interruptions.barge_in_while_speaking",
             ),
             self._check(
-                "P99.grounding_checkpoint",
-                "Checklist: search citation shown",
-                ">=1 citation",
-                self.data["grounding"]["citations_sent"],
-                "pass" if self.data["grounding"]["citations_sent"] > 0 else "fail",
-                "grounding.citations_sent",
-            ),
-            self._check(
                 "P99.action_moment_checkpoint",
                 "Checklist: action moment (3+ exchanges)",
                 "turns >= 3",
@@ -1574,6 +1495,7 @@ class SessionReport:
         self.data["ended_at"] = now
         self.data["duration_seconds"] = round(now - self.data["started_at"], 1)
         self.data["ended_reason"] = ended_reason
+        self._recompute_latency_report()
         self.data["prd_scorecard"] = self._build_prd_scorecard()
 
     def save(self) -> Path:

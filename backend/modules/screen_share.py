@@ -8,7 +8,6 @@ the active visual source.
 """
 
 import logging
-import time
 
 logger = logging.getLogger(__name__)
 

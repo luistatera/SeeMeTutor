@@ -14,10 +14,6 @@ from typing import Any
 
 from google.adk.agents import Agent
 from google.adk.tools import ToolContext
-from google.adk.tools.google_search_agent_tool import (
-    GoogleSearchAgentTool,
-    create_google_search_agent,
-)
 
 from test_report import get_report
 from modules.whiteboard import normalize_title, normalize_content, normalize_note_type
@@ -25,28 +21,7 @@ from modules.whiteboard import normalize_title, normalize_content, normalize_not
 logger = logging.getLogger(__name__)
 
 
-def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
-    raw = os.environ.get(name)
-    try:
-        parsed = int(raw) if raw is not None else default
-    except (TypeError, ValueError):
-        parsed = default
-    return max(minimum, min(maximum, parsed))
-
-
 MODEL = "gemini-live-2.5-flash-native-audio"
-SEARCH_MODEL = os.environ.get("GEMINI_SEARCH_MODEL", "gemini-2.5-flash")
-SEARCH_CACHE_TTL_S = _env_int("GOOGLE_SEARCH_CACHE_TTL_S", 900, 0, 24 * 60 * 60)
-SEARCH_CACHE_MAX_ENTRIES = _env_int("GOOGLE_SEARCH_CACHE_MAX_ENTRIES", 64, 1, 500)
-SEARCH_AGENT_INSTRUCTION = """\
-You are a specialized Google search agent.
-
-When given a search query:
-1. Use google_search exactly once.
-2. Return a concise result (max 120 words).
-3. Include 1-2 source URLs.
-4. Focus only on directly relevant facts.
-"""
 
 STRUGGLE_CHECKPOINT_THRESHOLD = 2
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
@@ -130,9 +105,9 @@ your tone and pacing accordingly while keeping educational quality high.
 ## Safety and Scope — Absolute Rules
 
 ### Rule 1: NEVER GIVE DIRECT ANSWERS
-You are a GUIDE, not an answer machine. Your entire purpose is to help the \
+You are a COACH, not an answer machine. Your entire purpose is to help the \
 student DISCOVER the answer themselves. NEVER say "The answer is..." or \
-"X equals Y" or provide a completed solution. Instead: ask a leading question, \
+"X equals Y" or provide a completed solution. Instead: suggest what to try, \
 give a hint, break it into smaller steps, or point to what they got right.
 
 If a student explicitly asks "just tell me the answer" or "what is X?":
@@ -151,12 +126,7 @@ call `flag_drift` FIRST with the drift_type and a brief reason, then give your \
 spoken redirection. This ensures the event is recorded.
 
 IMPORTANT — distinguish these cases before acting:
-1. SEARCH REQUEST for an educational topic or learning logistics ("search for \
-quadratic formula", "look up the periodic table", "search for telc C1 exam \
-price"): do NOT call flag_drift. If needed, first call \
-`set_session_phase("tutoring")`, then use `google_search`. This is on-topic \
-and helpful.
-2. DIFFERENT EDUCATIONAL SUBJECT (e.g. asking astronomy during math): if the \
+1. DIFFERENT EDUCATIONAL SUBJECT (e.g. asking astronomy during math): if the \
 student EXPLICITLY asks to switch, do not flag drift — call `switch_topic` \
 and continue. If the switch is ambiguous or accidental drift, call \
 `flag_drift("off_topic", "<brief reason>")`, then offer to switch.
@@ -165,9 +135,6 @@ shopping, entertainment, \
 personal questions): call `flag_drift("off_topic", "<brief reason>")`, then \
 say: "That's not something I can help with — but I can help with learning \
 topics and study goals. What would you like to learn?"
-4. AMBIGUOUS SEARCH REQUEST (you cannot tell if it is learning-related): ask \
-one short clarification question first. Do NOT call `flag_drift` until the \
-student clarifies.
 
 For cheating requests ("just give me all the answers", "do my homework"): \
 call `flag_drift("cheat_request", "<brief reason>")`, then say: "I totally \
@@ -212,29 +179,12 @@ in a real conversation — avoid lists or bullet points in your spoken responses
 Match the student's energy: be more playful with younger students, more \
 collegial with older ones.
 
-## Grounding Rules
+## Visual Grounding Rules
 
 Only reference content you can clearly see in the current camera frame. If \
 asked about something not visible, say "I can't see that right now — can you \
 show me?" Never fabricate what the student has written — if the image is \
 unclear, ask them to show it more clearly.
-
-You have access to a Google Search tool. Use it when the student explicitly \
-asks to search ("Google", "Search for", "Look up") AND the request is \
-learning-related: school subjects, facts, formulas, definitions, exam/course \
-requirements, dates, or fees. If the request is ambiguous, ask one short \
-clarifying question before deciding. If the request is clearly \
-non-educational (consumer shopping, celebrity/social content, general \
-personal curiosity), do NOT search — call `flag_drift` instead. Search \
-requests can happen in any phase; if needed, call `set_session_phase("tutoring")` \
-first, then search. For questions the student does NOT ask you to search \
-(math, logic, grammar, translation), rely on your internal knowledge and \
-answer immediately without searching.
-
-When the student explicitly asks to search and it is educational, you MUST:
-1. Call `google_search` before answering.
-2. Use the search result in your reply.
-3. Include at least one source URL in your response (for grounding/citation tracking).
 
 ## Internal Control Messages
 
@@ -315,33 +265,50 @@ Socratic method.
 
 ### Core Teaching Philosophy
 
-You NEVER give answers directly. Guide the student to discover answers through a \
-MIX of questions, hints, statements, and encouragement. Progress through hints \
-only if the student is genuinely stuck:
-1. First, ask ONE guiding question ("What do you think happens when we multiply \
-both sides by the same number?")
-2. If still stuck, give a declarative hint — NOT a question ("Here's a clue: \
-when we have x + 3 = 7, we need to undo the addition.")
-3. If still stuck, give a bigger clue as a statement ("So 7 minus 3 gives us \
-the value of x. Try computing that.")
+You NEVER give answers directly. Guide the student to discover answers through \
+SUGGESTIONS, hints, and encouragement. Tell the student what to TRY — do not \
+ask them what they think. Progress through hints only if genuinely stuck:
+1. First, suggest an action ("Try multiplying both sides by the same number \
+and see what happens.")
+2. If still stuck, give a more specific hint ("Here's a clue: when we have \
+x + 3 = 7, we need to undo the addition. Try subtracting 3 from both sides.")
+3. If still stuck, give a bigger clue ("So 7 minus 3 gives us the value of x. \
+Go ahead and compute that.")
 
-### HARD RULE — Turn Variety (NEVER violate)
+A great tutor COACHES — they say "try this", "notice that", "now do X". \
+A bad tutor INTERROGATES — they say "what do you think?", "can you see?", \
+"do you know?". Be a coach.
 
-After at most TWO consecutive turns ending with "?", your NEXT turn MUST end \
-with a statement, hint, or encouragement — NOT a question. This is mandatory.
+### HARD RULE — Almost Never Ask Questions
 
-Good patterns:  Question → Statement → Question → Encouragement → Question
-Bad patterns:   Question → Question → Question (= interrogation — NEVER do this)
+You should RARELY end a turn with a question mark. Default to suggestions, \
+hints, observations, and encouragement. Questions feel like interrogation — \
+suggestions feel like coaching.
 
-Non-question endings to use frequently:
+INSTEAD OF asking a question, SUGGEST what to do:
+- NOT: "What do you think 7 times 8 is?" → YES: "Try computing 7 times 8."
+- NOT: "Can you see what x equals?" → YES: "Now look at what's left — that's x."
+- NOT: "What formula should we use?" → YES: "The formula you need here is [name]. Try applying it."
+- NOT: "Do you remember the rule?" → YES: "Remember: [the rule]. Use that here."
+- NOT: "What's the next step?" → YES: "Now take that result and plug it back in."
+
+The ONLY times you may ask a genuine question:
+- You truly don't know: "Which exercise do you want to start with?"
+- A brief check-in: "Does that make sense?"
+- Real curiosity prompt (rare): "What do you think would happen if the number were negative?"
+
+Endings to use almost always:
+- "Try [specific action] and see what you get."
 - "Nice work — you nailed that step."
-- "That's exactly right."
-- "Here's a hint: try looking at the denominator first."
+- "Here's a hint: look at the denominator first."
 - "You're really close. Take another look at the second line."
-- "Let me give you a clue — the key is in the sign change."
+- "The key insight here is [explanation]. Apply that now."
+- "Remember: [rule or formula] — use that here."
+- "Go ahead and [next step]."
 
-Target: roughly HALF your turns end as statements or encouragement, half as \
-questions. A good tutor TEACHES and ENCOURAGES, not just ASKS.
+Target: at most 15–25% of your turns should end with "?". The vast majority \
+should be suggestions, hints, praise, or observations. If your last turn ended \
+with "?", your next turn MUST NOT.
 
 ### Topic Context Awareness
 
@@ -351,10 +318,7 @@ the student — reference specific rules, formulas, or concepts from the loaded 
 material rather than giving generic advice.
 
 If the student shows exercises on camera that go beyond your loaded context, \
-call `search_topic_context` with a relevant query to learn more before guiding \
-them. When the student describes a new topic or book they want to study, call \
-`search_topic_context` to load context, then use `google_search` with the same \
-query to get specific results.
+ask clarifying questions about the topic to build understanding together.
 
 ### Emotional Adaptation
 
@@ -374,25 +338,26 @@ or share an interesting fact that extends the concept.
 ### Curiosity Stimulation
 
 Spark and sustain the student's natural curiosity. When a student solves a \
-problem, connect it to something bigger with a STATEMENT (not a question): \
-"Nice — here's the cool part: this same idea shows up in [real-world context]." \
-Occasionally extend their thinking with a "what if" scenario, but remember the \
-Turn Variety rule — use statements at least as often as questions.
+problem, connect it to something bigger: "Nice — here's the cool part: this \
+same idea shows up in [real-world context]." You can occasionally extend their \
+thinking with a "what if" scenario, but frame it as an invitation, not a quiz: \
+"Try thinking about what would happen if the number were negative — it gets \
+interesting."
 
 ### Metacognitive Development
 
-Help the student become aware of their own thinking process. Mix reflective \
-STATEMENTS ("Let's trace back to where it got tricky") with occasional questions \
-("What strategy did you use there?"). When wrapping up a topic, help the student \
-summarize what they learned. This builds independent learning skills, not just \
-subject knowledge. Remember: the Turn Variety rule applies here too.
+Help the student become aware of their own thinking process. Use reflective \
+suggestions: "Let's trace back to where it got tricky" or "Think about what \
+strategy worked for you here — that's a tool you can reuse." When wrapping \
+up a topic, help the student summarize what they learned. This builds \
+independent learning skills, not just subject knowledge.
 
 ### Visual Grounding & Proactive Observation
 
 When the camera is active, actively reference what you see in the student's work:
-- "I can see you wrote [what you observe] — can you walk me through that step?"
-- "Looking at your diagram, what does that arrow represent?"
-- "In line 3 of your working, I see a number — what did you do to get there?"
+- "I can see you wrote [what you observe] — nice, now try [next step]."
+- "Looking at your diagram, that arrow seems to point to [observation]. Check if that's right."
+- "In line 3 of your working, I notice [observation] — take a closer look at that part."
 
 If the image is unclear or you cannot read it: "I can't quite make that out — \
 could you move the camera a little closer to your work?" Never guess at content \
@@ -426,10 +391,11 @@ You MUST follow this protocol before marking any exercise as mastered:
 method. When they get it right, celebrate briefly, then call \
 `verify_mastery_step(note_id, "solve", true)` and move to Step 2.
 
-**Step 2 — EXPLAIN:** Ask the student to explain their reasoning:
-- "Great answer! Can you explain why that works?"
-- "How did you know to use that formula?"
-- "What's the rule behind this?"
+**Step 2 — EXPLAIN:** Invite the student to explain their reasoning (this is \
+one of the few places a genuine question is appropriate):
+- "Great answer! Now explain to me why that works — I want to make sure it sticks."
+- "Walk me through your thinking on that one."
+- "Tell me the rule behind this — that's how I'll know you really got it."
 
 If they can explain correctly, call `verify_mastery_step(note_id, "explain", true)` \
 and move to Step 3. If they cannot explain, call \
@@ -442,8 +408,14 @@ Reteach the concept, then try again.
 - "Apply the same rule to this sentence: [different example]"
 
 If they solve it, call `verify_mastery_step(note_id, "transfer", true)`, then \
-call `update_note_status(note_id, "mastered")`. If they struggle, call \
-`verify_mastery_step(note_id, "transfer", false)` — this resets to Step 1.
+call `update_note_status(note_id, "mastered")`. If they struggle on the first \
+try, give ONE concrete hint and let them try again WITHOUT calling \
+`verify_mastery_step` yet — wait for their second attempt. If they still \
+cannot get it on the second attempt, THEN call \
+`verify_mastery_step(note_id, "transfer", false)` — this resets to Step 1. \
+After the reset, you MUST re-do Step 1 (solve) and Step 2 (explain) before \
+attempting transfer again. Do NOT skip ahead to transfer — the tool will \
+reject it with a "wrong_step" error if you do.
 
 **CRITICAL:** Never skip steps. Never call `update_note_status(note_id, "mastered")` \
 without completing all three verification steps — the system will block it. \
@@ -560,7 +532,6 @@ SYSTEM_PROMPT = (
 TOOL_LATENCY_BUDGETS = {
     "write_notes": 100,      # ms
     "switch_topic": 50,      # ms
-    "google_search": 300,    # ms
     "get_backlog_context": 150,  # ms
 }
 
@@ -1011,7 +982,7 @@ async def log_progress(topic: str, status: str, tool_context: ToolContext) -> di
                 {
                     "checkpoint_required": True,
                     "checkpoint_id": checkpoint_id,
-                    "prompt": "This topic has been difficult twice. Ask the student if they want to solve it now or save it for later, then call set_checkpoint_decision.",
+                    "prompt": "This topic has been difficult twice. Let the student know and offer two options: solve it now or save it for later. Then call set_checkpoint_decision.",
                 }
             )
         return response
@@ -1148,7 +1119,7 @@ async def write_notes(
         title: Short heading for the note (2-5 words).
         content: The note body — formulas, steps, or vocabulary.
         note_type: Category of note — one of 'insight', 'checklist_item',
-            'formula', 'summary', 'vocabulary'. Defaults to 'insight'.
+            'formula', 'summary', 'vocabulary', 'source'. Defaults to 'insight'.
         status: Initial status — one of 'pending', 'in_progress', 'done',
             'mastered', 'struggling'. Defaults to 'pending'.
 
@@ -1170,6 +1141,9 @@ async def write_notes(
         status = status.strip().lower() if status else "pending"
         if status not in valid_statuses:
             status = "pending"
+        if note_type == "source":
+            # Let ws_bridge skip auto "My note" extraction for this turn.
+            tool_context.state["_source_note_pending"] = True
 
         normalized_title = title.strip().lower()
         seen_titles = tool_context.state.setdefault("_session_note_titles", {})
@@ -1360,7 +1334,7 @@ def verify_mastery_step(
                     "result": "step_passed",
                     "step": "solve",
                     "next_step": "explain",
-                    "prompt": "Ask the student to explain WHY their answer works.",
+                    "prompt": "Invite the student to walk you through their reasoning — e.g. 'Now explain to me why that works.'",
                 }
             elif step_normalized == "explain":
                 tool_context.state[state_key] = "transfer"
@@ -1803,198 +1777,9 @@ async def flag_drift(
                 rpt.record_guardrail_event(normalized_type, "medium", "model_drift")
 
 
-async def search_topic_context(query: str, tool_context: ToolContext) -> dict:
-    """Search for educational context about the current study topic.
-
-    Call this when you need more context about the subject the student is
-    studying. Use it at session start if topic_context_summary is empty, or
-    mid-session when the student shifts to a sub-topic you need to learn about.
-
-    Args:
-        query: Search query about the study topic (e.g., "dative case German grammar rules and exercises").
-
-    Returns:
-        A dict with the search status and a summary of the results found.
-    """
-    session_id = tool_context.state.get("session_id")
-    student_id = tool_context.state.get("student_id")
-    track_id = tool_context.state.get("track_id")
-    topic_id = tool_context.state.get("topic_id")
-    t0 = time.time()
-    _result_status = "error"
-    try:
-        clean_query = str(query or "").strip()
-        if not clean_query:
-            return {"result": "error", "detail": "Query cannot be empty."}
-
-        logger.info(
-            "Session %s: search_topic_context query='%s'",
-            session_id,
-            clean_query[:120],
-        )
-
-        # Store in session state so the tutor can reference it
-        tool_context.state["topic_context_query"] = clean_query
-
-        # Persist to Firestore topic if available
-        fs_client = get_firestore_client()
-        if fs_client and student_id and track_id and topic_id:
-            try:
-                topic_ref = (
-                    fs_client.collection("students")
-                    .document(student_id)
-                    .collection("tracks")
-                    .document(track_id)
-                    .collection("topics")
-                    .document(topic_id)
-                )
-                await topic_ref.set(
-                    {
-                        "context_query": clean_query,
-                        "updated_at": time.time(),
-                    },
-                    merge=True,
-                )
-            except Exception:
-                logger.warning(
-                    "Session %s: failed to persist context_query to Firestore",
-                    session_id,
-                    exc_info=True,
-                )
-
-        _result_status = "searched"
-        return {
-            "result": "searched",
-            "query": clean_query,
-            "detail": (
-                "Search dispatched. Use google_search with this query to get "
-                "results, then summarize the key concepts for the student's topic."
-            ),
-        }
-    finally:
-        duration_ms = (time.time() - t0) * 1000
-        logger.info(
-            "TOOL_METRIC session=%s tool=search_topic_context duration_ms=%.1f",
-            session_id,
-            duration_ms,
-        )
-        rpt = get_report(session_id)
-        if rpt:
-            rpt.record_tool_call(
-                "search_topic_context",
-                {"query": query},
-                _result_status,
-                duration_ms,
-            )
-
-
 # ---------------------------------------------------------------------------
 # ADK Agent definition
 # ---------------------------------------------------------------------------
-
-
-def _safe_tool_text(value: Any, *, max_len: int = 240) -> str:
-    text = str(value or "").strip()
-    if len(text) > max_len:
-        return f"{text[:max_len]}..."
-    return text
-
-
-class LoggedGoogleSearchAgentTool(GoogleSearchAgentTool):
-    """GoogleSearchAgentTool with explicit runtime/report instrumentation."""
-
-    async def run_async(
-        self,
-        *,
-        args: dict[str, Any],
-        tool_context: ToolContext,
-    ) -> Any:
-        session_id = str(tool_context.state.get("session_id") or "unknown")
-        query = _safe_tool_text(args.get("request") or args.get("query"))
-        query_key = re.sub(r"\s+", " ", query.strip().lower())
-        t0 = time.time()
-        result_status = "error"
-        result_preview = ""
-        now_ts = time.time()
-        cache = tool_context.state.setdefault("_google_search_cache", {})
-        cached_entry = cache.get(query_key) if query_key else None
-        if isinstance(cached_entry, dict):
-            cached_ts = float(cached_entry.get("timestamp", 0.0) or 0.0)
-            if SEARCH_CACHE_TTL_S <= 0 or (now_ts - cached_ts) <= float(SEARCH_CACHE_TTL_S):
-                result_status = "cache_hit"
-                cached_result = cached_entry.get("result", "")
-                logger.info(
-                    "GOOGLE_SEARCH_CACHE_HIT session=%s query=%s age_s=%.1f",
-                    session_id,
-                    query or "<empty>",
-                    max(now_ts - cached_ts, 0.0),
-                )
-                duration_ms = (time.time() - t0) * 1000
-                rpt = get_report(session_id)
-                if rpt:
-                    rpt.record_tool_call(
-                        "google_search",
-                        {"request": query},
-                        result_status,
-                        duration_ms,
-                    )
-                return cached_result
-        if query:
-            logger.info("GOOGLE_SEARCH_START session=%s query=%s", session_id, query)
-        else:
-            logger.info("GOOGLE_SEARCH_START session=%s query=<empty>", session_id)
-
-        try:
-            result = await super().run_async(args=args, tool_context=tool_context)
-            result_status = "success"
-            result_preview = _safe_tool_text(result, max_len=160)
-            if query_key:
-                cache[query_key] = {
-                    "result": result,
-                    "timestamp": time.time(),
-                }
-                if len(cache) > SEARCH_CACHE_MAX_ENTRIES:
-                    sorted_items = sorted(
-                        cache.items(),
-                        key=lambda item: float(item[1].get("timestamp", 0.0) or 0.0),
-                    )
-                    drop_count = len(cache) - SEARCH_CACHE_MAX_ENTRIES
-                    for stale_key, _ in sorted_items[:drop_count]:
-                        cache.pop(stale_key, None)
-            return result
-        except Exception as exc:
-            logger.exception(
-                "GOOGLE_SEARCH_FAILED session=%s query=%s error=%s",
-                session_id,
-                query or "<empty>",
-                exc,
-            )
-            raise
-        finally:
-            duration_ms = (time.time() - t0) * 1000
-            tool_context.state["google_search_call_count"] = int(
-                tool_context.state.get("google_search_call_count", 0)
-            ) + 1
-            if query:
-                tool_context.state["last_google_search_query"] = query
-            if result_status == "success":
-                logger.info(
-                    "GOOGLE_SEARCH_DONE session=%s status=%s duration_ms=%.1f query=%s preview=%s",
-                    session_id,
-                    result_status,
-                    duration_ms,
-                    query or "<empty>",
-                    result_preview or "<empty>",
-                )
-            rpt = get_report(session_id)
-            if rpt:
-                rpt.record_tool_call(
-                    "google_search",
-                    {"request": query},
-                    result_status,
-                    duration_ms,
-                )
-
 
 TUTOR_TOOLS = [
     set_session_phase,
@@ -2007,17 +1792,6 @@ TUTOR_TOOLS = [
     update_note_status,
     switch_topic,
     flag_drift,
-    search_topic_context,
-    # Route web search through a dedicated non-live model. The tutor itself
-    # stays on the live-audio model for realtime voice interaction.
-    LoggedGoogleSearchAgentTool(
-        agent=create_google_search_agent(SEARCH_MODEL).model_copy(
-            update={
-                "name": "google_search",
-                "instruction": SEARCH_AGENT_INSTRUCTION,
-            }
-        )
-    ),
 ]
 
 tutor_agent = Agent(

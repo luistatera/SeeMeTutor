@@ -1933,13 +1933,6 @@
       <div class="diagnostics-body">
         <div class="diagnostics-grid">
           <div class="diag-card">
-            <span class="diag-title">Grounding</span>
-            <span class="diag-main" id="diag-grounding-main">No citations yet</span>
-            <span class="diag-sub" id="diag-grounding-sub">Queries: 0</span>
-            <a class="diag-link" id="diag-grounding-link" href="#" target="_blank" rel="noopener noreferrer"
-              style="display:none;">Open source</a>
-          </div>
-          <div class="diag-card">
             <span class="diag-title">Guardrails</span>
             <span class="diag-main" id="diag-guardrail-main">No guardrail events</span>
             <span class="diag-sub" id="diag-guardrail-sub">Events: 0</span>
@@ -2204,7 +2197,6 @@
       tutorPreferencesSaveError: '',
       speechPace: 'normal',
       diagnostics: {
-        groundingCount: 0,
         guardrailCount: 0,
         latencyAlerts: 0,
         memoryRecallCount: 0,
@@ -2287,9 +2279,6 @@
     const profileNamePill = $('profile-name-pill');
     const trackPill = $('track-pill');
     const topicPill = $('topic-pill');
-    const diagGroundingMain = $('diag-grounding-main');
-    const diagGroundingSub = $('diag-grounding-sub');
-    const diagGroundingLink = $('diag-grounding-link');
     const diagGuardrailMain = $('diag-guardrail-main');
     const diagGuardrailSub = $('diag-guardrail-sub');
     const diagLatencyMain = $('diag-latency-main');
@@ -2520,10 +2509,6 @@
 
         case 'input_transcript':
           if (msg.data) appendDiagnosticLog('student', clipText(msg.data, 88));
-          break;
-
-        case 'grounding':
-          if (msg.data) applyGroundingEvent(msg.data);
           break;
 
         case 'guardrail_event':
@@ -3234,30 +3219,6 @@
       }
     }
 
-    function applyGroundingEvent(data) {
-      state.diagnostics.groundingCount += 1;
-      const source = clipText(data?.source || 'Citation source', 40);
-      const query = clipText(data?.query || '', 36);
-      const snippet = clipText(data?.snippet || 'Citation received', 78);
-
-      diagGroundingMain.textContent = source || 'Citation source';
-      diagGroundingSub.textContent = query
-        ? `Queries: ${state.diagnostics.groundingCount} · ${query}`
-        : `Queries: ${state.diagnostics.groundingCount}`;
-
-      const url = String(data?.url || '').trim();
-      if (url) {
-        diagGroundingLink.href = url;
-        diagGroundingLink.style.display = 'inline-block';
-      } else {
-        diagGroundingLink.removeAttribute('href');
-        diagGroundingLink.style.display = 'none';
-      }
-
-      appendDiagnosticLog('grounding', `${source} · ${snippet}`);
-      showToast(`Source: ${source}`, 3200);
-    }
-
     function applyGuardrailEvent(data) {
       state.diagnostics.guardrailCount += 1;
       const eventType = clipText(data?.type || 'guardrail', 40);
@@ -3386,6 +3347,7 @@
       checklist_item: '[ ]',
       formula: 'f(x)',
       vocabulary: 'Aa',
+      source: '\u{1F50D}',
     };
 
     const CHECKLIST_DONE_ICON = '[x]';
@@ -3416,6 +3378,7 @@
       card.dataset.type = noteType;
       card.dataset.status = status;
 
+
       // Title row: type icon + title + status badge
       const titleRow = document.createElement('div');
       titleRow.className = 'note-card-title-row';
@@ -3445,6 +3408,7 @@
 
       card.appendChild(titleRow);
       card.appendChild(content);
+
       whiteboard.appendChild(card);
       card.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }

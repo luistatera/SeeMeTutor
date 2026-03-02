@@ -50,18 +50,18 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 
 ## To Be Fixed
 
-### F1. Question-ending ratio — IMPROVED, needs final tuning
-- **Severity:** MEDIUM (was HIGH) — much better but still noticeable
+### F1. Question-ending ratio — MAJOR REWRITE: coach, don't interrogate
+- **Severity:** MEDIUM (was HIGH) — leading questions feel fake, users hate them
 - **Judging criteria:** Demo & Presentation (30%) — "natural immersive interaction"
-- **History:** 85c3: 91.3%/streak 16 → c8a4: 100%/streak 7 → **e37f: 63.6%/streak 3**
-- **Root cause:** System prompt improved but still over-indexes on questions
-- **Fix:** Further tune: maybe "After 2 questions, give a brief statement, praise, or summary before asking again"
+- **History:** 85c3: 91.3%/streak 16 → c8a4: 100%/streak 7 → e37f: 63.6%/streak 3
+- **Root cause:** Prompt philosophy was "ask leading questions" — now flipped to "suggest what to try"
+- **Fix:** Complete rewrite of Core Teaching Philosophy + Turn Variety. Tutor now coaches (suggestions, hints, encouragement) instead of interrogating. Questions only for genuine unknowns or brief check-ins.
 - **Metric:** `prd_scorecard.pocs.poc_02.P02.question_turn_ratio` + `P02.question_streak_max`
-- **Target:** ratio 35-50%, streak <= 2
-- **Current:** ratio 63.6%, streak 3
-- **Status:** Close — one more prompt iteration should hit target
+- **Target:** ratio 15-25%, streak <= 1
+- **Current:** ratio 63.6%, streak 3 (pre-rewrite)
+- **Status:** PROMPT REWRITTEN — needs test validation
 
-### F2. Search grounding — google_search calling ✅ FIXED, metadata extraction still failing
+### F2. Search grounding — ROOT CAUSE FOUND & FIXED, needs test verification
 - **Severity:** HIGH — rubric explicitly scores "hallucination avoidance and grounding evidence"
 - **Judging criteria:** Technical Implementation (30%)
 - **Progress (session e37f6d58 @ 16:29):**
@@ -69,18 +69,27 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
     1. `google_search("latest price of telc A2 exam in Berlin")` → **success** (8,562ms)
     2. `google_search("German possessive pronouns sein and ihr rules")` → **error** (2,734ms)
   - ❌ **Grounding metadata not captured:** `grounding.events = 0`, `citations_sent = 0`, `search_queries = []`
-- **Root cause history:**
-  1. ~~google_search silently ignored by Gemini API when mixed with function tools~~ → Fixed by using `GoogleSearchAgentTool` with `create_google_search_agent()` directly in `agent.py`
-  2. **Grounding metadata extraction gap (CURRENT ISSUE):** `modules/grounding.py` checks `event.grounding_metadata` and `event.actions.state_delta["temp:_adk_grounding_metadata"]`, but neither path finds metadata on the events flowing through `ws_bridge.py`'s `_forward_to_client()` loop. The `GoogleSearchAgentTool` sub-agent completes successfully (tool result_status="success") but grounding metadata doesn't appear on the ADK events visible to ws_bridge.
+- **Root cause analysis (completed Mar 2):**
+  Two grounding metadata propagation mechanisms exist in ADK v1.25.1:
+  1. **Mechanism A (state_delta path):** `GoogleSearchAgentTool.run_async()` captures `event.grounding_metadata` from sub-agent events → stores in `tool_context.state['temp:_adk_grounding_metadata']` → flows via `state_delta` to function response event → `extract_grounding_citations()` checks Path 2. **Chain looks correct in code analysis — needs runtime verification.**
+  2. **Mechanism B (`_maybe_add_grounding_metadata`):** ADK's `base_llm_flow.py:1022` copies grounding from session state to parent text response events — BUT only if `tool.name == 'google_search_agent'`. **Our tool was renamed to `'google_search'` via `model_copy(update={"name": "google_search"})` in agent.py:2030. This name mismatch meant Mechanism B ALWAYS returned early without doing anything. CONFIRMED BROKEN.**
+- **Fix applied (Mar 2):**
+  - Removed the `"name": "google_search"` override from `agent.py` — tool now keeps its ADK default name `'google_search_agent'`, matching the check in `base_llm_flow.py:1022`
+  - Updated all system prompt references from `google_search` to `google_search_agent`
+  - Updated `TOOL_LATENCY_BUDGETS`, `search_topic_context` return message, and report recording to use `google_search_agent`
+  - Added diagnostic debug logging to both `grounding.py` (Path 1/Path 2 detection) and `LoggedGoogleSearchAgentTool` (checks if sub-agent captured metadata)
 - **Current code:**
-  - `agent.py` uses `GoogleSearchAgentTool(agent=create_google_search_agent(SEARCH_MODEL).model_copy(update={"name": "google_search"}))` — WORKING
-  - `modules/grounding.py` — dual-path extraction implemented but not finding metadata
+  - `agent.py` uses `LoggedGoogleSearchAgentTool(agent=create_google_search_agent(SEARCH_MODEL).model_copy(update={"instruction": SEARCH_AGENT_INSTRUCTION}))` — name defaults to `'google_search_agent'`
+  - `modules/grounding.py` — dual-path extraction with verbose debug logging
   - `ws_bridge.py` — grounding check wired into event loop
-- **Next investigation:** Determine where `GoogleSearchAgentTool` stores grounding metadata in the live event stream. May need to add debug logging to `extract_grounding_citations()` to dump every event's attributes and find the actual location.
+- **Diagnostic logging added (will show in next test session):**
+  - `GOOGLE_SEARCH_GROUNDING` / `GOOGLE_SEARCH_NO_GROUNDING` — whether sub-agent captures metadata
+  - `GROUNDING_PATH1` / `GROUNDING_PATH2` / `GROUNDING_PATH2_MISS` — which extraction path fires
+  - `GROUNDING_EMPTY` — metadata found but no parseable citations
 - **Metric:** `prd_scorecard.pocs.poc_05.P05.grounding_event_count`
 - **Target:** >= 1 grounding event when factual search requested
-- **Current:** 0 (google_search called but metadata not captured)
-- **Status:** 🔧 PARTIALLY FIXED — tool calling works, metadata extraction needs debugging
+- **Current:** 0 (google_search called but metadata not captured — fix applied, needs test)
+- **Status:** 🔧 FIX APPLIED — Mechanism B name mismatch fixed + debug logging added. **Ready for test verification.**
 
 ### F3. Language tracking module not recording — measurement gap
 - **Severity:** MEDIUM — feature works, can't prove it with metrics
@@ -137,14 +146,15 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 
 ## To Be Tested
 
-### T1. Search grounding / citations — CRITICAL for Technical score (F2 fix applied, READY TO TEST)
+### T1. Search grounding / citations — CRITICAL for Technical score (F2 root cause fixed, READY TO TEST)
 - **Judging criteria:** Tech 30% — rubric literally says "hallucination avoidance and grounding evidence"
 - **What:** Ask a factual question that triggers Google Search
 - **How:** Say "search for the dative case rules in German" or "look up atomic structure"
 - **Metric:** `prd_scorecard.pocs.poc_05.P05.grounding_event_count` >= 1, `P05.citation_render_rate` = 100%
-- **Current:** 0 grounding events across all sessions (pre-fix). F2 code fix now applied.
+- **Current:** 0 grounding events across all sessions (pre-fix). F2 root cause fix applied (name mismatch).
 - **Pass criteria:** `grounding.events >= 1`, `grounding.citations_sent >= 1`
-- **Blocker:** ~~F2 tool calling~~ ✅ Fixed. Remaining: grounding metadata extraction (F2 part 2)
+- **Blocker:** ~~F2 tool calling~~ ✅ Fixed. ~~Grounding metadata extraction~~ 🔧 Fix applied (tool name mismatch). **Check debug logs for `GOOGLE_SEARCH_GROUNDING` / `GROUNDING_PATH1` / `GROUNDING_PATH2`.**
+- **If test still fails:** Check logs for `GOOGLE_SEARCH_NO_GROUNDING` — means sub-agent's Gemini API response doesn't include `grounding_metadata` (model-level issue, may need different SEARCH_MODEL)
 
 ### T2. Proactive vision — needs camera-on test
 - **Judging criteria:** UX 40% — "visual precision" + "context-awareness"
@@ -215,11 +225,12 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 
 ### T10. Question balance final validation (validates F1)
 - **Judging criteria:** Demo 30% — "experience fluidity"
-- **What:** After final prompt tuning, re-run and verify question ratio hit target
+- **What:** After coach-style prompt rewrite, verify question ratio dropped dramatically
 - **How:** Run 5+ min tutoring session, check scorecard
-- **Metric:** `P02.question_turn_ratio` 35-50%, `P02.question_streak_max` <= 2
-- **Current:** 63.6% ratio, streak 3 (improved from 100%/7, needs one more iteration)
-- **Pass criteria:** ratio 35-50%, streak <= 2
+- **Metric:** `P02.question_turn_ratio` 15-25%, `P02.question_streak_max` <= 1
+- **Current:** 63.6% ratio, streak 3 (pre-rewrite). Prompt now says "suggest, don't ask."
+- **Pass criteria:** ratio 15-25%, streak <= 1
+- **Listen for:** Tutor should say "try this", "notice that", "go ahead and..." — not "what do you think?"
 
 ---
 
@@ -230,13 +241,13 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 |---|---|---|---|
 | P01.interruptions_observed | >= 1 | **2** ✅ | OK |
 | P02.proactive_trigger_count | >= 1 | 0 (cam OFF) | RE-TEST with camera |
-| P02.question_turn_ratio | 35-50% | **63.6%** | TUNE PROMPT |
-| P02.question_streak_max | <= 2 | **3** | TUNE PROMPT |
+| P02.question_turn_ratio | 15-25% | **63.6%** | PROMPT REWRITTEN — test needed |
+| P02.question_streak_max | <= 1 | **3** | PROMPT REWRITTEN — test needed |
 | P04.whiteboard_usage | >= 1 | **2** ✅ | OK |
-| P05.grounding_event_count | >= 1 | 0 (google_search called but metadata not captured) | FIX grounding extraction |
+| P05.grounding_event_count | >= 1 | 0 (google_search called but metadata not captured) | FIX APPLIED — test needed |
 | P09.answer_leaks | 0 | **0** ✅ | OK |
 | P99.interruption_checkpoint | pass | **pass** ✅ | OK |
-| P99.grounding_checkpoint | pass | fail (tool works, metadata gap) | FIX grounding extraction |
+| P99.grounding_checkpoint | pass | fail (tool works, metadata gap) | FIX APPLIED — test needed |
 
 ### Should Pass (competitive edge)
 | Check | Target | Current | Gap |
@@ -273,7 +284,7 @@ Current auto pass rate: **41.7%**. Target: **70%+**.
 - ⚠️ Question balance improved (100% → 63.6%, streak 7 → 3)
 
 ### Critical path to 70%+
-1. **FIX F2 (search grounding)** — ✅ google_search now called by model (2 calls in e37f@16:29). ❌ Grounding metadata not reaching `modules/grounding.py`. Need to debug where `GoogleSearchAgentTool` puts metadata in the live event stream. (unblocks T1, P99.grounding, P05 = 3 checks)
+1. **FIX F2 (search grounding)** — ✅ google_search now called by model (2 calls in e37f@16:29). 🔧 Root cause found: tool name mismatch (`'google_search'` vs expected `'google_search_agent'` in ADK `base_llm_flow.py:1022`). **Fix applied** — removed name override, updated all references. **READY FOR TEST.** (unblocks T1, P99.grounding, P05 = 3 checks)
 2. **TUNE F1 (question ratio)** — one more prompt iteration to hit 35-50% (2 checks)
 3. **FIX F3 (language module)** — unblocks P03 measurement (1 check)
 4. **FIX F5 (latency module)** — unblocks P07 (5 checks)

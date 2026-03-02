@@ -11,6 +11,7 @@ import binascii
 import json
 import logging
 import time
+import uuid
 from typing import Any, Callable, Awaitable
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -23,14 +24,12 @@ from google.genai import types
 from modules.conversation import (
     expects_student_reply,
     is_near_duplicate,
-    is_question_like_turn,
     is_student_question,
     is_study_related_question,
 )
 from modules.guardrails import (
     check_student_input,
     check_tutor_output,
-    select_reinforcement,
     record_guardrail_event,
     record_reinforcement,
 )
@@ -44,7 +43,12 @@ from modules.note_storage import (
     _maybe_store_example_note,
 )
 from modules.persistence import _persist_memory_checkpoint
-from modules.grounding import extract_grounding_citations
+from modules.language import (
+    handle_student_transcript as language_handle_transcript,
+    append_tutor_text_part as language_append_tutor_part,
+    finalize_tutor_turn as language_finalize_tutor_turn,
+    build_language_metric_snapshot,
+)
 from modules.proactive import (
     reset_silence_tracking,
     sanitize_tutor_output,
@@ -76,22 +80,6 @@ logger = logging.getLogger(__name__)
 
 SendJsonFn = Callable[[WebSocket, dict], Awaitable[None]]
 BuildRunConfigFn = Callable[[], tuple[RunConfig, dict]]
-
-
-def _is_explicit_search_request(text: str) -> bool:
-    """Detect direct user intent to perform an online search."""
-    normalized = str(text or "").strip().lower()
-    if not normalized:
-        return False
-    triggers = (
-        "search",
-        "search online",
-        "look up",
-        "google",
-        "find online",
-        "check online",
-    )
-    return any(trigger in normalized for trigger in triggers)
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +208,6 @@ async def _forward_to_gemini(
                     # a new modality, not restarting.  Mark kickoff as done to
                     # prevent the redundant "Let's begin" message.
                     runtime_state["mic_kickoff_sent"] = True
-                # try:
-                #     queue.send_activity_start()
-                # except Exception:
-                #     logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
                 logger.info("Control message from browser: 'mic_start'")
                 continue
             if msg_type == "away_mode":
@@ -338,10 +322,6 @@ async def _forward_to_gemini(
                     runtime_state["mic_opened_at"] = None
                     runtime_state["mic_kickoff_sent"] = False
                     runtime_state["idle_stage"] = 0
-                    # try:
-                    #     queue.send_activity_end()
-                    # except Exception:
-                    #     logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
                 logger.info("Control message from browser: '%s'", msg_type)
                 continue
             if msg_type == "source_switch":
@@ -770,6 +750,8 @@ async def _forward_to_client(
                                 lat["awaiting_first_response"] = False
                                 if report:
                                     report.record_first_response_latency(delta_ms)
+                                    report.record_latency_event("response_start", delta_ms)
+                                    report.record_latency_event("first_byte", delta_ms)
                             if dc is not None:
                                 dc["audio_out"] += 1
                                 if dc["audio_out"] == 1:
@@ -823,28 +805,6 @@ async def _forward_to_client(
                         await _send_json(websocket, {"type": "text", "data": cleaned})
                         turn_had_output = True
 
-            # --- Grounding citations ---
-            # Check every event for grounding_metadata (attached when
-            # Gemini uses google_search).  Send citations to browser
-            # and record in the test report.
-            grounding_citations = extract_grounding_citations(event)
-            if grounding_citations:
-                for cit in grounding_citations:
-                    await _send_json(
-                        websocket,
-                        {"type": "grounding", "data": cit},
-                    )
-                    if report:
-                        report.record_grounding_citation(
-                            source=cit.get("source", ""),
-                            query=cit.get("query", ""),
-                        )
-                debug_logger.debug(
-                    "GROUNDING sid=%s citations=%d",
-                    session_id[:8],
-                    len(grounding_citations),
-                )
-
             # --- Turn complete ---
             if event.turn_complete:
                 if suppress_output:
@@ -884,6 +844,10 @@ async def _forward_to_client(
                     runtime_state["_turn_ticket_count"] = int(runtime_state.get("_turn_ticket_count", 0)) - 1
                 turn_had_output = False
                 turn_snapshot = _finalize_tutor_turn(runtime_state)
+                language_finalize_tutor_turn(runtime_state)
+                if report:
+                    _lang_snap = build_language_metric_snapshot(runtime_state)
+                    report.record_language_event(_lang_snap)
                 await _persist_memory_checkpoint(
                     runtime_state,
                     session_id,
@@ -899,6 +863,7 @@ async def _forward_to_client(
                 # Track whether the tutor is waiting on a student reply and detect
                 # near-duplicate prompt loops when no new student activity happened.
                 turn_text = str(turn_snapshot.get("turn_text") or "").strip()
+
                 if completed_with_output and turn_text:
                     await _maybe_store_question_answer_note(
                         session_id,
@@ -949,9 +914,8 @@ async def _forward_to_client(
                             )
                             runtime_state["last_hidden_prompt_at"] = now
 
-                    # Track question streak using the SAME metric as the
-                    # scorecard (text.endswith("?")) — not the lenient
-                    # is_question_like_turn() heuristic.
+                    # Track question streak using the scorecard metric
+                    # (text.endswith("?")).
                     if turn_text.rstrip().endswith("?"):
                         runtime_state["question_like_streak"] = int(
                             runtime_state.get("question_like_streak", 0)
@@ -967,14 +931,14 @@ async def _forward_to_client(
                     if q_streak >= 1:
                         now = time.time()
                         if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
-                            # Escalate: use stronger prompt after 3+ streak
-                            if q_streak >= 3:
+                            # Escalate: use stronger prompt after 2+ streak
+                            if q_streak >= 2:
                                 ctrl_prompt = ANTI_QUESTION_LOOP_ESCALATED_PROMPT
                             else:
                                 ctrl_prompt = ANTI_QUESTION_LOOP_CONTROL_PROMPT
                             logger.info(
                                 "Session %s: ANTI-QUESTION control fired (streak=%d, escalated=%s)",
-                                session_id, q_streak, q_streak >= 3,
+                                session_id, q_streak, q_streak >= 2,
                             )
                             live_queue.send_content(
                                 types.Content(
@@ -1029,6 +993,8 @@ async def _forward_to_client(
                         session_id, delta_ms,
                     )
                     lat["awaiting_first_response"] = False
+                    if report:
+                        report.record_latency_event("interruption_stop", delta_ms)
                 await _send_json(websocket, {"type": "interrupted"})
                 logger.info(
                     "INTERRUPTED by student (had sent %d audio chunks before interruption)",
@@ -1054,20 +1020,6 @@ async def _forward_to_client(
                 # Only confirmed non-echo transcripts unlock new tutor turns.
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 runtime_state["_student_has_spoken"] = True
-                if _is_explicit_search_request(student_text):
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "assistant_state",
-                            "data": {
-                                "state": "searching",
-                                "reason": "student_requested_search",
-                            },
-                        },
-                    )
-                # Forced search injection removed — google_search tool + system prompt
-                # instruction ("call google_search before answering if unsure") handles this
-                # without burning an extra hidden turn per search request.
 
                 # Guardrail: check student input for off-topic / cheat / inappropriate
                 student_guardrail_events = check_student_input(student_text)
@@ -1116,6 +1068,7 @@ async def _forward_to_client(
                 )
                 if report:
                     report.record_student_transcript(student_text)
+                language_handle_transcript(student_text, runtime_state)
 
             if event.output_transcription and event.output_transcription.text and event.output_transcription.finished:
                 # Ignore model output transcripts for turns that were gated out.
@@ -1149,6 +1102,7 @@ async def _forward_to_client(
 
                 logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
                 _append_tutor_turn_part(runtime_state, tutor_text, source="transcript")
+                language_append_tutor_part(runtime_state, tutor_text, source="transcript")
 
                 # Guardrail: check tutor output for answer leaks
                 tutor_guardrail_events = check_tutor_output(tutor_text, runtime_state)
