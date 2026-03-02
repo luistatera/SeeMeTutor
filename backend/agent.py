@@ -10,16 +10,43 @@ import logging
 import os
 import re
 import time
+from typing import Any
 
 from google.adk.agents import Agent
-from google.adk.tools import ToolContext, google_search
+from google.adk.tools import ToolContext
+from google.adk.tools.google_search_agent_tool import (
+    GoogleSearchAgentTool,
+    create_google_search_agent,
+)
 
 from test_report import get_report
 from modules.whiteboard import normalize_title, normalize_content, normalize_note_type
 
 logger = logging.getLogger(__name__)
 
+
+def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        parsed = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
 MODEL = "gemini-live-2.5-flash-native-audio"
+SEARCH_MODEL = os.environ.get("GEMINI_SEARCH_MODEL", "gemini-2.5-flash")
+SEARCH_CACHE_TTL_S = _env_int("GOOGLE_SEARCH_CACHE_TTL_S", 900, 0, 24 * 60 * 60)
+SEARCH_CACHE_MAX_ENTRIES = _env_int("GOOGLE_SEARCH_CACHE_MAX_ENTRIES", 64, 1, 500)
+SEARCH_AGENT_INSTRUCTION = """\
+You are a specialized Google search agent.
+
+When given a search query:
+1. Use google_search exactly once.
+2. Return a concise result (max 120 words).
+3. Include 1-2 source URLs.
+4. Focus only on directly relevant facts.
+"""
 
 STRUGGLE_CHECKPOINT_THRESHOLD = 2
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "seeme-tutor")
@@ -1865,6 +1892,110 @@ async def search_topic_context(query: str, tool_context: ToolContext) -> dict:
 # ADK Agent definition
 # ---------------------------------------------------------------------------
 
+
+def _safe_tool_text(value: Any, *, max_len: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) > max_len:
+        return f"{text[:max_len]}..."
+    return text
+
+
+class LoggedGoogleSearchAgentTool(GoogleSearchAgentTool):
+    """GoogleSearchAgentTool with explicit runtime/report instrumentation."""
+
+    async def run_async(
+        self,
+        *,
+        args: dict[str, Any],
+        tool_context: ToolContext,
+    ) -> Any:
+        session_id = str(tool_context.state.get("session_id") or "unknown")
+        query = _safe_tool_text(args.get("request") or args.get("query"))
+        query_key = re.sub(r"\s+", " ", query.strip().lower())
+        t0 = time.time()
+        result_status = "error"
+        result_preview = ""
+        now_ts = time.time()
+        cache = tool_context.state.setdefault("_google_search_cache", {})
+        cached_entry = cache.get(query_key) if query_key else None
+        if isinstance(cached_entry, dict):
+            cached_ts = float(cached_entry.get("timestamp", 0.0) or 0.0)
+            if SEARCH_CACHE_TTL_S <= 0 or (now_ts - cached_ts) <= float(SEARCH_CACHE_TTL_S):
+                result_status = "cache_hit"
+                cached_result = cached_entry.get("result", "")
+                logger.info(
+                    "GOOGLE_SEARCH_CACHE_HIT session=%s query=%s age_s=%.1f",
+                    session_id,
+                    query or "<empty>",
+                    max(now_ts - cached_ts, 0.0),
+                )
+                duration_ms = (time.time() - t0) * 1000
+                rpt = get_report(session_id)
+                if rpt:
+                    rpt.record_tool_call(
+                        "google_search",
+                        {"request": query},
+                        result_status,
+                        duration_ms,
+                    )
+                return cached_result
+        if query:
+            logger.info("GOOGLE_SEARCH_START session=%s query=%s", session_id, query)
+        else:
+            logger.info("GOOGLE_SEARCH_START session=%s query=<empty>", session_id)
+
+        try:
+            result = await super().run_async(args=args, tool_context=tool_context)
+            result_status = "success"
+            result_preview = _safe_tool_text(result, max_len=160)
+            if query_key:
+                cache[query_key] = {
+                    "result": result,
+                    "timestamp": time.time(),
+                }
+                if len(cache) > SEARCH_CACHE_MAX_ENTRIES:
+                    sorted_items = sorted(
+                        cache.items(),
+                        key=lambda item: float(item[1].get("timestamp", 0.0) or 0.0),
+                    )
+                    drop_count = len(cache) - SEARCH_CACHE_MAX_ENTRIES
+                    for stale_key, _ in sorted_items[:drop_count]:
+                        cache.pop(stale_key, None)
+            return result
+        except Exception as exc:
+            logger.exception(
+                "GOOGLE_SEARCH_FAILED session=%s query=%s error=%s",
+                session_id,
+                query or "<empty>",
+                exc,
+            )
+            raise
+        finally:
+            duration_ms = (time.time() - t0) * 1000
+            tool_context.state["google_search_call_count"] = int(
+                tool_context.state.get("google_search_call_count", 0)
+            ) + 1
+            if query:
+                tool_context.state["last_google_search_query"] = query
+            if result_status == "success":
+                logger.info(
+                    "GOOGLE_SEARCH_DONE session=%s status=%s duration_ms=%.1f query=%s preview=%s",
+                    session_id,
+                    result_status,
+                    duration_ms,
+                    query or "<empty>",
+                    result_preview or "<empty>",
+                )
+            rpt = get_report(session_id)
+            if rpt:
+                rpt.record_tool_call(
+                    "google_search",
+                    {"request": query},
+                    result_status,
+                    duration_ms,
+                )
+
+
 TUTOR_TOOLS = [
     set_session_phase,
     get_backlog_context,
@@ -1877,7 +2008,16 @@ TUTOR_TOOLS = [
     switch_topic,
     flag_drift,
     search_topic_context,
-    google_search,
+    # Route web search through a dedicated non-live model. The tutor itself
+    # stays on the live-audio model for realtime voice interaction.
+    LoggedGoogleSearchAgentTool(
+        agent=create_google_search_agent(SEARCH_MODEL).model_copy(
+            update={
+                "name": "google_search",
+                "instruction": SEARCH_AGENT_INSTRUCTION,
+            }
+        )
+    ),
 ]
 
 tutor_agent = Agent(

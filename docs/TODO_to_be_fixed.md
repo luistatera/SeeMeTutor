@@ -1,15 +1,15 @@
 # To Be Fixed & To Be Tested
 
-## Latest Scorecard (Mar 2, session c8a427e6)
+## Latest Scorecard (Mar 2, session e37f6d58 — 16:29)
 
 | Stat | Value |
 |---|---|
-| Checks passed | 19 / 49 (41.3%) |
-| Checks failed | 5 |
-| Checks not tested | 25 |
+| Checks passed | 21 / 51 (43.8%) |
+| Checks failed | 3 |
+| Checks not tested | 27 |
 | POCs fully passing | 1 (Memory) |
-| POCs partial | 5 |
-| POCs failing | 3 |
+| POCs partial | 6 |
+| POCs failing | 2 |
 | POCs untested | 7 |
 
 ---
@@ -22,6 +22,8 @@
 | `678a4c76` | Mar 1 21:06 | 4.6 min | 17 / 26 | ON (254 frames) | Active convo — proactive correctly skipped |
 | `678a4c76` | Mar 1 21:22 | ~2 min | 0 / 1 | ON (screen share) | Silent test — proactive FAILED despite 37s silence |
 | `c8a427e6` | Mar 2 11:12 | 1.7 min | 4 / 12 | ON | Proactive poke=1, whiteboard=6, question streak=7 |
+| `e37f6d58` | Mar 2 14:00 | 3.25 min | 13 / 13 | OFF | Interruptions=2✅, question ratio 63.6%, mastery protocol active, Portuguese switching works |
+| `e37f6d58` | Mar 2 16:29 | 1.1 min | 4 / 8 | OFF | **google_search called 2×** (1 success, 1 error), question ratio 50%/streak 1 ✅, grounding metadata NOT captured (extraction gap) |
 
 ---
 
@@ -31,71 +33,103 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 
 | # | Item | Judging Impact | Status |
 |---|---|---|---|
-| 1 | F19. Question balance (F1) | Demo 30% — interrogation loops kill the experience | FIX NEEDED |
-| 2 | F02. Interruption handling (T2) | UX 40% — **category requirement** for Live Agents | TEST NEEDED |
-| 3 | F09. Search grounding (T3) | Tech 30% — rubric says "hallucination avoidance + grounding evidence" | TEST NEEDED |
-| 4 | F03. Multilingual (T7) | UX 40% — demo differentiation (3 languages = strong) | TEST NEEDED |
-| 5 | F01. Proactive vision (T1) | UX 40% — "beyond text" differentiator | VERIFY (poke=1, needs more) |
-| 6 | F07. Mastery verification | UX 40% — shows depth of tutoring intelligence | TEST NEEDED |
-| 7 | F06. Whiteboard latency (P04) | Tech 30% — p95 502.7ms vs target 500ms | FIX NEEDED (marginal) |
-| 8 | F05. Screen share toggle (T4) | UX 40% — media interleaving | TEST NEEDED |
-| 9 | F08. Idle/away flow (T5) | UX 40% — context-awareness | TEST NEEDED |
-| 10 | F13. Latency budget (P07) | Tech 30% — all null, not instrumented in latest | TEST NEEDED |
-| 11 | F11. Session resilience (T6) | Tech 30% — error/edge case handling | TEST NEEDED |
-| 12 | F04. Emotional adaptation | UX 40% — qualitative only | TEST NEEDED |
+| 1 | F19. Question balance (F1) | Demo 30% — interrogation loops kill the experience | ⚠️ IMPROVED (100%→63.6%, streak 7→3) — needs more tuning |
+| 2 | F02. Interruption handling (T2) | UX 40% — **category requirement** for Live Agents | ✅ WORKING (2 interruptions detected, P99 checkpoint PASS) |
+| 3 | F09. Search grounding (T3) | Tech 30% — rubric says "hallucination avoidance + grounding evidence" | 🔧 PARTIAL — google_search called 2× (1 success), but grounding metadata extraction not capturing citations. |
+| 4 | F03. Multilingual (T7) | UX 40% — demo differentiation (3 languages = strong) | ✅ WORKING functionally — tutor switches to PT fluently. ⚠️ Language tracking module NOT measuring (events=[]) |
+| 5 | F01. Proactive vision (T1) | UX 40% — "beyond text" differentiator | ⬜ NOT TESTED this session (camera OFF). Previously: poke=1 in c8a427e6 |
+| 6 | F07. Mastery verification | UX 40% — shows depth of tutoring intelligence | ⚠️ PARTIALLY WORKING — protocol fires (4 tool calls), premature mastery blocked, but 0 full verifications completed |
+| 7 | F06. Whiteboard latency (P04) | Tech 30% — p95 518.5ms vs target 500ms | ⚠️ MARGINAL — 518.5ms p95, 18.5ms over target |
+| 8 | F05. Screen share toggle (T4) | UX 40% — media interleaving | ⬜ NOT TESTED |
+| 9 | F08. Idle/away flow (T5) | UX 40% — context-awareness | ⚠️ PARTIAL — checkin_1 fires (1), away mode not triggered (session too short) |
+| 10 | F13. Latency budget (P07) | Tech 30% — all null, not instrumented | ❌ NOT INSTRUMENTED — latency.events=[], reports=[] despite 13 turns |
+| 11 | F11. Session resilience (T6) | Tech 30% — error/edge case handling | ⬜ NOT TESTED |
+| 12 | F04. Emotional adaptation | UX 40% — qualitative only | ⚠️ QUALITATIVE EVIDENCE — tutor said "Sem problemas! É normal ter dúvidas" when student expressed doubt |
 
 ---
 
 ## To Be Fixed
 
-### F1. Question-ending ratio too high — CRITICAL for Demo score
-- **Severity:** HIGH — judges hear an interrogation, not a tutor
+### F1. Question-ending ratio — IMPROVED, needs final tuning
+- **Severity:** MEDIUM (was HIGH) — much better but still noticeable
 - **Judging criteria:** Demo & Presentation (30%) — "natural immersive interaction"
-- **Symptom:** Session c8a427e6: 100% question ratio, streak of 7. Session 85c3: 91.3%, streak 16.
-- **Root cause:** System prompt over-indexes on Socratic questioning without variety
-- **Fix:** Tune system prompt: "After 2 consecutive questions, give a statement or encouragement before asking again."
+- **History:** 85c3: 91.3%/streak 16 → c8a4: 100%/streak 7 → **e37f: 63.6%/streak 3**
+- **Root cause:** System prompt improved but still over-indexes on questions
+- **Fix:** Further tune: maybe "After 2 questions, give a brief statement, praise, or summary before asking again"
 - **Metric:** `prd_scorecard.pocs.poc_02.P02.question_turn_ratio` + `P02.question_streak_max`
 - **Target:** ratio 35-50%, streak <= 2
-- **Current:** ratio 100%, streak 7
-- **Status:** Needs system prompt fix in `agent.py`
+- **Current:** ratio 63.6%, streak 3
+- **Status:** Close — one more prompt iteration should hit target
 
-### F2. Whiteboard delivery latency marginally over target
-- **Severity:** LOW — 502.7ms vs 500ms target, within noise
+### F2. Search grounding — google_search calling ✅ FIXED, metadata extraction still failing
+- **Severity:** HIGH — rubric explicitly scores "hallucination avoidance and grounding evidence"
+- **Judging criteria:** Technical Implementation (30%)
+- **Progress (session e37f6d58 @ 16:29):**
+  - ✅ **google_search IS now being called by the model** — 2 calls in latest session:
+    1. `google_search("latest price of telc A2 exam in Berlin")` → **success** (8,562ms)
+    2. `google_search("German possessive pronouns sein and ihr rules")` → **error** (2,734ms)
+  - ❌ **Grounding metadata not captured:** `grounding.events = 0`, `citations_sent = 0`, `search_queries = []`
+- **Root cause history:**
+  1. ~~google_search silently ignored by Gemini API when mixed with function tools~~ → Fixed by using `GoogleSearchAgentTool` with `create_google_search_agent()` directly in `agent.py`
+  2. **Grounding metadata extraction gap (CURRENT ISSUE):** `modules/grounding.py` checks `event.grounding_metadata` and `event.actions.state_delta["temp:_adk_grounding_metadata"]`, but neither path finds metadata on the events flowing through `ws_bridge.py`'s `_forward_to_client()` loop. The `GoogleSearchAgentTool` sub-agent completes successfully (tool result_status="success") but grounding metadata doesn't appear on the ADK events visible to ws_bridge.
+- **Current code:**
+  - `agent.py` uses `GoogleSearchAgentTool(agent=create_google_search_agent(SEARCH_MODEL).model_copy(update={"name": "google_search"}))` — WORKING
+  - `modules/grounding.py` — dual-path extraction implemented but not finding metadata
+  - `ws_bridge.py` — grounding check wired into event loop
+- **Next investigation:** Determine where `GoogleSearchAgentTool` stores grounding metadata in the live event stream. May need to add debug logging to `extract_grounding_citations()` to dump every event's attributes and find the actual location.
+- **Metric:** `prd_scorecard.pocs.poc_05.P05.grounding_event_count`
+- **Target:** >= 1 grounding event when factual search requested
+- **Current:** 0 (google_search called but metadata not captured)
+- **Status:** 🔧 PARTIALLY FIXED — tool calling works, metadata extraction needs debugging
+
+### F3. Language tracking module not recording — measurement gap
+- **Severity:** MEDIUM — feature works, can't prove it with metrics
+- **Judging criteria:** UX 40% — demo differentiation
+- **Symptom:** Tutor fluently switches to Portuguese (confirmed in transcript), but `language.events = []`, `language.latest_metric = {}`
+- **Root cause:** Language detection module not firing or not connected to transcript pipeline
+- **Metric:** `prd_scorecard.pocs.poc_03.P03.language_purity_rate`
+- **Target:** >= 98%
+- **Current:** null (not measured, but functional observation: works great)
+- **Status:** Needs instrumentation fix — language module needs to process transcripts
+
+### F4. Whiteboard delivery latency marginally over target
+- **Severity:** LOW — 518.5ms vs 500ms target, within noise
 - **Judging criteria:** Technical Implementation (30%)
 - **Metric:** `prd_scorecard.pocs.poc_04.P04.note_delivery_latency_p95`
 - **Target:** <= 500ms
-- **Current:** 502.7ms
-- **Status:** Likely passes on next run, monitor
+- **Current:** 518.5ms (second note was 25.3ms — first note warmup drives p95)
+- **Status:** Monitor — likely passes on warmed-up sessions
 
-### F3. Response start latency — all null in latest run
-- **Severity:** MEDIUM — dead air while student hears nothing
+### F5. Response start latency — all null, not instrumented
+- **Severity:** MEDIUM — can't demonstrate responsiveness metrics
 - **Judging criteria:** Technical Implementation (30%) — responsiveness
-- **Symptom:** Session 85c3: avg 787ms (target <=500ms), p95 1,590ms (target <=800ms). Latest session: null (latency module may not be recording)
+- **Symptom:** `latency.events = []`, `latency.reports = []` despite 13 turns in e37f session
+- **Root cause:** Latency recording module not connected or not triggering
 - **Metric:** `prd_scorecard.pocs.poc_07.P07.response_start_avg` / `.p95`
 - **Target:** avg <= 500ms, p95 <= 800ms
-- **Current:** null (not instrumented or session too short)
-- **Status:** Needs investigation — run longer session to confirm instrumentation
+- **Current:** null (raw audio latency samples exist: avg ~35ms, but structured latency module silent)
+- **Status:** CODE FIX NEEDED — latency module needs investigation
 
-### F4. Tutor gave incorrect grammar correction
+### F6. Mastery verification never fully completes
+- **Severity:** MEDIUM — protocol is active but never finishes all 3 steps
+- **Judging criteria:** UX 40% — depth of tutoring intelligence
+- **Symptom:** 4 verify_mastery_step calls in e37f: solve✅ → explain✅ → transfer❌ → transfer(wrong_step). Tutor tried to mark "mastered" → blocked by premature_mastery_blocked.
+- **Root cause:** Student failed transfer step, then tutor tried to skip ahead (wrong_step error). Protocol enforcement works, but tutor doesn't retry correctly.
+- **Metric:** `mastery.verifications_completed`
+- **Target:** >= 1
+- **Current:** 0 (protocol active, never completed)
+- **Status:** System prompt may need guidance on retry flow after transfer failure
+
+### F7. Tutor gave incorrect grammar correction
 - **Severity:** MEDIUM — factual accuracy in tutoring
 - **Judging criteria:** Technical Implementation (30%) — "hallucination avoidance"
 - **Symptom:** Tutor said `seine Buch` (wrong) instead of `sein Buch` (correct neuter nominative)
 - **Fix:** Model hallucination issue. Grounding search may help.
 - **Status:** Model-level, harder to fix
 
-### F5. Proactive vision not triggering during silence — PREVIOUSLY CONFIRMED BUG
-- **Severity:** HIGH — core "beyond text" feature
-- **Judging criteria:** UX 40% — "visual precision" + "context-awareness"
-- **Symptom:** Session 678a (21:22): 37s silence with screen share, zero pokes.
-- **Root cause:** Speech heuristic resets silence tracking (see detailed trace in previous version)
-- **Current:** Partially fixed — c8a427e6 got 1 poke. But needs robust validation with dedicated silent test.
-- **Metric:** `prd_scorecard.pocs.poc_02.P02.proactive_trigger_count`
-- **Target:** >= 1 poke after 10s silence with camera active
-- **Status:** PARTIALLY FIXED — needs re-test with silent-only scenario
-
-### F6. TURN_DROPPED flood — wasted compute
+### F8. TURN_DROPPED flood — wasted compute
 - **Severity:** LOW — no user-facing bug
-- **Symptom:** ~12 TURN_DROPPED pairs in session 678a
+- **Symptom:** ~12+ TURN_DROPPED pairs in e37f session (confirmed in debug.log)
 - **Fix:** Consider `send_activity_end()` when turn is dropped
 - **Status:** Low priority, investigate if it contributes to latency
 
@@ -103,44 +137,48 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 
 ## To Be Tested
 
-### T1. Interruption handling — CRITICAL for Live Agents category
-- **Judging criteria:** UX 40% — **explicit category requirement** ("interruption handling" in rubric)
-- **What:** Actively interrupt tutor mid-speech and verify it stops + acknowledges
-- **How:** Start speaking loudly DURING tutor's 1-3s speaking window. Not after.
-- **Metric:** `prd_scorecard.pocs.poc_01.P01.interruption_stop_p95` <= 500ms, `P01.interruptions_observed` >= 1
-- **Current:** 0 interruptions across all sessions. Tutor speaking windows are short (~2s).
-- **Pass criteria:** `interruptions.count >= 1`
-
-### T2. Search grounding / citations — CRITICAL for Technical score
+### T1. Search grounding / citations — CRITICAL for Technical score (F2 fix applied, READY TO TEST)
 - **Judging criteria:** Tech 30% — rubric literally says "hallucination avoidance and grounding evidence"
 - **What:** Ask a factual question that triggers Google Search
 - **How:** Say "search for the dative case rules in German" or "look up atomic structure"
 - **Metric:** `prd_scorecard.pocs.poc_05.P05.grounding_event_count` >= 1, `P05.citation_render_rate` = 100%
-- **Current:** 0 grounding events across all sessions
+- **Current:** 0 grounding events across all sessions (pre-fix). F2 code fix now applied.
 - **Pass criteria:** `grounding.events >= 1`, `grounding.citations_sent >= 1`
+- **Blocker:** ~~F2 tool calling~~ ✅ Fixed. Remaining: grounding metadata extraction (F2 part 2)
 
-### T3. Multilingual purity — HIGH for UX score
+### T2. Proactive vision — needs camera-on test
+- **Judging criteria:** UX 40% — "visual precision" + "context-awareness"
+- **What:** Point camera at homework, stay silent, verify proactive poke fires
+- **How:** Camera ON, silence for 15+ seconds
+- **Metric:** `proactive.poke_count` >= 1
+- **Current:** 0 in e37f (camera OFF). 1 in c8a427e6 (camera ON). Debug log confirms `cam=False` throughout e37f.
+- **Pass criteria:** `proactive.poke_count >= 1` with camera active
+- **Status:** Previously worked (poke=1), just needs re-verification with camera ON
+
+### T3. Multilingual purity measurement — needs language module fix (blocked by F3)
 - **Judging criteria:** UX 40% — demo differentiation (3 languages in one family)
 - **What:** Run a full session in one non-English language, measure purity rate
-- **How:** Run German-only or Portuguese-only session for 3+ min
+- **How:** Run Portuguese-only session for 3+ min
 - **Metric:** `prd_scorecard.pocs.poc_03.P03.language_purity_rate` >= 98%
-- **Current:** null (never measured)
+- **Current:** null (language module not recording). Functional evidence: tutor switches to PT perfectly (see e37f transcript).
 - **Pass criteria:** `language_purity_rate >= 98%`
+- **Blocker:** F3 (language tracking module not recording) must be fixed first
 
-### T4. Mastery verification protocol
+### T4. Mastery verification completion — needs retry flow (blocked by F6)
 - **Judging criteria:** UX 40% — depth of tutoring intelligence, "beyond text"
-- **What:** Solve an exercise correctly and verify 3-step mastery protocol fires
-- **How:** Answer correctly, check if tutor asks explain-why + transfer problem
+- **What:** Complete all 3 mastery steps (solve → explain → transfer) on one exercise
+- **How:** Answer correctly at each step, stay patient through protocol
 - **Metric:** `prd_scorecard.pocs.poc_14.P14.mastery_verifications` >= 1
-- **Current:** null (never triggered)
+- **Current:** 0 completed. Protocol IS active (4 tool calls in e37f, premature mastery blocked). Student failed transfer, tutor couldn't retry cleanly.
 - **Pass criteria:** `mastery.verifications_completed >= 1`
+- **Blocker:** F6 (retry flow after transfer failure) should be addressed
 
 ### T5. Screen share toggle
 - **Judging criteria:** UX 40% — "media interleaving"
 - **What:** Switch between camera and screen share during a session
 - **How:** Start with camera, switch to screen share, switch back, then stop sharing
 - **Metric:** `prd_scorecard.pocs.poc_10.P10.source_switch_count` >= 1, errors = 0
-- **Current:** 0 source switches
+- **Current:** 0 source switches across all sessions
 - **Pass criteria:** `screen_share.source_switches >= 1`, `screen_share.stop_sharing_count >= 1`
 
 ### T6. Idle / away flow
@@ -148,7 +186,7 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 - **What:** Go silent long enough to trigger away mode, then resume
 - **How:** Stop talking for 2+ min, verify away_activated fires. Speak again, verify resumed.
 - **Metric:** `prd_scorecard.pocs.poc_11.P11.away_resume_flow_observed`
-- **Current:** 0 checkins (sessions too short), away never activated
+- **Current:** checkin_1=1 (fires correctly). away_activated=0 (sessions too short).
 - **Pass criteria:** `idle.away_activated_count >= 1`, `idle.away_resumed_count >= 1`
 
 ### T7. Session resilience (reconnect)
@@ -159,26 +197,28 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 - **Current:** 0 retry attempts (no disconnects tested)
 - **Pass criteria:** `resilience.stream_reconnect_successes >= 1`
 
-### T8. Latency instrumentation
+### T8. Latency instrumentation (blocked by F5)
 - **Judging criteria:** Tech 30% — responsiveness
 - **What:** Run a session long enough for latency reports to populate
 - **How:** Have 10+ tutor turns, check latency report
 - **Metric:** All POC 07 checks: `response_start.avg <= 500ms`, `.p95 <= 800ms`, `interruption_stop.p95 <= 400ms`
-- **Current:** All null in latest session
+- **Current:** All null despite 13 turns in e37f. Raw audio latency samples exist (avg ~35ms) but structured module is silent.
 - **Pass criteria:** All P07 checks populated and within targets
+- **Blocker:** F5 (latency module not recording) must be fixed first
 
 ### T9. Emotional adaptation (qualitative)
 - **Judging criteria:** UX 40% — "natural immersive interaction"
 - **What:** Show frustration signals and observe tutor response
 - **How:** Say "I don't get it" 3+ times, sigh, show confusion
+- **Current:** Qualitative evidence in e37f: tutor said "Sem problemas! É normal ter dúvidas" when student expressed doubt. Promising but needs structured test.
 - **Pass criteria:** Qualitative — tutor slows down, simplifies, encourages
 
-### T10. Question balance after F1 fix (validates F1)
+### T10. Question balance final validation (validates F1)
 - **Judging criteria:** Demo 30% — "experience fluidity"
-- **What:** After fixing system prompt, re-run and verify question ratio dropped
+- **What:** After final prompt tuning, re-run and verify question ratio hit target
 - **How:** Run 5+ min tutoring session, check scorecard
 - **Metric:** `P02.question_turn_ratio` 35-50%, `P02.question_streak_max` <= 2
-- **Current:** 100% ratio, streak 7
+- **Current:** 63.6% ratio, streak 3 (improved from 100%/7, needs one more iteration)
 - **Pass criteria:** ratio 35-50%, streak <= 2
 
 ---
@@ -188,24 +228,24 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 ### Must Pass (demo-critical)
 | Check | Target | Current | Gap |
 |---|---|---|---|
-| P01.interruptions_observed | >= 1 | 0 | TEST |
-| P02.proactive_trigger_count | >= 1 | 1 | OK |
-| P02.question_turn_ratio | 35-50% | 100% | FIX |
-| P02.question_streak_max | <= 2 | 7 | FIX |
-| P04.whiteboard_usage | >= 1 | 6 | OK |
-| P05.grounding_event_count | >= 1 | 0 | TEST |
-| P09.answer_leaks | 0 | 0 | OK |
-| P99.interruption_checkpoint | pass | fail | TEST |
-| P99.grounding_checkpoint | pass | fail | TEST |
+| P01.interruptions_observed | >= 1 | **2** ✅ | OK |
+| P02.proactive_trigger_count | >= 1 | 0 (cam OFF) | RE-TEST with camera |
+| P02.question_turn_ratio | 35-50% | **63.6%** | TUNE PROMPT |
+| P02.question_streak_max | <= 2 | **3** | TUNE PROMPT |
+| P04.whiteboard_usage | >= 1 | **2** ✅ | OK |
+| P05.grounding_event_count | >= 1 | 0 (google_search called but metadata not captured) | FIX grounding extraction |
+| P09.answer_leaks | 0 | **0** ✅ | OK |
+| P99.interruption_checkpoint | pass | **pass** ✅ | OK |
+| P99.grounding_checkpoint | pass | fail (tool works, metadata gap) | FIX grounding extraction |
 
 ### Should Pass (competitive edge)
 | Check | Target | Current | Gap |
 |---|---|---|---|
-| P03.language_purity_rate | >= 98% | null | TEST |
-| P07.response_start_avg | <= 500ms | null | TEST |
-| P07.response_start_p95 | <= 800ms | null | TEST |
-| P14.mastery_verifications | >= 1 | null | TEST |
-| P11.away_resume_flow | activated+resumed | null | TEST |
+| P03.language_purity_rate | >= 98% | null (works, not measured) | FIX F3 |
+| P07.response_start_avg | <= 500ms | null | FIX F5 |
+| P07.response_start_p95 | <= 800ms | null | FIX F5 |
+| P14.mastery_verifications | >= 1 | 0 (protocol active) | FIX F6 + TEST |
+| P11.away_resume_flow | activated+resumed | checkin=1 only | TEST (longer session) |
 | P10.source_switch_count | >= 1 | null | TEST |
 
 ### Nice to Have (bonus differentiation)
@@ -213,13 +253,31 @@ Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% 
 |---|---|---|---|
 | P06.reconnect_success_rate | 100% | null | TEST |
 | P06.session_resumption | 100% | null | TEST |
-| P13.memory_recall | >= 1 | 1 | OK |
-| P13.checkpoints_saved | >= 1 | 3 | OK |
+| P13.memory_recall | >= 1 | **1** ✅ | OK |
+| P13.checkpoints_saved | >= 1 | **2** ✅ | OK |
 
 ---
 
-## Overall Goal: 19/49 -> 35+/49 checks passing before submission
+## Overall Goal: 20/51 → 35+/51 checks passing before submission
 
-Current auto pass rate: 41.3%. Target: 70%+.
+Current auto pass rate: **41.7%**. Target: **70%+**.
 
-**Minimum viable for confident demo:** Fix F1 (question balance) + test T1 (interruption) + test T2 (grounding) = unblocks Hero Flow (POC 99).
+### What's working (confirmed in e37f6d58)
+- ✅ Interruption handling (2 detected, stale filtering works)
+- ✅ Whiteboard sync (2 notes created + delivered)
+- ✅ Memory management (all 5 checks pass)
+- ✅ Safety guardrails (0 answer leaks, Socratic 100%)
+- ✅ Multilingual switching (functionally — tutor speaks PT fluently)
+- ✅ Mastery protocol fires (4 tool calls, premature mastery blocked)
+- ✅ Idle checkin fires (1 gentle check)
+- ⚠️ Question balance improved (100% → 63.6%, streak 7 → 3)
+
+### Critical path to 70%+
+1. **FIX F2 (search grounding)** — ✅ google_search now called by model (2 calls in e37f@16:29). ❌ Grounding metadata not reaching `modules/grounding.py`. Need to debug where `GoogleSearchAgentTool` puts metadata in the live event stream. (unblocks T1, P99.grounding, P05 = 3 checks)
+2. **TUNE F1 (question ratio)** — one more prompt iteration to hit 35-50% (2 checks)
+3. **FIX F3 (language module)** — unblocks P03 measurement (1 check)
+4. **FIX F5 (latency module)** — unblocks P07 (5 checks)
+5. **TEST with camera ON** — validates proactive poke (1 check)
+6. **FIX F6 (mastery retry)** — unblocks P14.mastery_verifications (1 check)
+
+**Fixing F2 + F5 + one prompt tune + camera test = ~32 checks passing (62%). Add F3 + F6 = ~35+ (70%+).**

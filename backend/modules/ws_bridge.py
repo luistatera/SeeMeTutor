@@ -44,6 +44,7 @@ from modules.note_storage import (
     _maybe_store_example_note,
 )
 from modules.persistence import _persist_memory_checkpoint
+from modules.grounding import extract_grounding_citations
 from modules.proactive import (
     reset_silence_tracking,
     sanitize_tutor_output,
@@ -75,6 +76,22 @@ logger = logging.getLogger(__name__)
 
 SendJsonFn = Callable[[WebSocket, dict], Awaitable[None]]
 BuildRunConfigFn = Callable[[], tuple[RunConfig, dict]]
+
+
+def _is_explicit_search_request(text: str) -> bool:
+    """Detect direct user intent to perform an online search."""
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    triggers = (
+        "search",
+        "search online",
+        "look up",
+        "google",
+        "find online",
+        "check online",
+    )
+    return any(trigger in normalized for trigger in triggers)
 
 
 # ---------------------------------------------------------------------------
@@ -806,6 +823,28 @@ async def _forward_to_client(
                         await _send_json(websocket, {"type": "text", "data": cleaned})
                         turn_had_output = True
 
+            # --- Grounding citations ---
+            # Check every event for grounding_metadata (attached when
+            # Gemini uses google_search).  Send citations to browser
+            # and record in the test report.
+            grounding_citations = extract_grounding_citations(event)
+            if grounding_citations:
+                for cit in grounding_citations:
+                    await _send_json(
+                        websocket,
+                        {"type": "grounding", "data": cit},
+                    )
+                    if report:
+                        report.record_grounding_citation(
+                            source=cit.get("source", ""),
+                            query=cit.get("query", ""),
+                        )
+                debug_logger.debug(
+                    "GROUNDING sid=%s citations=%d",
+                    session_id[:8],
+                    len(grounding_citations),
+                )
+
             # --- Turn complete ---
             if event.turn_complete:
                 if suppress_output:
@@ -1015,6 +1054,17 @@ async def _forward_to_client(
                 # Only confirmed non-echo transcripts unlock new tutor turns.
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 runtime_state["_student_has_spoken"] = True
+                if _is_explicit_search_request(student_text):
+                    await _send_json(
+                        websocket,
+                        {
+                            "type": "assistant_state",
+                            "data": {
+                                "state": "searching",
+                                "reason": "student_requested_search",
+                            },
+                        },
+                    )
                 # Forced search injection removed — google_search tool + system prompt
                 # instruction ("call google_search before answering if unsure") handles this
                 # without burning an extra hidden turn per search request.
