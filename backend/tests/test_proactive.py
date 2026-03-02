@@ -31,6 +31,15 @@ def test_sanitize_keeps_normal_tutor_text():
 
 
 def test_pause_proactive_when_waiting_for_reply():
+    import time
+    # No silence_started_at → function returns True (stay paused, silence not tracked yet)
     state = {"awaiting_student_reply": True}
     assert should_pause_proactive_for_reply(state, 8.0) is True
+
+    # Silence started recently → within AWAITING_REPLY_GRACE_S (8s) → still paused
+    state["silence_started_at"] = time.time()
+    assert should_pause_proactive_for_reply(state, 8.0) is True
+
+    # Silence started long ago → past AWAITING_REPLY_GRACE_S → no longer paused
+    state["silence_started_at"] = time.time() - 30.0
     assert should_pause_proactive_for_reply(state, 30.0) is False

@@ -19,7 +19,6 @@ import time
 
 from google.genai import types
 
-from modules.prompt_capture import send_content_with_prompt_capture
 
 logger = logging.getLogger(__name__)
 # Also log key events to the session_debug file (backend/debug.log)
@@ -35,7 +34,7 @@ CAMERA_ACTIVE_TIMEOUT_S = 3.0   # Camera considered off if no frame in this wind
 POKE_RESPONSE_GRACE_S = 1.5     # Wait after poke before escalating to nudge
 HIDDEN_PROMPT_MIN_GAP_S = 4.0   # Minimum gap between hidden prompts
 AWAITING_REPLY_GRACE_S = 8.0    # Grace period before proactive kicks in (was 18 — too long, killed pokes entirely)
-PROACTIVE_WAIT_TIMEOUT_S = 15.0 # After this long with camera active + silence, allow another poke cycle
+PROACTIVE_WAIT_TIMEOUT_S = 30.0 # After this long with camera active + silence, allow another poke cycle (was 15 — too aggressive, burns tokens)
 
 # ---------------------------------------------------------------------------
 # Hidden prompts injected by the idle orchestrator
@@ -362,15 +361,11 @@ async def proactive_idle_orchestrator(
                 _debug_logger.debug("IDLE_POKE sid=%s #%d silence=%.1fs", str(runtime_state.get("session_id",""))[:8], poke_count, silence_s)
 
                 try:
-                    send_content_with_prompt_capture(
-                        live_queue,
+                    live_queue.send_content(
                         types.Content(
                             role="user",
                             parts=[types.Part(text=IDLE_POKE_PROMPT)],
-                        ),
-                        session_id=str(runtime_state.get("session_id") or ""),
-                        source="proactive_idle_poke",
-                        runtime_state=runtime_state,
+                        )
                     )
                 except Exception as exc:
                     runtime_state["idle_poke_sent"] = False
@@ -415,15 +410,11 @@ async def proactive_idle_orchestrator(
                 _debug_logger.debug("IDLE_NUDGE sid=%s #%d silence=%.1fs", str(runtime_state.get("session_id",""))[:8], nudge_count, silence_s)
 
                 try:
-                    send_content_with_prompt_capture(
-                        live_queue,
+                    live_queue.send_content(
                         types.Content(
                             role="user",
                             parts=[types.Part(text=nudge_text)],
-                        ),
-                        session_id=str(runtime_state.get("session_id") or ""),
-                        source="proactive_idle_nudge",
-                        runtime_state=runtime_state,
+                        )
                     )
                 except Exception as exc:
                     runtime_state["idle_nudge_sent"] = False

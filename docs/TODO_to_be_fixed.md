@@ -1,125 +1,225 @@
 # To Be Fixed & To Be Tested
 
+## Latest Scorecard (Mar 2, session c8a427e6)
+
+| Stat | Value |
+|---|---|
+| Checks passed | 19 / 49 (41.3%) |
+| Checks failed | 5 |
+| Checks not tested | 25 |
+| POCs fully passing | 1 (Memory) |
+| POCs partial | 5 |
+| POCs failing | 3 |
+| POCs untested | 7 |
+
+---
+
 ## Session Log
 
 | Session | Date | Duration | Student/Tutor turns | Camera | Key observation |
 |---|---|---|---|---|---|
 | `85c3966f` | Mar 1 19:53 | 6.8 min | 26 / 41 | OFF | Baseline — question ratio 91%, no video |
 | `678a4c76` | Mar 1 21:06 | 4.6 min | 17 / 26 | ON (254 frames) | Active convo — proactive correctly skipped |
-| `678a4c76` | Mar 1 21:22 | ~2 min | 0 / 1 | ON (screen share) | **Silent test — proactive FAILED despite 37s silence** |
+| `678a4c76` | Mar 1 21:22 | ~2 min | 0 / 1 | ON (screen share) | Silent test — proactive FAILED despite 37s silence |
+| `c8a427e6` | Mar 2 11:12 | 1.7 min | 4 / 12 | ON | Proactive poke=1, whiteboard=6, question streak=7 |
+
+---
+
+## Priority Order (judging-criteria-aligned)
+
+Features are ordered by **impact on judging score** (40% UX, 30% Technical, 30% Demo).
+
+| # | Item | Judging Impact | Status |
+|---|---|---|---|
+| 1 | F19. Question balance (F1) | Demo 30% — interrogation loops kill the experience | FIX NEEDED |
+| 2 | F02. Interruption handling (T2) | UX 40% — **category requirement** for Live Agents | TEST NEEDED |
+| 3 | F09. Search grounding (T3) | Tech 30% — rubric says "hallucination avoidance + grounding evidence" | TEST NEEDED |
+| 4 | F03. Multilingual (T7) | UX 40% — demo differentiation (3 languages = strong) | TEST NEEDED |
+| 5 | F01. Proactive vision (T1) | UX 40% — "beyond text" differentiator | VERIFY (poke=1, needs more) |
+| 6 | F07. Mastery verification | UX 40% — shows depth of tutoring intelligence | TEST NEEDED |
+| 7 | F06. Whiteboard latency (P04) | Tech 30% — p95 502.7ms vs target 500ms | FIX NEEDED (marginal) |
+| 8 | F05. Screen share toggle (T4) | UX 40% — media interleaving | TEST NEEDED |
+| 9 | F08. Idle/away flow (T5) | UX 40% — context-awareness | TEST NEEDED |
+| 10 | F13. Latency budget (P07) | Tech 30% — all null, not instrumented in latest | TEST NEEDED |
+| 11 | F11. Session resilience (T6) | Tech 30% — error/edge case handling | TEST NEEDED |
+| 12 | F04. Emotional adaptation | UX 40% — qualitative only | TEST NEEDED |
 
 ---
 
 ## To Be Fixed
 
-### F1. Question-ending ratio too high
-- **Severity:** High — directly impacts student experience
-- **Symptom:** Session 85c3: 91.3%, streak of 16. Session 678a: 66.7%, streak of 3. Student said "No, don't rush. I need to digest this."
-- **Root cause:** System prompt over-indexes on Socratic questioning without enough variety
-- **Fix:** Tune system prompt to mix in statements, encouragement, summaries, and pauses. Add explicit instruction like "After 2 consecutive questions, give a statement or encouragement before asking again."
-- **Metric:** `derived_metrics.question_turn_ratio_percent` + `max_question_streak`
-- **Target:** Ratio 35-50%, streak <=2
-- **Status:** Improved in 678a (66.7%) without code change — topic-dependent variance. Still needs prompt fix to be reliably in range.
+### F1. Question-ending ratio too high — CRITICAL for Demo score
+- **Severity:** HIGH — judges hear an interrogation, not a tutor
+- **Judging criteria:** Demo & Presentation (30%) — "natural immersive interaction"
+- **Symptom:** Session c8a427e6: 100% question ratio, streak of 7. Session 85c3: 91.3%, streak 16.
+- **Root cause:** System prompt over-indexes on Socratic questioning without variety
+- **Fix:** Tune system prompt: "After 2 consecutive questions, give a statement or encouragement before asking again."
+- **Metric:** `prd_scorecard.pocs.poc_02.P02.question_turn_ratio` + `P02.question_streak_max`
+- **Target:** ratio 35-50%, streak <= 2
+- **Current:** ratio 100%, streak 7
+- **Status:** Needs system prompt fix in `agent.py`
 
-### F2. Response start latency over target
-- **Severity:** Medium — noticeable dead air
-- **Symptom:** Session 85c3: avg 787ms (target <=500ms), p95 1,590ms (target <=800ms)
-- **Possible causes:** Model inference time, context window size, tool call overhead
-- **Fix:** Profile where time is spent. Consider trimming system prompt size, reducing injected context per turn, or pre-warming the session.
-- **Metric:** `latency.response_start.avg` / `.p95`
+### F2. Whiteboard delivery latency marginally over target
+- **Severity:** LOW — 502.7ms vs 500ms target, within noise
+- **Judging criteria:** Technical Implementation (30%)
+- **Metric:** `prd_scorecard.pocs.poc_04.P04.note_delivery_latency_p95`
+- **Target:** <= 500ms
+- **Current:** 502.7ms
+- **Status:** Likely passes on next run, monitor
 
-### F3. Frequent silence gaps (5-17s with no Gemini response)
-- **Severity:** Medium — dead air while student hears nothing
-- **Symptom:** Both sessions show repeated SILENCE alerts (no Gemini events for 5-17s despite ~47 audio chunks/interval being sent). Confirmed in 678a with video also flowing.
-- **Possible causes:** Model processing delay, context window saturation, tool calls blocking audio pipeline
-- **Fix:** Investigate if silence correlates with context size growth. Consider "thinking" indicator on frontend, or backend nudge after N seconds of silence.
+### F3. Response start latency — all null in latest run
+- **Severity:** MEDIUM — dead air while student hears nothing
+- **Judging criteria:** Technical Implementation (30%) — responsiveness
+- **Symptom:** Session 85c3: avg 787ms (target <=500ms), p95 1,590ms (target <=800ms). Latest session: null (latency module may not be recording)
+- **Metric:** `prd_scorecard.pocs.poc_07.P07.response_start_avg` / `.p95`
+- **Target:** avg <= 500ms, p95 <= 800ms
+- **Current:** null (not instrumented or session too short)
+- **Status:** Needs investigation — run longer session to confirm instrumentation
 
 ### F4. Tutor gave incorrect grammar correction
-- **Severity:** Medium — factual accuracy in tutoring
-- **Symptom:** Tutor said `sein**e** Buch` for neuter noun, but correct German is `sein Buch` (neuter nominative = no ending on `sein`).
-- **Fix:** Model hallucination issue. Add grounding/search for grammar rules, or guardrail to flag grammar corrections with low confidence.
+- **Severity:** MEDIUM — factual accuracy in tutoring
+- **Judging criteria:** Technical Implementation (30%) — "hallucination avoidance"
+- **Symptom:** Tutor said `seine Buch` (wrong) instead of `sein Buch` (correct neuter nominative)
+- **Fix:** Model hallucination issue. Grounding search may help.
+- **Status:** Model-level, harder to fix
 
-### F5. Proactive vision not triggering during silence — **CONFIRMED BUG**
-- **Severity:** High — core POC 02 feature is broken
-- **Symptom:** Session 678a (21:22): Student shared screen, stayed completely silent for 37+ seconds. Video frames flowing (3-6/heartbeat), mic=True, speaking=False, away=False. Poke threshold is 6s. **Zero pokes fired.** User reported bad experience ("I was expecting some interventions").
-- **Root cause (confirmed via code trace):**
-  1. **Primary:** `_is_probable_speech_pcm16()` (main.py:2571) uses very low thresholds (`rms >= 420 or peak >= 1700`) to detect speech in raw PCM audio. Ambient mic noise triggers this heuristic, which calls `reset_silence_tracking()` (main.py:3240) up to once per second. This zeroes `silence_started_at`, so the proactive module's silence counter **never reaches the 6s threshold**.
-  2. **Secondary:** `conversation_started` is set to `False` on `mic_start` (main.py:3016). The mic kickoff requires `idle_for >= 5s`, but the same speech heuristic keeps resetting `last_user_activity_at`, delaying kickoff by ~18s. While `conversation_started=False`, the proactive module skips entirely (proactive.py:200).
-  3. **Tertiary:** Non-suppressed `TURN_COMPLETE` events (main.py:3904-3906) also reset silence tracking every ~3s during the suppressed output burst at 21:23:27-21:23:38.
-- **Fix plan (two changes needed):**
-  1. **Stop speech heuristic from resetting proactive silence:** At main.py:3240, do NOT call `reset_silence_tracking()` from the PCM heuristic. The proactive silence counter should only reset on confirmed student speech (`input_transcription` events), not on raw PCM noise. Keep resetting `last_user_activity_at` for idle/away detection.
-  2. **Raise speech heuristic thresholds:** `rms >= 420` and `peak >= 1700` are too sensitive — typical ambient noise on a laptop mic exceeds these. Raise to `rms >= 800` and `peak >= 3000` or similar.
-- **Optional improvement:** Give proactive module its own independent silence timer that only resets on `input_transcription`, fully decoupled from the shared `silence_started_at`.
-- **Metric:** `proactive.poke_count >= 1` after 10s silence with video active
-- **Status:** Root cause identified. Fix ready to implement.
+### F5. Proactive vision not triggering during silence — PREVIOUSLY CONFIRMED BUG
+- **Severity:** HIGH — core "beyond text" feature
+- **Judging criteria:** UX 40% — "visual precision" + "context-awareness"
+- **Symptom:** Session 678a (21:22): 37s silence with screen share, zero pokes.
+- **Root cause:** Speech heuristic resets silence tracking (see detailed trace in previous version)
+- **Current:** Partially fixed — c8a427e6 got 1 poke. But needs robust validation with dedicated silent test.
+- **Metric:** `prd_scorecard.pocs.poc_02.P02.proactive_trigger_count`
+- **Target:** >= 1 poke after 10s silence with camera active
+- **Status:** PARTIALLY FIXED — needs re-test with silent-only scenario
 
-### F6. TURN_DROPPED flood — wasted compute (**NEW**)
-- **Severity:** Low-Medium — no user-facing bug, but wasted tokens
-- **Symptom:** Session 678a debug log shows ~12 `TURN_DROPPED_START` / `TURN_DROPPED_COMPLETE` pairs. Gemini generates extra turns that the ticket gate correctly blocks, but the generation still consumes tokens and may add latency.
-- **Possible causes:** Model is overly chatty; system prompt encourages follow-ups; ticket system works but model doesn't know it's being gated.
-- **Fix:** Consider sending a `send_activity_end()` or similar signal when a turn is dropped to tell Gemini to stop generating. Or add system prompt instruction to wait for student input before speaking again.
+### F6. TURN_DROPPED flood — wasted compute
+- **Severity:** LOW — no user-facing bug
+- **Symptom:** ~12 TURN_DROPPED pairs in session 678a
+- **Fix:** Consider `send_activity_end()` when turn is dropped
+- **Status:** Low priority, investigate if it contributes to latency
 
 ---
 
 ## To Be Tested
 
-### T1. Proactive vision (POC 02) — **BLOCKED on F5 fix**
-- **Previous status:** Tested on Mar 1 21:22 — FAILED. 37s silence with screen share, zero pokes.
-- **Blocked by:** F5 (speech heuristic resets silence tracking). Must fix F5 first, then re-test.
-- **How to re-test after fix:** Share camera or screen showing homework, then **stay silent for 10+ seconds**. Don't talk — let the tutor initiate.
-- **Pass criteria:** poke_count >= 1, nudge_count >= 0
+### T1. Interruption handling — CRITICAL for Live Agents category
+- **Judging criteria:** UX 40% — **explicit category requirement** ("interruption handling" in rubric)
+- **What:** Actively interrupt tutor mid-speech and verify it stops + acknowledges
+- **How:** Start speaking loudly DURING tutor's 1-3s speaking window. Not after.
+- **Metric:** `prd_scorecard.pocs.poc_01.P01.interruption_stop_p95` <= 500ms, `P01.interruptions_observed` >= 1
+- **Current:** 0 interruptions across all sessions. Tutor speaking windows are short (~2s).
+- **Pass criteria:** `interruptions.count >= 1`
 
-### T2. Interruption handling (POC 01) — still needs deliberate test
-- **What:** Actively interrupt the tutor mid-speech and verify it stops + acknowledges
-- **Why:** Session 678a had 0 real interruptions and 12 stale-filtered (tutor already silent when interrupt arrived). Tutor speaking windows are short (~2s), making accidental interruption unlikely.
-- **How:** Start speaking loudly and clearly while tutor is mid-sentence. Check `interruptions.count >= 1`.
-- **Tip:** The tutor's speaking bursts are brief (1-3s from SPEAKING_START to TURN_COMPLETE). You need to talk DURING that window, not after.
-- **Pass criteria:** interruptions.count >= 1, interruption_stop p95 <= 500ms
+### T2. Search grounding / citations — CRITICAL for Technical score
+- **Judging criteria:** Tech 30% — rubric literally says "hallucination avoidance and grounding evidence"
+- **What:** Ask a factual question that triggers Google Search
+- **How:** Say "search for the dative case rules in German" or "look up atomic structure"
+- **Metric:** `prd_scorecard.pocs.poc_05.P05.grounding_event_count` >= 1, `P05.citation_render_rate` = 100%
+- **Current:** 0 grounding events across all sessions
+- **Pass criteria:** `grounding.events >= 1`, `grounding.citations_sent >= 1`
 
-### T3. Search grounding / citations (POC 05) — not tested
-- **What:** Ask a factual question that should trigger grounding search
-- **Why:** 0 grounding events across both sessions
-- **How:** Ask something like "What is the rule for dative case in German?" or a fact the tutor should look up
-- **Pass criteria:** grounding.events >= 1, citations_sent >= 1
+### T3. Multilingual purity — HIGH for UX score
+- **Judging criteria:** UX 40% — demo differentiation (3 languages in one family)
+- **What:** Run a full session in one non-English language, measure purity rate
+- **How:** Run German-only or Portuguese-only session for 3+ min
+- **Metric:** `prd_scorecard.pocs.poc_03.P03.language_purity_rate` >= 98%
+- **Current:** null (never measured)
+- **Pass criteria:** `language_purity_rate >= 98%`
 
-### T4. Screen share toggle (POC 10) — not tested
+### T4. Mastery verification protocol
+- **Judging criteria:** UX 40% — depth of tutoring intelligence, "beyond text"
+- **What:** Solve an exercise correctly and verify 3-step mastery protocol fires
+- **How:** Answer correctly, check if tutor asks explain-why + transfer problem
+- **Metric:** `prd_scorecard.pocs.poc_14.P14.mastery_verifications` >= 1
+- **Current:** null (never triggered)
+- **Pass criteria:** `mastery.verifications_completed >= 1`
+
+### T5. Screen share toggle
+- **Judging criteria:** UX 40% — "media interleaving"
 - **What:** Switch between camera and screen share during a session
-- **Why:** 0 source switches across both sessions
-- **How:** Start with camera, switch to screen share, then stop sharing. Verify no errors.
-- **Pass criteria:** source_switches >= 1, stop_sharing_count >= 1, errors = []
+- **How:** Start with camera, switch to screen share, switch back, then stop sharing
+- **Metric:** `prd_scorecard.pocs.poc_10.P10.source_switch_count` >= 1, errors = 0
+- **Current:** 0 source switches
+- **Pass criteria:** `screen_share.source_switches >= 1`, `screen_share.stop_sharing_count >= 1`
 
-### T5. Idle / away flow (POC 11) — partially tested
+### T6. Idle / away flow
+- **Judging criteria:** UX 40% — "context-awareness", experience fluidity
 - **What:** Go silent long enough to trigger away mode, then resume
-- **Why:** Session 85c3 had 1 gentle checkin but away never activated. Session 678a had 0 checkins (session too short).
-- **How:** Stop talking for 2+ minutes, verify away_activated fires. Then speak again, verify away_resumed.
-- **Pass criteria:** away_activated_count >= 1, away_resumed_count >= 1
+- **How:** Stop talking for 2+ min, verify away_activated fires. Speak again, verify resumed.
+- **Metric:** `prd_scorecard.pocs.poc_11.P11.away_resume_flow_observed`
+- **Current:** 0 checkins (sessions too short), away never activated
+- **Pass criteria:** `idle.away_activated_count >= 1`, `idle.away_resumed_count >= 1`
 
-### T6. Session resumption (POC 06) — not tested
-- **What:** Disconnect and reconnect with resumption enabled
-- **Why:** `resumption_enabled: false` in both sessions
-- **How:** Enable resumption in config, start session, kill WS, reconnect. Verify context preserved.
-- **Pass criteria:** session_resume_successes >= 1
+### T7. Session resilience (reconnect)
+- **Judging criteria:** Tech 30% — "error/edge case handling"
+- **What:** Disconnect and reconnect, verify stream recovers
+- **How:** Kill WS mid-session, verify backend retries and reconnects
+- **Metric:** `prd_scorecard.pocs.poc_06.P06.reconnect_success_rate` = 100%
+- **Current:** 0 retry attempts (no disconnects tested)
+- **Pass criteria:** `resilience.stream_reconnect_successes >= 1`
 
-### T7. Multilingual purity (POC 03) — not tested
-- **What:** Run a full session in one language and measure purity rate
-- **Why:** Language purity metric was null in both sessions
-- **How:** Run a German-only session or explicitly set language preference.
-- **Pass criteria:** language_purity_rate >= 98%
+### T8. Latency instrumentation
+- **Judging criteria:** Tech 30% — responsiveness
+- **What:** Run a session long enough for latency reports to populate
+- **How:** Have 10+ tutor turns, check latency report
+- **Metric:** All POC 07 checks: `response_start.avg <= 500ms`, `.p95 <= 800ms`, `interruption_stop.p95 <= 400ms`
+- **Current:** All null in latest session
+- **Pass criteria:** All P07 checks populated and within targets
 
-### T8. Question streak after fix (validates F1)
-- **What:** After fixing the system prompt (F1), re-run and verify question ratio dropped
-- **How:** Run same type of session, check scorecard
-- **Pass criteria:** question_turn_ratio 35-50%, max_question_streak <= 2
+### T9. Emotional adaptation (qualitative)
+- **Judging criteria:** UX 40% — "natural immersive interaction"
+- **What:** Show frustration signals and observe tutor response
+- **How:** Say "I don't get it" 3+ times, sigh, show confusion
+- **Pass criteria:** Qualitative — tutor slows down, simplifies, encourages
+
+### T10. Question balance after F1 fix (validates F1)
+- **Judging criteria:** Demo 30% — "experience fluidity"
+- **What:** After fixing system prompt, re-run and verify question ratio dropped
+- **How:** Run 5+ min tutoring session, check scorecard
+- **Metric:** `P02.question_turn_ratio` 35-50%, `P02.question_streak_max` <= 2
+- **Current:** 100% ratio, streak 7
+- **Pass criteria:** ratio 35-50%, streak <= 2
 
 ---
 
-## Updated Priority Order
+## Scorecard Target for Submission
 
-1. **F5** (proactive vision) — **fix NOW**, core POC 02 feature is broken. Two code changes in main.py.
-2. **T1 + T2** (combined test session) — re-test proactive after F5 fix + interrupt test. One session, two tests.
-3. **F1** (question ratio) — system prompt tweak, biggest UX win
-4. **F2/F3** (latency/silence) — profile and investigate
-5. **F6** (turn dropped flood) — investigate if it's contributing to F2/F3
-6. **T3-T7** (remaining POC coverage)
-7. **F4** (grammar accuracy) — model-level, harder to fix
-8. **T8** (validate F1 fix)
+### Must Pass (demo-critical)
+| Check | Target | Current | Gap |
+|---|---|---|---|
+| P01.interruptions_observed | >= 1 | 0 | TEST |
+| P02.proactive_trigger_count | >= 1 | 1 | OK |
+| P02.question_turn_ratio | 35-50% | 100% | FIX |
+| P02.question_streak_max | <= 2 | 7 | FIX |
+| P04.whiteboard_usage | >= 1 | 6 | OK |
+| P05.grounding_event_count | >= 1 | 0 | TEST |
+| P09.answer_leaks | 0 | 0 | OK |
+| P99.interruption_checkpoint | pass | fail | TEST |
+| P99.grounding_checkpoint | pass | fail | TEST |
+
+### Should Pass (competitive edge)
+| Check | Target | Current | Gap |
+|---|---|---|---|
+| P03.language_purity_rate | >= 98% | null | TEST |
+| P07.response_start_avg | <= 500ms | null | TEST |
+| P07.response_start_p95 | <= 800ms | null | TEST |
+| P14.mastery_verifications | >= 1 | null | TEST |
+| P11.away_resume_flow | activated+resumed | null | TEST |
+| P10.source_switch_count | >= 1 | null | TEST |
+
+### Nice to Have (bonus differentiation)
+| Check | Target | Current | Gap |
+|---|---|---|---|
+| P06.reconnect_success_rate | 100% | null | TEST |
+| P06.session_resumption | 100% | null | TEST |
+| P13.memory_recall | >= 1 | 1 | OK |
+| P13.checkpoints_saved | >= 1 | 3 | OK |
+
+---
+
+## Overall Goal: 19/49 -> 35+/49 checks passing before submission
+
+Current auto pass rate: 41.3%. Target: 70%+.
+
+**Minimum viable for confident demo:** Fix F1 (question balance) + test T1 (interruption) + test T2 (grounding) = unblocks Hero Flow (POC 99).

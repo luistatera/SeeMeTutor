@@ -284,21 +284,6 @@ def analyze_turn_language(
     }
 
 
-def is_confusion_signal(text: str, runtime_state: dict | None = None) -> bool:
-    candidate = str(text or "").strip()
-    if not candidate:
-        return False
-
-    token_count = len(_tokens(candidate))
-    question_marks = candidate.count("?")
-    if question_marks >= 2:
-        return True
-    if question_marks >= 1 and token_count <= 8:
-        return True
-    if token_count <= 3 and candidate.endswith("..."):
-        return True
-    return False
-
 
 def init_language_state(
     language_policy: dict | None = None,
@@ -316,7 +301,6 @@ def init_language_state(
         "language_session_langs": session_langs,
         "language_last_student_lang": initial_student_lang,
         "language_last_tutor_lang": "unknown",
-        "language_confusion_streak": 0,
         "language_last_control_signature": None,
         "language_turn_text_parts": [],
         "language_turn_transcript_parts": [],
@@ -324,7 +308,6 @@ def init_language_state(
             "tutor_turns": 0,
             "single_language_turns": 0,
             "mixed_turns": 0,
-            "confusion_signals": 0,
             "language_flips": 0,
             "control_prompts_sent": 0,
         },
@@ -387,7 +370,6 @@ def _maybe_control_prompt(runtime_state: dict, reason: str, *, force: bool) -> s
 
 def handle_student_transcript(text: str, runtime_state: dict) -> dict[str, Any]:
     result: dict[str, Any] = {"control_prompt": None, "events": []}
-    metrics = runtime_state.setdefault("language_metrics", {})
     session_langs = _session_language_set(runtime_state)
 
     student_lang = detect_language(
@@ -403,23 +385,6 @@ def handle_student_transcript(text: str, runtime_state: dict) -> dict[str, Any]:
     if student_lang in session_langs:
         runtime_state["language_last_student_lang"] = student_lang
     result["student_language"] = student_lang
-
-    confusion = is_confusion_signal(text, runtime_state)
-    if confusion:
-        runtime_state["language_confusion_streak"] = int(
-            runtime_state.get("language_confusion_streak", 0)
-        ) + 1
-        metrics["confusion_signals"] = int(metrics.get("confusion_signals", 0)) + 1
-        result["events"].append(
-            {
-                "event": "confusion_signal",
-                "streak": runtime_state["language_confusion_streak"],
-                "lang": student_lang,
-            }
-        )
-    else:
-        if runtime_state.get("language_confusion_streak", 0) > 0:
-            runtime_state["language_confusion_streak"] = 0
 
     expected = expected_language(runtime_state)
     result["expected_language"] = expected
@@ -506,7 +471,6 @@ def build_language_metric_snapshot(runtime_state: dict) -> dict[str, Any]:
         "tutor_turns": tutor_turns,
         "purity_rate": round(purity_rate, 1),
         "mixed_turns": int(metrics.get("mixed_turns", 0)),
-        "confusion_signals": int(metrics.get("confusion_signals", 0)),
         "language_flips": int(metrics.get("language_flips", 0)),
         "control_prompts_sent": int(metrics.get("control_prompts_sent", 0)),
     }

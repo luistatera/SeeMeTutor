@@ -22,7 +22,7 @@ from modules.memory_store import (
     save_checkpoint,
     upsert_memory_cells,
 )
-from modules.search_intent import SEARCH_INTENT_SIGNAL_WINDOW_S
+SEARCH_INTENT_SIGNAL_WINDOW_S = 10.0
 
 logger = logging.getLogger(__name__)
 

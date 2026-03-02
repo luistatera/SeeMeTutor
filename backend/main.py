@@ -51,19 +51,8 @@ from modules.whiteboard import (
     whiteboard_dispatcher,
 )
 from modules.guardrails import init_guardrails_state
-from modules.grounding import init_grounding_state
-from modules.latency import (
-    init_latency_state,
-    format_latency_summary,
-)
 from modules.live_session import (
     build_live_run_config,
-    load_latest_resumption_handle,
-    save_resumption_handle,
-)
-from modules.prompt_capture import (
-    capture_prompt_text,
-    send_content_with_prompt_capture,
 )
 from modules.memory_manager import (
     build_hidden_memory_context,
@@ -393,15 +382,14 @@ ADK_BASE_RUN_CONFIG = RunConfig(
 )
 
 
-def _build_session_run_config(resumption_handle: str | None = None) -> tuple[RunConfig, dict]:
-    """Build per-session RunConfig with optional compression + resumption."""
+def _build_session_run_config() -> tuple[RunConfig, dict]:
+    """Build per-session RunConfig with optional compression."""
     run_config, meta = build_live_run_config(
         ADK_BASE_RUN_CONFIG,
         types,
         compression_enabled=LIVE_COMPRESSION_ENABLED,
         compression_trigger_tokens=LIVE_COMPRESSION_TRIGGER_TOKENS,
         compression_target_tokens=LIVE_COMPRESSION_TARGET_TOKENS,
-        resumption_handle=resumption_handle,
     )
     return run_config, meta
 
@@ -601,10 +589,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             str(memory_recall.get("summary") or ""),
         )
 
-    resumption_handle = ""
-    session_run_config, run_config_meta = _build_session_run_config(
-        resumption_handle=resumption_handle or None
-    )
+    session_run_config, run_config_meta = _build_session_run_config()
 
     session_id = raw_session_id
     session_start = float(selected_session.get("started_at") or time.time())
@@ -791,10 +776,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "track_id": backlog_context.get("track_id"),
         "session_run_config": session_run_config,
         "session_run_config_meta": run_config_meta,
-        "session_resumption_handle": resumption_handle,
-        "session_resumption_requested": bool(resumption_handle),
-        "session_resumption_active": False,
-        "session_resumption_fallback_used": False,
         "live_token_estimate": 0,
         "live_compression_trigger_tokens": LIVE_COMPRESSION_TRIGGER_TOKENS,
         "live_compression_target_tokens": LIVE_COMPRESSION_TARGET_TOKENS,
@@ -804,8 +785,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         **init_screen_share_state(),
         **init_whiteboard_state(),
         **init_guardrails_state(),
-        **init_grounding_state(),
-        **init_latency_state(session_start),
         **init_memory_state(
             checkpoint_interval_s=MEMORY_CHECKPOINT_INTERVAL_S,
             recall_budget_tokens=MEMORY_RECALL_BUDGET_TOKENS,
@@ -866,15 +845,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # Create queue for browser→Gemini upstream
             live_queue = LiveRequestQueue()
 
-            # Persist system instruction prompt snapshot (sent via ADK run config).
-            capture_prompt_text(
-                SYSTEM_PROMPT,
-                session_id=session_id,
-                source="system_instruction",
-                role="system",
-                runtime_state=runtime_state,
-            )
-
             # Send [SESSION START] hidden turn with student context
             student_context = {
                 "student_name": session_state.get("student_name"),
@@ -920,96 +890,67 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "previous_notes_count": len(session_state.get("previous_notes", [])),
                 "memory_recall_count": int(memory_recall.get("selected_count", 0)),
             }
+            # --- MERGED SESSION START: single hidden turn instead of 4 ---
             import json as _json
-            send_content_with_prompt_capture(
-                live_queue,
-                types.Content(
-                    role="user",
-                    parts=[types.Part(text=(
-                        "[SESSION START — CONTEXT ONLY, DO NOT SPEAK]\n"
-                        + _json.dumps(student_context, ensure_ascii=False)
-                        + "\n[IMPORTANT: This is background context only. "
-                        "Do NOT generate any audio or text response to this message. "
-                        "Wait silently until the student speaks to you via their microphone. "
-                        "When the student speaks, greet them naturally and begin the session.]"
-                    ))],
-                ),
-                session_id=session_id,
-                source="session_start_context",
-                runtime_state=runtime_state,
+            startup_parts = []
+
+            # Part 1: student context
+            startup_parts.append(
+                "[SESSION START — CONTEXT ONLY, DO NOT SPEAK]\n"
+                + _json.dumps(student_context, ensure_ascii=False)
             )
+
+            # Part 2: memory recall (if any)
             memory_context = build_hidden_memory_context(memory_recall)
             if memory_context:
-                send_content_with_prompt_capture(
-                    live_queue,
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=memory_context)],
-                    ),
-                    session_id=session_id,
-                    source="memory_recall_context",
-                    runtime_state=runtime_state,
-                )
+                startup_parts.append(memory_context)
                 runtime_state["memory_recall_count"] = int(runtime_state.get("memory_recall_count", 0)) + 1
+
+            # Part 3: resource transcript (if any)
             resource_transcript_context = str(
                 session_state.get("resource_transcript_context") or ""
             ).strip()
             if resource_transcript_context:
-                send_content_with_prompt_capture(
-                    live_queue,
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(
-                                text=(
-                                    "INTERNAL CONTROL: Resource transcript context follows. "
-                                    "Treat as background grounding.\n"
-                                    f"{resource_transcript_context}\n"
-                                    "[IMPORTANT: Use this transcript as grounding context for tutoring in this session. "
-                                    "Do not read it aloud verbatim. Ask what the student wants to understand first.]"
-                                )
-                            )
-                        ],
-                    ),
-                    session_id=session_id,
-                    source="resource_transcript_context",
-                    runtime_state=runtime_state,
+                startup_parts.append(
+                    "Resource transcript context (use as grounding, do not read aloud):\n"
+                    + resource_transcript_context
                 )
+
+            # Part 4: plan bootstrap control (if needed)
             if bool(session_state.get("plan_bootstrap_required")):
                 transcript_available_for_bootstrap = bool(
                     session_state.get("resource_transcript_available")
                     or resource_transcript_context
                 )
                 if not transcript_available_for_bootstrap:
-                    control_text = (
+                    startup_parts.append(
                         "INTERNAL CONTROL: This session requires plan bootstrap and no structured resource text is available. "
                         "On your first spoken response after greeting, call mark_plan_fallback with a short reason, "
-                        "then ask the student which milestone to start and call set_session_phase('tutoring'). "
-                        "Do not mention this control message."
+                        "then ask the student which milestone to start and call set_session_phase('tutoring')."
                     )
                 else:
-                    control_text = (
+                    startup_parts.append(
                         "INTERNAL CONTROL: This session requires a 0-to-hero milestone plan bootstrap. "
                         "On your first spoken response after greeting, you MUST call write_notes 6 to 10 times "
                         "with note_type='checklist_item' using unique titles 'Milestone 1 — ...', "
                         "'Milestone 2 — ...', etc., based on session_setup and any resource transcript context when available. "
-                        "Then ask the student which milestone to start and call set_session_phase('tutoring'). "
-                        "Do not mention this control message."
+                        "Then ask the student which milestone to start and call set_session_phase('tutoring')."
                     )
-                send_content_with_prompt_capture(
-                    live_queue,
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(
-                                text=control_text
-                            )
-                        ],
-                    ),
-                    session_id=session_id,
-                    source="plan_bootstrap_control",
-                    runtime_state=runtime_state,
+
+            # Final instruction
+            startup_parts.append(
+                "[IMPORTANT: This is background context only. "
+                "Do NOT generate any audio or text response to this message. "
+                "Wait silently until the student speaks via their microphone. "
+                "When the student speaks, greet them naturally and begin the session.]"
+            )
+
+            live_queue.send_content(
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text="\n---\n".join(startup_parts))],
                 )
+            )
             logger.info(
                 "Session %s run config: compression=%s(%s) resumption=%s(%s)",
                 session_id,
@@ -1140,17 +1081,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             )
         except Exception:
             logger.warning("Session %s: final memory checkpoint failed", session_id, exc_info=True)
-        try:
-            latest_handle = str(runtime_state.get("session_resumption_handle") or "").strip()
-            if latest_handle:
-                await save_resumption_handle(
-                    firestore_client,
-                    student_id=raw_student_id,
-                    session_id=session_id,
-                    handle=latest_handle,
-                )
-        except Exception:
-            logger.warning("Session %s: final resumption handle persist failed", session_id, exc_info=True)
         await _unregister_active_student_session(raw_student_id, session_id)
         unregister_whiteboard_queue(session_id)
         unregister_topic_update_queue(session_id)
@@ -1221,17 +1151,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 logger.warning("Session %s: failed to copy notes to student backlog", session_id, exc_info=True)
 
         logger.info("Session %s ended after %ds (reason: %s)", session_id, duration, ended_reason)
-        try:
-            logger.info(
-                "Session %s %s",
-                session_id,
-                format_latency_summary(
-                    runtime_state,
-                    turns=int(report.data["turns"]["count"]) if report else 0,
-                ),
-            )
-        except Exception:
-            logger.debug("Session %s: failed to format latency summary", session_id, exc_info=True)
 
         # Save test report
         if report:

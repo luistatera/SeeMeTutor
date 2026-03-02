@@ -27,10 +27,6 @@ from modules.conversation import (
     is_student_question,
     is_study_related_question,
 )
-from modules.grounding import (
-    extract_grounding,
-    extract_inline_url_citations,
-)
 from modules.guardrails import (
     check_student_input,
     check_tutor_output,
@@ -38,19 +34,9 @@ from modules.guardrails import (
     record_guardrail_event,
     record_reinforcement,
 )
-from modules.latency import (
-    record_latency_metric,
-    build_latency_report,
-)
 from modules.live_session import (
     compute_retry_backoff,
-    extract_session_resumption_handle,
     extract_total_token_estimate,
-    save_resumption_handle,
-)
-from modules.prompt_capture import (
-    capture_prompt_text,
-    send_content_with_prompt_capture,
 )
 from modules.memory_manager import append_transcript_piece
 from modules.note_storage import (
@@ -67,12 +53,6 @@ from modules.screen_share import (
     STOP_SHARING_PROMPT,
     SOURCE_SWITCH_COOLDOWN_S,
 )
-from modules.search_intent import (
-    build_force_search_control_prompt,
-    detect_explicit_search_request,
-    extract_search_query,
-    is_likely_educational_search,
-)
 from modules.session_helpers import (
     _append_tutor_turn_part,
     _finalize_tutor_turn,
@@ -86,6 +66,7 @@ from modules.tutor_preferences import (
     PACE_CONTROL_INSTRUCTIONS,
     ANTI_REPEAT_CONTROL_PROMPT,
     ANTI_QUESTION_LOOP_CONTROL_PROMPT,
+    ANTI_QUESTION_LOOP_ESCALATED_PROMPT,
     _normalize_tutor_preferences,
     _build_tutor_preferences_control_prompt,
 )
@@ -93,7 +74,7 @@ from modules.tutor_preferences import (
 logger = logging.getLogger(__name__)
 
 SendJsonFn = Callable[[WebSocket, dict], Awaitable[None]]
-BuildRunConfigFn = Callable[[str | None], tuple[RunConfig, dict]]
+BuildRunConfigFn = Callable[[], tuple[RunConfig, dict]]
 
 
 # ---------------------------------------------------------------------------
@@ -281,12 +262,8 @@ async def _forward_to_gemini(
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 control_prompt = _build_tutor_preferences_control_prompt(updated_preferences)
                 try:
-                    send_content_with_prompt_capture(
-                        queue,
+                    queue.send_content(
                         types.Content(role="user", parts=[types.Part(text=control_prompt)]),
-                        session_id=session_id,
-                        source="tutor_preferences_update",
-                        runtime_state=runtime_state,
                     )
                     runtime_state["last_hidden_prompt_at"] = time.time()
                 except Exception:
@@ -306,12 +283,8 @@ async def _forward_to_gemini(
                 runtime_state["speech_pace"] = pace
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 try:
-                    send_content_with_prompt_capture(
-                        queue,
+                    queue.send_content(
                         types.Content(role="user", parts=[types.Part(text=instruction)]),
-                        session_id=session_id,
-                        source="speech_pace_update",
-                        runtime_state=runtime_state,
                     )
                 except Exception:
                     logger.warning("Session %s: failed to forward speech pace command", session_id, exc_info=True)
@@ -321,10 +294,7 @@ async def _forward_to_gemini(
                 if runtime_state.get("assistant_speaking"):
                     _mark_student_activity(runtime_state, unlock_turn=True)
                     runtime_state["_student_has_spoken"] = True
-                    if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
-                        runtime_state["latency_first_request_at"] = now
                     runtime_state["assistant_speaking"] = False
-                    runtime_state["latency_last_barge_in_at"] = now
                     await _send_json(websocket, {"type": "interrupted"})
                 else:
                     # Stale/echo VAD spikes can emit barge_in even when the tutor is
@@ -377,12 +347,8 @@ async def _forward_to_gemini(
                 prompt = get_switch_prompt(new_source)
                 if prompt:
                     try:
-                        send_content_with_prompt_capture(
-                            queue,
+                        queue.send_content(
                             types.Content(role="user", parts=[types.Part(text=prompt)]),
-                            session_id=session_id,
-                            source="source_switch",
-                            runtime_state=runtime_state,
                         )
                         runtime_state["last_hidden_prompt_at"] = now
                     except Exception:
@@ -402,12 +368,8 @@ async def _forward_to_gemini(
                 if report:
                     report.record_stop_sharing(old_source)
                 try:
-                    send_content_with_prompt_capture(
-                        queue,
+                    queue.send_content(
                         types.Content(role="user", parts=[types.Part(text=STOP_SHARING_PROMPT)]),
-                        session_id=session_id,
-                        source="stop_sharing",
-                        runtime_state=runtime_state,
                     )
                     runtime_state["last_hidden_prompt_at"] = now
                 except Exception:
@@ -539,7 +501,7 @@ async def _iter_runner_events_with_retry(
     runtime_state: dict | None = None,
     report: Any | None = None,
 ):
-    """Yield ADK stream events with resumption fallback and bounded retries."""
+    """Yield ADK stream events with bounded retries."""
     attempt = 0
     while True:
         sent_reconnected = False
@@ -547,7 +509,7 @@ async def _iter_runner_events_with_retry(
         if isinstance(runtime_state, dict):
             active_run_config = runtime_state.get("session_run_config")
         if active_run_config is None:
-            active_run_config, _ = build_session_run_config(None)
+            active_run_config, _ = build_session_run_config()
         try:
             async for event in adk_runner.run_live(
                 user_id=user_id,
@@ -555,21 +517,6 @@ async def _iter_runner_events_with_retry(
                 live_request_queue=live_queue,
                 run_config=active_run_config,
             ):
-                if (
-                    isinstance(runtime_state, dict)
-                    and runtime_state.get("session_resumption_requested")
-                    and not runtime_state.get("session_resumption_active")
-                ):
-                    runtime_state["session_resumption_active"] = True
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "assistant_state",
-                            "data": {"state": "active", "reason": "session_resumed"},
-                        },
-                    )
-                    if report:
-                        report.record_session_resume_success()
                 if attempt > 0 and not sent_reconnected:
                     sent_reconnected = True
                     await _send_json(
@@ -586,32 +533,6 @@ async def _iter_runner_events_with_retry(
         except WebSocketDisconnect:
             raise
         except Exception as exc:
-            if (
-                isinstance(runtime_state, dict)
-                and runtime_state.get("session_resumption_requested")
-                and not runtime_state.get("session_resumption_fallback_used")
-            ):
-                runtime_state["session_resumption_fallback_used"] = True
-                runtime_state["session_resumption_requested"] = False
-                runtime_state["session_resumption_active"] = False
-                fallback_cfg, fallback_meta = build_session_run_config(None)
-                runtime_state["session_run_config"] = fallback_cfg
-                runtime_state["session_run_config_meta"] = fallback_meta
-                await _send_json(
-                    websocket,
-                    {
-                        "type": "assistant_state",
-                        "data": {"state": "reconnecting", "reason": "resume_failed_fallback_fresh"},
-                    },
-                )
-                if report:
-                    report.record_session_resume_fallback(str(exc))
-                logger.warning(
-                    "Session %s: resumption failed, falling back to fresh stream: %s",
-                    session_id,
-                    exc,
-                )
-                continue
             if attempt >= adk_stream_max_retries:
                 if report:
                     report.record_stream_reconnect_failure(attempt, str(exc))
@@ -722,22 +643,6 @@ async def _forward_to_client(
             if dc is not None:
                 dc["last_gemini_event_at"] = time.time()
 
-            # Capture and persist session resumption handles emitted by Live API.
-            new_resumption_handle = extract_session_resumption_handle(event)
-            if new_resumption_handle:
-                previous_handle = str(runtime_state.get("session_resumption_handle") or "")
-                if new_resumption_handle != previous_handle:
-                    runtime_state["session_resumption_handle"] = new_resumption_handle
-                    runtime_state["session_resumption_last_updated_at"] = time.time()
-                    await save_resumption_handle(
-                        firestore_client,
-                        student_id=str(runtime_state.get("student_id") or ""),
-                        session_id=session_id,
-                        handle=new_resumption_handle,
-                    )
-                    if report:
-                        report.record_session_resumption_handle_saved()
-
             token_estimate = extract_total_token_estimate(event)
             if token_estimate is not None and token_estimate > 0:
                 runtime_state["live_token_estimate"] = int(token_estimate)
@@ -834,59 +739,8 @@ async def _forward_to_client(
                                 "SPEAKING_START sid=%s (was silent, now audio)",
                                 session_id[:8],
                             )
-                            now_audio_out = time.time()
-                            ref_time = float(runtime_state.get("latency_last_student_transcript_at", 0.0))
-                            if ref_time > 0 and ((now_audio_out - ref_time) * 1000) > response_ref_max_age_ms:
-                                ref_time = 0.0
-                            if ref_time <= 0:
-                                ref_time = float(runtime_state.get("latency_last_audio_in_at", 0.0))
-                            if ref_time > 0:
-                                response_ms = (now_audio_out - ref_time) * 1000
-                                latency_event = record_latency_metric(
-                                    runtime_state,
-                                    "response_start",
-                                    response_ms,
-                                )
-                                if latency_event:
-                                    await _send_json(
-                                        websocket,
-                                        {"type": "latency_event", "data": latency_event},
-                                    )
-                                    if report:
-                                        report.record_latency_event(
-                                            latency_event.get("metric", ""),
-                                            latency_event.get("value_ms", 0),
-                                            bool(latency_event.get("is_alert", False)),
-                                        )
-                            if not runtime_state.get("latency_first_byte_recorded", False):
-                                runtime_state["latency_first_byte_recorded"] = True
-                                runtime_state["latency_first_audio_out_at"] = now_audio_out
-                                first_ref = float(runtime_state.get("latency_first_request_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = float(runtime_state.get("latency_last_audio_in_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = float(runtime_state.get("latency_session_start_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = now_audio_out
-                                first_byte_ms = (now_audio_out - first_ref) * 1000
-                                first_byte_event = record_latency_metric(
-                                    runtime_state,
-                                    "first_byte",
-                                    first_byte_ms,
-                                )
-                                if first_byte_event:
-                                    await _send_json(
-                                        websocket,
-                                        {"type": "latency_event", "data": first_byte_event},
-                                    )
-                                    if report:
-                                        report.record_latency_event(
-                                            first_byte_event.get("metric", ""),
-                                            first_byte_event.get("value_ms", 0),
-                                            bool(first_byte_event.get("is_alert", False)),
-                                        )
                             lat = latency_state.get(session_id)
-                            if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
+                            if lat and lat.get("awaiting_first_response") and lat.get("last_audio_in", 0) > 0:
                                 delta_ms = (time.time() - lat["last_audio_in"]) * 1000
                                 logger.info(
                                     "LATENCY session=%s response_start_ms=%.0f",
@@ -946,29 +800,6 @@ async def _forward_to_client(
                             session_id[:8], str(cleaned)[:120],
                         )
                         await _send_json(websocket, {"type": "text", "data": cleaned})
-                        inline_citations = extract_inline_url_citations(
-                            cleaned,
-                            runtime_state.get("last_forced_search_query", ""),
-                        )
-                        if inline_citations:
-                            seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
-                            for cit in inline_citations[:1]:
-                                url = str(cit.get("url", "")).strip()
-                                if url and url in seen_urls:
-                                    continue
-                                if url:
-                                    seen_urls.add(url)
-                                runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
-                                runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
-                                query = cit.get("query", "")
-                                if query:
-                                    queries_list = runtime_state.get("grounding_search_queries", [])
-                                    queries_list.append(query)
-                                    runtime_state["grounding_search_queries"] = queries_list
-                                await _send_json(websocket, {"type": "grounding", "data": cit})
-                                if report:
-                                    report.record_grounding_citation(cit.get("source", ""), query)
-                                break
                         turn_had_output = True
 
             # --- Turn complete ---
@@ -1004,11 +835,6 @@ async def _forward_to_client(
                 )
                 if report:
                     report.record_turn_complete(audio_response_chunks)
-                runtime_state["latency_last_turn_complete_at"] = time.time()
-                latency_report = build_latency_report(runtime_state, turns=turn_count)
-                await _send_json(websocket, {"type": "latency_report", "data": latency_report})
-                if report:
-                    report.record_latency_report(latency_report)
                 audio_response_chunks = 0
                 completed_with_output = turn_had_output
                 if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
@@ -1072,37 +898,46 @@ async def _forward_to_client(
                         # Nudge the model away from repeating the same prompt pattern.
                         now = time.time()
                         if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
-                            send_content_with_prompt_capture(
-                                live_queue,
+                            live_queue.send_content(
                                 types.Content(
                                     role="user",
                                     parts=[types.Part(text=ANTI_REPEAT_CONTROL_PROMPT)],
-                                ),
-                                session_id=session_id,
-                                source="anti_repeat_control",
-                                runtime_state=runtime_state,
+                                )
                             )
                             runtime_state["last_hidden_prompt_at"] = now
 
-                    if is_question_like_turn(turn_text):
+                    # Track question streak using the SAME metric as the
+                    # scorecard (text.endswith("?")) — not the lenient
+                    # is_question_like_turn() heuristic.
+                    if turn_text.rstrip().endswith("?"):
                         runtime_state["question_like_streak"] = int(
                             runtime_state.get("question_like_streak", 0)
                         ) + 1
                     else:
                         runtime_state["question_like_streak"] = 0
 
-                    if runtime_state.get("question_like_streak", 0) >= 2:
+                    # Fire after just 1 consecutive question so the model
+                    # gets the nudge BEFORE producing a 2nd question turn.
+                    # The live audio pipeline is real-time — waiting until
+                    # streak==2 means turn 3 is already being generated.
+                    q_streak = int(runtime_state.get("question_like_streak", 0))
+                    if q_streak >= 1:
                         now = time.time()
                         if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
-                            send_content_with_prompt_capture(
-                                live_queue,
+                            # Escalate: use stronger prompt after 3+ streak
+                            if q_streak >= 3:
+                                ctrl_prompt = ANTI_QUESTION_LOOP_ESCALATED_PROMPT
+                            else:
+                                ctrl_prompt = ANTI_QUESTION_LOOP_CONTROL_PROMPT
+                            logger.info(
+                                "Session %s: ANTI-QUESTION control fired (streak=%d, escalated=%s)",
+                                session_id, q_streak, q_streak >= 3,
+                            )
+                            live_queue.send_content(
                                 types.Content(
                                     role="user",
-                                    parts=[types.Part(text=ANTI_QUESTION_LOOP_CONTROL_PROMPT)],
-                                ),
-                                session_id=session_id,
-                                source="anti_question_loop_control",
-                                runtime_state=runtime_state,
+                                    parts=[types.Part(text=ctrl_prompt)],
+                                )
                             )
                             runtime_state["last_hidden_prompt_at"] = now
                     runtime_state["last_tutor_prompt_text"] = turn_text
@@ -1151,59 +986,12 @@ async def _forward_to_client(
                         session_id, delta_ms,
                     )
                     lat["awaiting_first_response"] = False
-                barge_in_at = float(runtime_state.get("latency_last_barge_in_at", 0.0))
-                if barge_in_at > 0:
-                    interruption_stop_ms = (time.time() - barge_in_at) * 1000
-                    runtime_state["latency_last_barge_in_at"] = 0.0
-                    latency_event = record_latency_metric(
-                        runtime_state,
-                        "interruption_stop",
-                        interruption_stop_ms,
-                    )
-                    if latency_event:
-                        await _send_json(
-                            websocket,
-                            {"type": "latency_event", "data": latency_event},
-                        )
-                        if report:
-                            report.record_latency_event(
-                                latency_event.get("metric", ""),
-                                latency_event.get("value_ms", 0),
-                                bool(latency_event.get("is_alert", False)),
-                            )
                 await _send_json(websocket, {"type": "interrupted"})
                 logger.info(
                     "INTERRUPTED by student (had sent %d audio chunks before interruption)",
                     audio_response_chunks,
                 )
                 audio_response_chunks = 0
-
-            # --- Grounding metadata ---
-            grounding_citations = extract_grounding(event)
-            if grounding_citations:
-                seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
-                for cit in grounding_citations[:1]:  # Only top citation
-                    url = str(cit.get("url", "")).strip()
-                    if url and url in seen_urls:
-                        continue
-                    if url:
-                        seen_urls.add(url)
-                    runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
-                    runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
-                    query = cit.get("query", "")
-                    if query:
-                        queries_list = runtime_state.get("grounding_search_queries", [])
-                        queries_list.append(query)
-                        runtime_state["grounding_search_queries"] = queries_list
-                    logger.info(
-                        "GROUNDING #%d: %s (%s)",
-                        runtime_state["grounding_citations_sent"],
-                        cit["snippet"][:80],
-                        cit["source"],
-                    )
-                    await _send_json(websocket, {"type": "grounding", "data": cit})
-                    if report:
-                        report.record_grounding_citation(cit["source"], cit.get("query", ""))
 
             # --- Transcription ---
             if event.input_transcription and event.input_transcription.text and event.input_transcription.finished:
@@ -1220,63 +1008,12 @@ async def _forward_to_client(
                 student_text = event.input_transcription.text
                 logger.info("STUDENT TRANSCRIPT: %s", student_text)
 
-                # Log effective turn prompt text derived from student audio.
-                capture_prompt_text(
-                    student_text,
-                    session_id=session_id,
-                    source="student_audio_transcript",
-                    role="user",
-                    runtime_state=runtime_state,
-                    extra={"derived_from": "audio_input_transcription"},
-                )
-
                 # Only confirmed non-echo transcripts unlock new tutor turns.
                 _mark_student_activity(runtime_state, unlock_turn=True)
                 runtime_state["_student_has_spoken"] = True
-                runtime_state["latency_last_student_transcript_at"] = now
-                if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
-                    runtime_state["latency_first_request_at"] = now
-                last_turn_complete_at = float(runtime_state.get("latency_last_turn_complete_at", 0.0))
-                if last_turn_complete_at > 0:
-                    turn_gap_ms = (now - last_turn_complete_at) * 1000
-                    if turn_gap_ms <= turn_to_turn_max_gap_ms:
-                        turn_to_turn_event = record_latency_metric(
-                            runtime_state,
-                            "turn_to_turn",
-                            turn_gap_ms,
-                        )
-                        if turn_to_turn_event:
-                            await _send_json(
-                                websocket,
-                                {"type": "latency_event", "data": turn_to_turn_event},
-                            )
-                            if report:
-                                report.record_latency_event(
-                                    turn_to_turn_event.get("metric", ""),
-                                    turn_to_turn_event.get("value_ms", 0),
-                                    bool(turn_to_turn_event.get("is_alert", False)),
-                                )
-
-                # Force search-grounding behavior for explicit educational search requests.
-                if detect_explicit_search_request(student_text, runtime_state) and is_likely_educational_search(student_text, runtime_state):
-                    search_query = extract_search_query(student_text)
-                    last_query = str(runtime_state.get("last_forced_search_query") or "")
-                    last_forced_at = float(runtime_state.get("last_forced_search_at", 0.0))
-                    should_force = search_query and (
-                        search_query.lower() != last_query.lower() or (now - last_forced_at) > 20.0
-                    )
-                    if should_force:
-                        forced_prompt = build_force_search_control_prompt(search_query)
-                        send_content_with_prompt_capture(
-                            live_queue,
-                            types.Content(role="user", parts=[types.Part(text=forced_prompt)]),
-                            session_id=session_id,
-                            source="force_search_control",
-                            runtime_state=runtime_state,
-                        )
-                        runtime_state["last_forced_search_query"] = search_query
-                        runtime_state["last_forced_search_at"] = now
-                        runtime_state["last_hidden_prompt_at"] = now
+                # Forced search injection removed — google_search tool + system prompt
+                # instruction ("call google_search before answering if unsure") handles this
+                # without burning an extra hidden turn per search request.
 
                 # Guardrail: check student input for off-topic / cheat / inappropriate
                 student_guardrail_events = check_student_input(student_text)
@@ -1292,20 +1029,12 @@ async def _forward_to_client(
                     })
                     if report:
                         report.record_guardrail_event(ge["guardrail"], ge["severity"], "student_speech")
-                # Inject reinforcement if guardrail triggered
-                reinforce_prompt = select_reinforcement(student_guardrail_events, runtime_state)
-                if reinforce_prompt:
+                # Guardrail reinforcement: log only, no hidden turn injection
+                # (system prompt already enforces guardrails — extra turns burn tokens)
+                if student_guardrail_events:
                     reason = student_guardrail_events[0]["guardrail"] if student_guardrail_events else "unknown"
-                    send_content_with_prompt_capture(
-                        live_queue,
-                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)]),
-                        session_id=session_id,
-                        source=f"guardrail_student_{reason}",
-                        runtime_state=runtime_state,
-                    )
                     record_reinforcement(runtime_state, reason)
-                    if report:
-                        report.record_guardrail_reinforcement()
+                    logger.info("Guardrail student event logged (no injection): %s", reason)
 
                 # Capture the latest on-topic study question for "My notes".
                 if student_guardrail_events:
@@ -1381,19 +1110,11 @@ async def _forward_to_client(
                     })
                     if report:
                         report.record_guardrail_event(ge["guardrail"], ge["severity"], "tutor_speech")
-                # Inject Socratic reinforcement if answer leak detected
-                reinforce_prompt = select_reinforcement(tutor_guardrail_events, runtime_state)
-                if reinforce_prompt:
-                    send_content_with_prompt_capture(
-                        live_queue,
-                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)]),
-                        session_id=session_id,
-                        source="guardrail_tutor_reinforcement",
-                        runtime_state=runtime_state,
-                    )
+                # Guardrail tutor reinforcement: log only, no hidden turn injection
+                # (system prompt already enforces Socratic method — extra turns burn tokens)
+                if tutor_guardrail_events:
                     record_reinforcement(runtime_state, "answer_leak")
-                    if report:
-                        report.record_guardrail_reinforcement()
+                    logger.info("Guardrail tutor event logged (no injection): answer_leak")
 
                 if report:
                     report.record_tutor_transcript(tutor_text)

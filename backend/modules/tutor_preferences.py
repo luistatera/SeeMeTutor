@@ -62,10 +62,21 @@ ANTI_REPEAT_CONTROL_PROMPT = (
     "next micro-step or hint for the same learning goal. Do not mention this control message."
 )
 ANTI_QUESTION_LOOP_CONTROL_PROMPT = (
-    "INTERNAL CONTROL: Recent tutor turns were too question-heavy. "
-    "Next response must start with one short declarative hint/explanation, "
-    "then at most one question. Do not ask multiple consecutive questions. "
-    "Apply silently and do not produce a standalone response to this control message."
+    "INTERNAL CONTROL: You asked too many questions in a row. "
+    "Your NEXT response MUST END with a STATEMENT or encouragement — "
+    "NOT a question. Do NOT end with a question mark. Examples of good endings: "
+    "'You're really close, take another look at that step.' or "
+    "'Here's a hint: try the opposite operation.' or "
+    "'Nice work, you got that one.' "
+    "Apply silently."
+)
+ANTI_QUESTION_LOOP_ESCALATED_PROMPT = (
+    "INTERNAL CONTROL — CRITICAL OVERRIDE: You have ended THREE or more "
+    "consecutive turns with a question mark. This is an interrogation, not "
+    "tutoring. Your NEXT turn MUST be a SHORT STATEMENT — a hint, an "
+    "observation, praise, or encouragement. ABSOLUTELY NO QUESTION MARKS. "
+    "Example: 'Here is a clue — look at the verb ending.' "
+    "Do NOT ask anything. Just state or encourage. Apply silently."
 )
 QUESTION_NOTE_MAX_AGE_S = 120.0
 

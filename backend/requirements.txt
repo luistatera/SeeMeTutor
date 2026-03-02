@@ -1,8 +1,9 @@
-fastapi>=0.112.0
+fastapi==0.129.0
 uvicorn[standard]>=0.30.0
-google-genai>=1.14.0
-google-adk>=1.25.0
+google-genai==1.64.0
+google-adk==1.25.1
 google-cloud-firestore>=2.19.0
+pydantic==2.12.5
 python-dotenv>=1.1.0
 websockets>=13.0
 pytest>=8.0.0
