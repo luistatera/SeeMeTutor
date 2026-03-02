@@ -6,14 +6,10 @@ Audio and video frames flow from the browser to Gemini; audio responses
 and text transcripts flow back to the browser.
 """
 
-import array
 import asyncio
-import base64
-import binascii
 import hashlib
 import json
 import logging
-import math
 import os
 import re
 import time
@@ -48,61 +44,30 @@ from test_report import create_report, remove_report
 from modules.proactive import (
     proactive_idle_orchestrator,
     init_proactive_state,
-    reset_silence_tracking,
-    sanitize_tutor_output,
 )
-from modules.screen_share import (
-    init_screen_share_state,
-    get_switch_prompt,
-    STOP_SHARING_PROMPT,
-    SOURCE_SWITCH_COOLDOWN_S,
-)
+from modules.screen_share import init_screen_share_state
 from modules.whiteboard import (
     init_whiteboard_state,
-    normalize_content,
-    normalize_title,
     whiteboard_dispatcher,
 )
-from modules.guardrails import (
-    init_guardrails_state,
-    check_student_input,
-    check_tutor_output,
-    select_reinforcement,
-    record_guardrail_event,
-    record_reinforcement,
-)
-from modules.grounding import (
-    init_grounding_state,
-    extract_grounding,
-    extract_inline_url_citations,
-)
+from modules.guardrails import init_guardrails_state
+from modules.grounding import init_grounding_state
 from modules.latency import (
     init_latency_state,
-    record_latency_metric,
-    build_latency_report,
     format_latency_summary,
 )
 from modules.live_session import (
     build_live_run_config,
-    compute_retry_backoff,
-    extract_session_resumption_handle,
-    extract_total_token_estimate,
     load_latest_resumption_handle,
     save_resumption_handle,
 )
-from modules.memory_manager import (
-    append_transcript_piece,
-    build_checkpoint_summary,
-    build_hidden_memory_context,
-    build_recall_payload,
-    extract_cells_from_checkpoint,
-    init_memory_state,
+from modules.prompt_capture import (
+    capture_prompt_text,
+    send_content_with_prompt_capture,
 )
-from modules.memory_store import (
-    load_recent_checkpoint,
-    load_recent_memory_cells,
-    save_checkpoint,
-    upsert_memory_cells,
+from modules.memory_manager import (
+    build_hidden_memory_context,
+    init_memory_state,
 )
 from modules.security import (
     SlidingWindowRateLimiter,
@@ -110,25 +75,57 @@ from modules.security import (
     extract_client_ip,
     parse_allowed_origins,
 )
-from modules.conversation import (
-    build_example_note,
-    build_question_answer_note,
-    expects_student_reply,
-    extract_example_from_turn,
-    is_near_duplicate,
-    is_question_like_turn,
-    is_student_question,
-    is_study_related_question,
-    normalize_for_similarity,
+from modules.tutor_preferences import (
+    _SEARCH_REQUEST_PATTERNS_BY_LANG,
+    _SEARCH_EDU_HINT_PATTERNS_BY_LANG,
+    _SEARCH_NON_EDU_PATTERNS,
+    _TUTOR_PREFERENCE_OPTIONS,
+    _DEFAULT_TUTOR_PREFERENCES,
+    _PROFILE_CONTEXT_MAX_LEN,
+    _PROFILE_CONTEXT_FIELDS,
+    _RESOURCE_MATERIAL_MAX_ITEMS,
+    _PLAN_MILESTONE_MIN_DEFAULT,
+    _normalize_preference_choice,
+    _normalize_tutor_preferences,
+    _sanitize_text,
+    _sanitize_long_text,
+    _normalize_resource_materials,
+    _agent_phase_from_session_phase,
+    _normalize_profile_context,
+    _build_tutor_preferences_control_prompt,
+    _dedupe_patterns,
+    _all_patterns,
 )
-from modules.search_intent import (
-    build_force_search_control_prompt,
-    detect_explicit_search_request,
-    extract_search_query,
-    is_likely_educational_search,
-    SEARCH_INTENT_SIGNAL_WINDOW_S,
+from modules.student_profile import (
+    _anonymize_ip,
+    _is_adk_session_exists_error,
+    _parse_int,
+    _safe_order_index,
+    _default_backlog_context,
+    _register_active_student_session as _register_active_student_session_impl,
+    _unregister_active_student_session as _unregister_active_student_session_impl,
+    _load_backlog_context as _load_backlog_context_impl,
+    _build_profile_summary,
+    _init_local_profiles as _init_local_profiles_impl,
+    _build_local_profile_summary as _build_local_profile_summary_impl,
 )
-from modules.resource_ingestion import ingest_youtube_transcripts
+from modules.http_routes import router as api_router, http_security_middleware
+from modules.session_helpers import (
+    _session_heartbeat,
+    _session_timer,
+    _merge_resume_message,
+)
+from modules.persistence import (
+    _load_memory_recall,
+    _persist_memory_checkpoint,
+    _persist_session_metrics_summary,
+)
+from modules.ws_bridge import (
+    _forward_to_gemini,
+    _forward_to_client,
+    _send_json,
+    _StudentEndedSession,
+)
 from seed_demo_profiles import PROFILES as _SEED_PROFILES
 
 load_dotenv()
@@ -151,7 +148,12 @@ _debug_fh = RotatingFileHandler(
     BASE_DIR / "debug.log", maxBytes=5 * 1024 * 1024, backupCount=2
 )
 _debug_fh.setFormatter(logging.Formatter("%(asctime)s.%(msecs)03d %(message)s", datefmt="%H:%M:%S"))
-_debug_logger.addHandler(_debug_fh)
+if not any(
+    isinstance(handler, RotatingFileHandler)
+    and getattr(handler, "baseFilename", "") == _debug_fh.baseFilename
+    for handler in _debug_logger.handlers
+):
+    _debug_logger.addHandler(_debug_fh)
 
 # ---------------------------------------------------------------------------
 # Gemini backend: Vertex AI
@@ -185,25 +187,6 @@ MEMORY_CHECKPOINT_INTERVAL_S = 300
 MEMORY_RECALL_BUDGET_TOKENS = 500
 MEMORY_RECALL_MAX_CELLS = 6
 MEMORY_CHECKPOINT_MAX_AGE_S = 24 * 60 * 60
-PACE_CONTROL_INSTRUCTIONS: dict[str, str] = {
-    "slow": (
-        "Preference update: from now on, speak noticeably slower. "
-        "Use shorter sentences, clearer articulation, and brief pauses between ideas. "
-        "Keep the same warm tutoring style unless the student asks to change pace again."
-    ),
-}
-ANTI_REPEAT_CONTROL_PROMPT = (
-    "INTERNAL CONTROL: You repeated substantially the same tutor prompt without "
-    "new student input. Stop repeating. Acknowledge briefly and provide a different "
-    "next micro-step or hint for the same learning goal. Do not mention this control message."
-)
-ANTI_QUESTION_LOOP_CONTROL_PROMPT = (
-    "INTERNAL CONTROL: Recent tutor turns were too question-heavy. "
-    "Next response must start with one short declarative hint/explanation, "
-    "then at most one question. Do not ask multiple consecutive questions. "
-    "Apply silently and do not produce a standalone response to this control message."
-)
-QUESTION_NOTE_MAX_AGE_S = 120.0
 
 # Per-session latency tracking: session_id -> {"last_audio_in": float, "awaiting_first_response": bool}
 _latency_state: dict[str, dict] = {}
@@ -309,821 +292,39 @@ _http_rate_limiter = SlidingWindowRateLimiter()
 _ws_rate_limiter = SlidingWindowRateLimiter()
 
 
-def _anonymize_ip(ip: str) -> str:
-    """Hash an IP address for Firestore storage (never persist raw IPs)."""
-    return hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+# _anonymize_ip, _is_adk_session_exists_error, _parse_int, _safe_order_index
+# moved to modules.student_profile
 
 
-def _is_adk_session_exists_error(exc: Exception) -> bool:
-    """Detect ADK in-memory session ID collision errors across versions."""
-    if exc is None:
-        return False
-    name = type(exc).__name__.strip().lower()
-    message = str(exc).strip().lower()
-    return name == "alreadyexistserror" or "already exists" in message
+# _append_tutor_turn_part, _finalize_tutor_turn moved to modules.session_helpers
 
-
-def _parse_int(value, fallback: int, minimum: int = 1, maximum: int = 8) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = fallback
-    return max(minimum, min(maximum, parsed))
-
-
-def _safe_order_index(value, fallback: int = 9999) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-_SEARCH_REQUEST_PATTERNS_BY_LANG: dict[str, list[str]] = {
-    "en": [r"\b(search|google|look\s*up|lookup|find)\b"],
-    "pt": [r"\b(pesquis|buscar|procura|google)\b"],
-    "de": [r"\b(suche|such\s+nach|suchen|recherchier|google)\b"],
-    "es": [r"\b(busca|buscar|buscarlo|google|investiga|consulta)\b"],
-}
-
-_SEARCH_EDU_HINT_PATTERNS_BY_LANG: dict[str, list[str]] = {
-    "en": [r"\b(math|science|history|geography|grammar|exam|course|formula|equation|homework|lesson|school)\b"],
-    "pt": [r"\b(matematica|matemática|ciencia|ciência|historia|história|geografia|gramatica|gramática|exame|curso|formula|fórmula|equacao|equação|licao|lição|escola)\b"],
-    "de": [r"\b(mathe|mathematik|wissenschaft|geschichte|geografie|grammatik|prufung|prüfung|kurs|formel|gleichung|hausaufgabe|schule)\b"],
-    "es": [r"\b(matematic|ciencia|historia|geografia|gramatica|examen|curso|formula|ecuacion|ecuación|tarea|escuela)\b"],
-}
-
-_SEARCH_NON_EDU_PATTERNS = [
-    r"\b(price\s+of|buy|shopping|amazon|netflix|celebrity|gossip|weather|bitcoin|crypto|stock|iphone|samsung)\b",
-]
-
-_TUTOR_PREFERENCE_OPTIONS: dict[str, set[str]] = {
-    "speech_pace": {"slow", "normal", "fast"},
-    "explanation_length": {"short", "balanced", "detailed"},
-    "directness": {"to_the_point", "balanced", "exploratory"},
-    "socratic_intensity": {"light", "medium", "high"},
-    "encouragement_level": {"low", "medium", "high"},
-}
-_SPEECH_PACE_ALIASES: dict[str, str] = {
-    "slower": "slow",
-    "faster": "fast",
-    "slow": "slow",
-    "normal": "normal",
-    "fast": "fast",
-}
-
-_DEFAULT_TUTOR_PREFERENCES: dict[str, str] = {
-    "speech_pace": "normal",
-    "explanation_length": "balanced",
-    "directness": "balanced",
-    "socratic_intensity": "medium",
-    "encouragement_level": "medium",
-}
-
-_PROFILE_CONTEXT_MAX_LEN = 240
-_PROFILE_CONTEXT_FIELDS = (
-    "learner_identity",
-    "study_subject",
-    "class_name",
-    "institution_name",
-    "study_context",
-    "resource_context",
-)
-_RESOURCE_MATERIAL_MAX_ITEMS = 5
-_PLAN_MILESTONE_MIN_DEFAULT = 6
-
-
-def _normalize_preference_choice(
-    value,
-    allowed: set[str],
-    fallback: str,
-    *,
-    field: str | None = None,
-) -> str:
-    token = str(value or "").strip().lower()
-    normalized_fallback = fallback
-    if field == "speech_pace":
-        token = _SPEECH_PACE_ALIASES.get(token, token)
-        fallback_token = str(fallback or "").strip().lower()
-        normalized_fallback = _SPEECH_PACE_ALIASES.get(fallback_token, "normal")
-    if token in allowed:
-        return token
-    return normalized_fallback
-
-
-def _default_tutor_preferences() -> dict:
-    return dict(_DEFAULT_TUTOR_PREFERENCES)
-
-
-def _normalize_tutor_preferences(preferences: dict | None, fallback: dict | None = None) -> dict:
-    source = preferences if isinstance(preferences, dict) else {}
-    base = dict(fallback) if isinstance(fallback, dict) else _default_tutor_preferences()
-    normalized: dict[str, str] = {}
-    for key, allowed in _TUTOR_PREFERENCE_OPTIONS.items():
-        default_value = _DEFAULT_TUTOR_PREFERENCES[key]
-        fallback_value = _normalize_preference_choice(
-            base.get(key), allowed, default_value, field=key
-        )
-        normalized[key] = _normalize_preference_choice(
-            source.get(key), allowed, fallback_value, field=key
-        )
-    return normalized
-
-
-def _sanitize_text(value, *, max_len: int = _PROFILE_CONTEXT_MAX_LEN) -> str:
-    clean = str(value or "").strip()
-    if not clean:
-        return ""
-    if len(clean) > max_len:
-        clean = clean[:max_len].rstrip()
-    return clean
-
-
-def _sanitize_long_text(value, *, max_len: int = 24000) -> str:
-    clean = re.sub(r"\s+", " ", str(value or "")).strip()
-    if not clean:
-        return ""
-    if len(clean) > max_len:
-        clean = clean[:max_len].rstrip()
-    return clean
-
-
-def _normalize_resource_materials(value) -> list[dict]:
-    if not isinstance(value, list):
-        return []
-    materials: list[dict] = []
-    for item in value[:_RESOURCE_MATERIAL_MAX_ITEMS]:
-        if not isinstance(item, dict):
-            continue
-        try:
-            char_count = int(item.get("char_count") or 0)
-        except (TypeError, ValueError):
-            char_count = 0
-        entry = {
-            "kind": _sanitize_text(item.get("kind"), max_len=24) or "resource",
-            "url": _sanitize_text(item.get("url"), max_len=400),
-            "status": _sanitize_text(item.get("status"), max_len=32) or "unknown",
-            "video_id": _sanitize_text(item.get("video_id"), max_len=32),
-            "language": _sanitize_text(item.get("language"), max_len=24),
-            "char_count": max(0, char_count),
-            "excerpt": _sanitize_text(item.get("excerpt"), max_len=260),
-            "error": _sanitize_text(item.get("error"), max_len=160),
-        }
-        materials.append(entry)
-    return materials
-
-
-def _agent_phase_from_session_phase(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized == "capture":
-        return "capture"
-    if normalized == "review":
-        return "review"
-    return "greeting"
-
-
-def _default_profile_context() -> dict[str, str]:
-    return {field: "" for field in _PROFILE_CONTEXT_FIELDS}
-
-
-def _normalize_profile_context(
-    profile_context: dict | None,
-    fallback: dict | None = None,
-) -> dict[str, str]:
-    source = profile_context if isinstance(profile_context, dict) else {}
-    base = dict(fallback) if isinstance(fallback, dict) else _default_profile_context()
-    normalized: dict[str, str] = {}
-    for field in _PROFILE_CONTEXT_FIELDS:
-        normalized[field] = _sanitize_text(source.get(field) or base.get(field))
-    return normalized
-
-
-def _search_terms_from_profile_context(profile_context: dict | None) -> list[str]:
-    if not isinstance(profile_context, dict):
-        return []
-    ordered: list[str] = []
-    for field in _PROFILE_CONTEXT_FIELDS:
-        token = _sanitize_text(profile_context.get(field), max_len=80)
-        if token and token.lower() not in {t.lower() for t in ordered}:
-            ordered.append(token)
-    return ordered
-
-
-def _search_terms_from_setup(setup: dict | None) -> list[str]:
-    if not isinstance(setup, dict):
-        return []
-    terms: list[str] = []
-    goal = _sanitize_text(setup.get("session_goal"), max_len=120)
-    context = _sanitize_text(setup.get("student_context_text"), max_len=120)
-    if goal:
-        terms.append(goal)
-    if context:
-        terms.append(context)
-    refs = setup.get("resource_refs", [])
-    if isinstance(refs, list):
-        for item in refs[:6]:
-            token = _sanitize_text(item, max_len=80)
-            if token:
-                terms.append(token)
-    materials = setup.get("resource_materials", [])
-    if isinstance(materials, list):
-        for item in materials[:_RESOURCE_MATERIAL_MAX_ITEMS]:
-            if not isinstance(item, dict):
-                continue
-            excerpt = _sanitize_text(item.get("excerpt"), max_len=80)
-            if excerpt:
-                terms.append(excerpt)
-            source_url = _sanitize_text(item.get("url"), max_len=80)
-            if source_url:
-                terms.append(source_url)
-    deduped: list[str] = []
-    for item in terms:
-        if item.lower() not in {d.lower() for d in deduped}:
-            deduped.append(item)
-    return deduped
-
-
-def _merge_search_context_terms(*groups: list[str]) -> list[str]:
-    merged: list[str] = []
-    seen: set[str] = set()
-    for group in groups:
-        for raw in group:
-            token = _sanitize_text(raw, max_len=120)
-            if not token:
-                continue
-            key = token.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(token)
-    return merged[:18]
-
-
-def _build_tutor_preferences_control_prompt(preferences: dict) -> str:
-    normalized = _normalize_tutor_preferences(preferences)
-    speech_pace = {
-        "slow": "Speak slower with short pauses between ideas.",
-        "normal": "Use a natural conversational pace.",
-        "fast": "Speak a bit faster while keeping clarity.",
-    }
-    explanation_length = {
-        "short": "Prefer short explanations and small steps.",
-        "balanced": "Use medium-length explanations by default.",
-        "detailed": "Use fuller explanations with extra detail.",
-    }
-    directness = {
-        "to_the_point": "Be direct and quickly move to the core step.",
-        "balanced": "Balance direct answers with guided reasoning.",
-        "exploratory": "Explore thought process before narrowing to the answer.",
-    }
-    socratic_intensity = {
-        "light": "Use fewer Socratic questions and more explicit hints.",
-        "medium": "Use a balanced Socratic questioning style.",
-        "high": "Use stronger Socratic guidance with frequent prompts to think.",
-    }
-    encouragement = {
-        "low": "Keep encouragement brief and occasional.",
-        "medium": "Use normal supportive encouragement.",
-        "high": "Use frequent positive reinforcement and reassurance.",
-    }
-    return (
-        "INTERNAL CONTROL: Student preference update. Apply this tutoring style immediately.\n"
-        f"- Speech pace: {speech_pace[normalized['speech_pace']]}\n"
-        f"- Explanation length: {explanation_length[normalized['explanation_length']]}\n"
-        f"- Directness: {directness[normalized['directness']]}\n"
-        f"- Socratic intensity: {socratic_intensity[normalized['socratic_intensity']]}\n"
-        f"- Encouragement level: {encouragement[normalized['encouragement_level']]}\n"
-        "Keep all safety and anti-cheating rules unchanged. "
-        "Do not mention this control message."
-    )
-
-
-def _append_tutor_turn_part(runtime_state: dict, text: str, *, source: str) -> None:
-    clean = str(text or "").strip()
-    if not clean:
-        return
-    turn_parts = runtime_state.setdefault("_tutor_turn_parts", {})
-    if not isinstance(turn_parts, dict):
-        turn_parts = {}
-        runtime_state["_tutor_turn_parts"] = turn_parts
-    bucket = turn_parts.setdefault(source, [])
-    if not isinstance(bucket, list):
-        bucket = []
-        turn_parts[source] = bucket
-    if bucket and str(bucket[-1]).strip() == clean:
-        return
-    bucket.append(clean)
-
-
-def _finalize_tutor_turn(runtime_state: dict) -> dict:
-    turn_parts = runtime_state.get("_tutor_turn_parts")
-    transcript_parts: list[str] = []
-    text_parts: list[str] = []
-    if isinstance(turn_parts, dict):
-        raw_transcript = turn_parts.get("transcript", [])
-        if isinstance(raw_transcript, list):
-            transcript_parts = [str(part).strip() for part in raw_transcript if str(part).strip()]
-        raw_text = turn_parts.get("text", [])
-        if isinstance(raw_text, list):
-            text_parts = [str(part).strip() for part in raw_text if str(part).strip()]
-    runtime_state["_tutor_turn_parts"] = {"text": [], "transcript": []}
-    turn_text = " ".join(transcript_parts or text_parts).strip()
-    return {"turn_text": turn_text}
-
-
-def _dedupe_patterns(patterns: list[str]) -> list[str]:
-    deduped: list[str] = []
-    for pattern in patterns:
-        token = str(pattern or "").strip()
-        if token and token not in deduped:
-            deduped.append(token)
-    return deduped
-
-
-def _all_patterns(pattern_map: dict[str, list[str]]) -> list[str]:
-    merged: list[str] = []
-    for patterns in pattern_map.values():
-        merged.extend(patterns)
-    return _dedupe_patterns(merged)
-
-
-def _default_search_intent_policy() -> dict:
-    request_patterns: list[str] = []
-    educational_patterns: list[str] = []
-    request_patterns.extend(_all_patterns(_SEARCH_REQUEST_PATTERNS_BY_LANG))
-    educational_patterns.extend(_all_patterns(_SEARCH_EDU_HINT_PATTERNS_BY_LANG))
-    if not request_patterns:
-        request_patterns.extend(_SEARCH_REQUEST_PATTERNS_BY_LANG.get("en", []))
-    if not educational_patterns:
-        educational_patterns.extend(_SEARCH_EDU_HINT_PATTERNS_BY_LANG.get("en", []))
-    return {
-        "request_patterns": _dedupe_patterns(request_patterns),
-        "non_educational_patterns": list(_SEARCH_NON_EDU_PATTERNS),
-        "educational_hint_patterns": _dedupe_patterns(educational_patterns),
-    }
-
-
-def _normalize_search_intent_policy(policy: dict | None) -> dict:
-    template = _default_search_intent_policy()
-    source = policy if isinstance(policy, dict) else {}
-    normalized: dict[str, list[str]] = {}
-    for key, fallback in template.items():
-        value = source.get(key)
-        if isinstance(value, list):
-            cleaned = _dedupe_patterns([str(item or "").strip() for item in value])
-            normalized[key] = cleaned or list(fallback)
-        else:
-            normalized[key] = list(fallback)
-    return normalized
-
-
-def _default_backlog_context(student_id: str, student_name: str = "Student") -> dict:
-    search_intent_policy = _default_search_intent_policy()
-    tutor_preferences = _default_tutor_preferences()
-    profile_context = _default_profile_context()
-    return {
-        "student_id": student_id,
-        "student_name": student_name,
-        "track_id": "general-track",
-        "track_title": "General Learning",
-        "topic_id": "current-topic",
-        "topic_title": "Current Topic",
-        "topic_status": "in_progress",
-        "unresolved_topics": 0,
-        "available_topics": [],
-        "resume_message": "Let's continue where we left off.",
-        "search_intent_policy": search_intent_policy,
-        "tutor_preferences": tutor_preferences,
-        "profile_context": profile_context,
-        "session_setup": {
-            "session_goal": "",
-            "student_context_text": "",
-            "resource_refs": [],
-            "resource_materials": [],
-            "confirmed": False,
-        },
-        "plan_bootstrap_required": False,
-        "plan_bootstrap_completed": False,
-        "plan_milestone_min": _PLAN_MILESTONE_MIN_DEFAULT,
-        "plan_milestone_count": 0,
-        "plan_fallback_generated": False,
-        "plan_bootstrap_source": "",
-        "resource_transcript_context": "",
-        "resource_transcript_available": False,
-        "search_context_terms": [],
-        "session_phase": "setup",
-    }
+# _default_backlog_context, _register_active_student_session, _unregister_active_student_session
+# moved to modules.student_profile
 
 
 async def _register_active_student_session(student_id: str, session_id: str, websocket: WebSocket) -> tuple[str | None, WebSocket | None]:
-    """Track active sessions per student and return any prior live socket."""
-    previous_session_id: str | None = None
-    previous_websocket: WebSocket | None = None
-    async with _active_student_sessions_lock:
-        previous = _active_student_sessions.get(student_id)
-        if previous:
-            previous_session_id = str(previous.get("session_id") or "")
-            previous_ws = previous.get("websocket")
-            if isinstance(previous_ws, WebSocket):
-                previous_websocket = previous_ws
-        _active_student_sessions[student_id] = {
-            "session_id": session_id,
-            "websocket": websocket,
-        }
-    return previous_session_id, previous_websocket
+    """Thin wrapper — delegates to student_profile module with main.py globals."""
+    return await _register_active_student_session_impl(
+        _active_student_sessions, _active_student_sessions_lock,
+        student_id, session_id, websocket,
+    )
 
 
 async def _unregister_active_student_session(student_id: str, session_id: str) -> None:
-    """Clear active-session tracking only if this session is still current."""
-    async with _active_student_sessions_lock:
-        active = _active_student_sessions.get(student_id)
-        if active and active.get("session_id") == session_id:
-            _active_student_sessions.pop(student_id, None)
+    """Thin wrapper — delegates to student_profile module with main.py globals."""
+    await _unregister_active_student_session_impl(
+        _active_student_sessions, _active_student_sessions_lock,
+        student_id, session_id,
+    )
 
 
 async def _load_backlog_context(student_id: str, session_data: dict | None = None) -> dict | None:
-    """Load student backlog context from Firestore and optional selected-session overlay."""
-    if not firestore_client:
-        logger.error("Firestore unavailable while loading profile '%s'", student_id)
-        return None
-
-    now = time.time()
-    student_ref = firestore_client.collection("students").document(student_id)
-    student_snapshot = await student_ref.get()
-    if not student_snapshot.exists:
-        logger.warning("Student profile '%s' not found in Firestore", student_id)
-        return None
-
-    student_data = student_snapshot.to_dict() or {}
-    student_name = str(student_data.get("name") or "Student")
-    default_context = _default_backlog_context(student_id, student_name)
-
-    track_rows: list[dict] = []
-    preferred_track_id = str(student_data.get("active_track_id") or "").strip()
-    async for track_snapshot in student_ref.collection("tracks").stream():
-        track_data = track_snapshot.to_dict() or {}
-        track_rows.append({
-            "id": track_snapshot.id,
-            "title": str(track_data.get("title") or track_snapshot.id),
-            "goal": track_data.get("goal") or "",
-            "data": track_data,
-        })
-
-    selected_session = session_data if isinstance(session_data, dict) else {}
-    selected_setup = selected_session.get("setup") if isinstance(selected_session.get("setup"), dict) else {}
-    selected_planning = selected_session.get("planning") if isinstance(selected_session.get("planning"), dict) else {}
-    selected_phase = str(selected_session.get("phase") or "setup")
-    selected_transcript_context = _sanitize_long_text(
-        selected_session.get("resource_transcript_context"),
-        max_len=24000,
-    )
-    selected_resource_materials = _normalize_resource_materials(selected_setup.get("resource_materials"))
-    transcript_material_requested = any(
-        item.get("kind") == "youtube"
-        for item in selected_resource_materials
-    )
-    transcript_material_ready = any(
-        item.get("kind") == "youtube" and item.get("status") == "ready"
-        for item in selected_resource_materials
-    )
-    transcript_available = bool(selected_transcript_context.strip()) or transcript_material_ready
-    plan_milestone_min = _parse_int(
-        selected_planning.get("milestone_min"),
-        _PLAN_MILESTONE_MIN_DEFAULT,
-        minimum=1,
-        maximum=20,
-    )
-    plan_milestone_count = _parse_int(
-        selected_planning.get("milestone_count"),
-        0,
-        minimum=0,
-        maximum=50,
-    )
-    plan_fallback_generated = bool(selected_planning.get("fallback_generated"))
-    plan_bootstrap_source = _sanitize_text(selected_planning.get("bootstrap_source"), max_len=40)
-    if not plan_bootstrap_source and transcript_material_requested:
-        plan_bootstrap_source = "youtube_transcript" if transcript_material_ready else "transcript_unavailable"
-    if not plan_bootstrap_source:
-        plan_bootstrap_source = "session_setup"
-    plan_bootstrap_completed = bool(selected_planning.get("bootstrap_completed"))
-    if plan_milestone_count >= plan_milestone_min:
-        plan_bootstrap_completed = True
-    if plan_fallback_generated and not transcript_available:
-        plan_bootstrap_completed = True
-    if "bootstrap_required" in selected_planning:
-        plan_bootstrap_required_config = bool(selected_planning.get("bootstrap_required"))
-    else:
-        plan_bootstrap_required_config = bool(
-            selected_phase in {"setup", "greeting"}
-        )
-    plan_bootstrap_required = bool(plan_bootstrap_required_config and not plan_bootstrap_completed)
-    session_setup = {
-        "session_goal": _sanitize_text(selected_setup.get("session_goal")),
-        "student_context_text": _sanitize_text(selected_setup.get("student_context_text")),
-        "resource_refs": list(selected_setup.get("resource_refs") or []),
-        "resource_materials": selected_resource_materials,
-        "confirmed": bool(selected_setup.get("confirmed")),
-    }
-
-    search_intent_policy = _normalize_search_intent_policy(student_data.get("search_intent_policy"))
-    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    profile_context = _normalize_profile_context(student_data.get("profile_context"))
-    student_updates: dict = {}
-    if student_data.get("search_intent_policy") != search_intent_policy:
-        student_updates["search_intent_policy"] = search_intent_policy
-    if student_data.get("tutor_preferences") != tutor_preferences:
-        student_updates["tutor_preferences"] = tutor_preferences
-    if student_data.get("profile_context") != profile_context:
-        student_updates["profile_context"] = profile_context
-
-    if not track_rows:
-        if student_updates:
-            student_updates["updated_at"] = now
-            await student_ref.set(student_updates, merge=True)
-        context = _default_backlog_context(student_id, student_name)
-        context.update({
-            "previous_notes": [],
-            "resume_message": f"Welcome back, {student_name}. Let's set your first learning track.",
-            "search_intent_policy": search_intent_policy,
-            "tutor_preferences": tutor_preferences,
-            "profile_context": profile_context,
-            "session_phase": selected_phase,
-            "session_setup": session_setup,
-            "plan_bootstrap_required": plan_bootstrap_required,
-            "plan_bootstrap_completed": plan_bootstrap_completed,
-            "plan_milestone_min": plan_milestone_min,
-            "plan_milestone_count": plan_milestone_count,
-            "plan_fallback_generated": plan_fallback_generated,
-            "plan_bootstrap_source": plan_bootstrap_source,
-            "resource_transcript_context": selected_transcript_context,
-            "resource_transcript_available": transcript_available,
-        })
-        session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
-        session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
-        session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
-        session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
-        if session_track_id:
-            context["track_id"] = session_track_id
-        if session_track_title:
-            context["track_title"] = session_track_title
-        if session_topic_id:
-            context["topic_id"] = session_topic_id
-        if session_topic_title:
-            context["topic_title"] = session_topic_title
-        context["search_context_terms"] = _merge_search_context_terms(
-            _search_terms_from_profile_context(profile_context),
-            _search_terms_from_setup(context.get("session_setup")),
-            [context.get("track_title"), context.get("topic_title")],
-        )
-        return context
-
-    track_rows.sort(key=lambda row: (0 if row["id"] == preferred_track_id else 1, str(row["title"]).lower(), row["id"]))
-    active_track = track_rows[0]
-    active_track_id = active_track["id"]
-    active_track_data = active_track["data"]
-    if preferred_track_id != active_track_id:
-        student_updates["active_track_id"] = active_track_id
-
-    active_track_ref = student_ref.collection("tracks").document(active_track_id)
-    topic_rows: list[dict] = []
-    unresolved_topics = 0
-    async for topic_snapshot in active_track_ref.collection("topics").stream():
-        topic_data = topic_snapshot.to_dict() or {}
-        if topic_data.get("checkpoint_open"):
-            unresolved_topics += 1
-        topic_rows.append({
-            "id": topic_snapshot.id,
-            "title": str(topic_data.get("title") or topic_snapshot.id),
-            "status": str(topic_data.get("status", "not_started")).lower(),
-            "order_index": _safe_order_index(topic_data.get("order_index"), 9999),
-            "context_query": str(topic_data.get("context_query") or "").strip(),
-            "context_summary": str(topic_data.get("context_summary") or "").strip(),
-        })
-    topic_rows.sort(key=lambda row: (row["order_index"], row["title"]))
-
-    requested_topic_id = str(student_data.get("last_active_topic_id") or "").strip()
-    active_topic = next((row for row in topic_rows if row["id"] == requested_topic_id), None)
-    if active_topic is None and topic_rows:
-        active_topic = next((row for row in topic_rows if row["status"] != "mastered"), topic_rows[0])
-
-    previous_topic_title = active_topic["title"] if active_topic else default_context["topic_title"]
-    if active_topic and active_topic["status"] == "mastered":
-        active_index = next((idx for idx, row in enumerate(topic_rows) if row["id"] == active_topic["id"]), -1)
-        next_topic = None
-        if active_index >= 0:
-            for row in topic_rows[active_index + 1:]:
-                if row["status"] != "mastered":
-                    next_topic = row
-                    break
-        if not next_topic:
-            next_topic = next((row for row in topic_rows if row["status"] != "mastered"), None)
-        if next_topic:
-            active_topic = next_topic
-
-    if active_topic and requested_topic_id != active_topic["id"]:
-        student_updates["last_active_topic_id"] = active_topic["id"]
-
-    if student_updates:
-        student_updates["updated_at"] = now
-        await student_ref.set(student_updates, merge=True)
-
-    if not active_topic:
-        context = _default_backlog_context(student_id, student_name)
-        context.update({
-            "previous_notes": [],
-            "track_id": active_track_id,
-            "track_title": str(active_track_data.get("title") or active_track_id),
-            "resume_message": f"Welcome back, {student_name}. Let's choose your next topic.",
-            "search_intent_policy": search_intent_policy,
-            "tutor_preferences": tutor_preferences,
-            "profile_context": profile_context,
-            "session_phase": selected_phase,
-            "session_setup": session_setup,
-            "plan_bootstrap_required": plan_bootstrap_required,
-            "plan_bootstrap_completed": plan_bootstrap_completed,
-            "plan_milestone_min": plan_milestone_min,
-            "plan_milestone_count": plan_milestone_count,
-            "plan_fallback_generated": plan_fallback_generated,
-            "plan_bootstrap_source": plan_bootstrap_source,
-            "resource_transcript_context": selected_transcript_context,
-            "resource_transcript_available": transcript_available,
-        })
-        session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
-        session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
-        session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
-        session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
-        if session_track_id:
-            context["track_id"] = session_track_id
-        if session_track_title:
-            context["track_title"] = session_track_title
-        if session_topic_id:
-            context["topic_id"] = session_topic_id
-        if session_topic_title:
-            context["topic_title"] = session_topic_title
-        context["search_context_terms"] = _merge_search_context_terms(
-            _search_terms_from_profile_context(profile_context),
-            _search_terms_from_setup(context.get("session_setup")),
-            [context.get("track_title"), context.get("topic_title")],
-        )
-        return context
-
-    topic_title = active_topic["title"]
-    topic_status = active_topic["status"]
-    if topic_status == "mastered":
-        resume_message = (
-            f"Welcome back, {student_name}. You already mastered {topic_title}. "
-            "Tell me which topic you want to tackle next."
-        )
-    elif topic_title != previous_topic_title:
-        resume_message = (
-            f"Welcome back, {student_name}. You mastered {previous_topic_title}. "
-            f"Next up: {topic_title}."
-        )
-    else:
-        resume_message = f"Welcome back, {student_name}. Last time we were working on {topic_title}."
-
-    # Load previous notes for the active topic
-    previous_notes: list[dict] = []
-    if active_topic:
-        try:
-            notes_ref = (
-                student_ref.collection("tracks")
-                .document(active_track_id)
-                .collection("topics")
-                .document(active_topic["id"])
-                .collection("notes")
-            )
-            async for note_snap in notes_ref.stream():
-                note_data = note_snap.to_dict() or {}
-                note_status = str(note_data.get("status", "")).lower()
-                if note_status in ("done", "mastered"):
-                    continue
-                previous_notes.append({
-                    "id": note_snap.id,
-                    "title": note_data.get("title", ""),
-                    "content": note_data.get("content", ""),
-                    "note_type": note_data.get("note_type", "insight"),
-                    "status": note_status or "pending",
-                })
-                if len(previous_notes) >= 20:
-                    break
-        except Exception:
-            logger.warning("Failed to load previous notes for student '%s'", student_id, exc_info=True)
-
-    session_track_id = _sanitize_text(selected_session.get("track_id"), max_len=80)
-    session_track_title = _sanitize_text(selected_session.get("track_title"), max_len=120)
-    session_topic_id = _sanitize_text(selected_session.get("topic_id"), max_len=80)
-    session_topic_title = _sanitize_text(selected_session.get("topic_title"), max_len=140)
-    resolved_track_id = session_track_id or active_track_id
-    resolved_track_title = session_track_title or str(active_track_data.get("title") or active_track_id)
-    resolved_topic_id = session_topic_id or str(active_topic.get("id") or "")
-    resolved_topic_title = session_topic_title or topic_title
-    search_context_terms = _merge_search_context_terms(
-        _search_terms_from_profile_context(profile_context),
-        _search_terms_from_setup(session_setup),
-        [resolved_track_title, resolved_topic_title],
-    )
-    if plan_bootstrap_required:
-        previous_notes = []
-        resume_message = (
-            f"Welcome back, {student_name}. Let's build a 0-to-hero milestone plan "
-            "from your shared resource before we start solving."
-        )
-
-    return {
-        "student_id": student_id,
-        "student_name": student_name,
-        "track_id": resolved_track_id,
-        "track_title": resolved_track_title,
-        "topic_id": resolved_topic_id,
-        "topic_title": resolved_topic_title,
-        "topic_status": topic_status,
-        "unresolved_topics": unresolved_topics,
-        "available_topics": [
-            {"id": row["id"], "title": row["title"], "status": row["status"]}
-            for row in topic_rows
-        ],
-        "previous_notes": previous_notes,
-        "resume_message": resume_message,
-        "search_intent_policy": search_intent_policy,
-        "tutor_preferences": tutor_preferences,
-        "profile_context": profile_context,
-        "session_phase": selected_phase,
-        "session_setup": session_setup,
-        "plan_bootstrap_required": plan_bootstrap_required,
-        "plan_bootstrap_completed": plan_bootstrap_completed,
-        "plan_milestone_min": plan_milestone_min,
-        "plan_milestone_count": plan_milestone_count,
-        "plan_fallback_generated": plan_fallback_generated,
-        "plan_bootstrap_source": plan_bootstrap_source,
-        "resource_transcript_context": selected_transcript_context,
-        "resource_transcript_available": transcript_available,
-        "search_context_terms": search_context_terms,
-        "topic_context_query": active_topic.get("context_query", ""),
-        "topic_context_summary": active_topic.get("context_summary", ""),
-    }
+    """Thin wrapper — delegates to student_profile module with firestore_client."""
+    return await _load_backlog_context_impl(firestore_client, student_id, session_data)
 
 
-async def _build_profile_summary(student_snapshot) -> dict:
-    """Build lightweight profile data for profile picker UI."""
-    student_data = student_snapshot.to_dict() or {}
-    student_id = student_snapshot.id
-    student_ref = student_snapshot.reference
-    student_name = str(student_data.get("name") or student_id)
-    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    profile_context = _normalize_profile_context(student_data.get("profile_context"))
-    active_track_id = str(student_data.get("active_track_id") or "").strip()
-    active_topic_id = str(student_data.get("last_active_topic_id") or "").strip()
-
-    track_rows: list[dict] = []
-    async for track_snapshot in student_ref.collection("tracks").stream():
-        track_data = track_snapshot.to_dict() or {}
-        track_rows.append({
-            "id": track_snapshot.id,
-            "title": str(track_data.get("title") or track_snapshot.id),
-            "goal": str(track_data.get("goal") or ""),
-        })
-    track_rows.sort(key=lambda row: (0 if row["id"] == active_track_id else 1, row["title"].lower(), row["id"]))
-    chosen_track = track_rows[0] if track_rows else None
-
-    topic_title = ""
-    if chosen_track:
-        track_ref = student_ref.collection("tracks").document(chosen_track["id"])
-        topic_rows: list[dict] = []
-        async for topic_snapshot in track_ref.collection("topics").stream():
-            topic_data = topic_snapshot.to_dict() or {}
-            topic_rows.append({
-                "id": topic_snapshot.id,
-                "title": str(topic_data.get("title") or topic_snapshot.id),
-                "status": str(topic_data.get("status", "not_started")).lower(),
-                "order_index": _safe_order_index(topic_data.get("order_index"), 9999),
-            })
-        topic_rows.sort(key=lambda row: (row["order_index"], row["title"]))
-        active_topic = next((row for row in topic_rows if row["id"] == active_topic_id), None)
-        if active_topic is None and topic_rows:
-            active_topic = next((row for row in topic_rows if row["status"] != "mastered"), topic_rows[0])
-        if active_topic:
-            topic_title = active_topic["title"]
-
-    focus = str(student_data.get("profile_focus") or "").strip()
-    if not focus and chosen_track and chosen_track["goal"]:
-        focus = chosen_track["goal"]
-    if not focus and topic_title:
-        focus = f"Continue with {topic_title}"
-    if not focus:
-        focus = "Continue learning"
-
-    study_subject = str(profile_context.get("study_subject") or "").strip()
-
-    return {
-        "id": student_id,
-        "name": student_name,
-        "track": chosen_track["title"] if chosen_track else "General Learning",
-        "focus": focus,
-        "current_topic": topic_title,
-        "study_subject": study_subject,
-        "tutor_preferences": tutor_preferences,
-        "profile_context": profile_context,
-    }
+# _build_profile_summary moved to modules.student_profile (imported directly)
 
 # Firestore client for session logging (optional — works without it for local dev)
 firestore_client = None
@@ -1152,75 +353,12 @@ _local_topics: dict[str, dict[str, list[dict]]] = {}  # student_id -> {track_id:
 _local_sessions: dict[str, dict] = {}  # session_id -> session doc
 
 
-def _init_local_profiles():
-    """Build in-memory profile store from seed data."""
-    for profile in _SEED_PROFILES:
-        sid = profile["student_id"]
-        _local_profiles[sid] = dict(profile["student"])
-        _local_tracks[sid] = []
-        _local_topics[sid] = {}
-        for track_def in profile.get("tracks", []):
-            tid = track_def["track_id"]
-            _local_tracks[sid].append({"id": tid, **track_def["track"]})
-            _local_topics[sid][tid] = [
-                {"id": t["topic_id"], "title": t["title"], "status": t["status"],
-                 "order_index": t["order_index"], "context_query": t["context_query"]}
-                for t in track_def.get("topics", [])
-            ]
-    logger.info("Local profile store: %d profiles loaded from seed data", len(_local_profiles))
-
-
 def _build_local_profile_summary(student_id: str) -> dict | None:
-    """Build profile summary from local store (mirrors _build_profile_summary)."""
-    student_data = _local_profiles.get(student_id)
-    if not student_data:
-        return None
-
-    student_name = str(student_data.get("name") or student_id)
-    tutor_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-    profile_context = _normalize_profile_context(student_data.get("profile_context"))
-    active_track_id = str(student_data.get("active_track_id") or "").strip()
-
-    track_rows = _local_tracks.get(student_id, [])
-    sorted_tracks = sorted(
-        track_rows,
-        key=lambda row: (0 if row["id"] == active_track_id else 1, row.get("title", "").lower()),
-    )
-    chosen_track = sorted_tracks[0] if sorted_tracks else None
-
-    topic_title = ""
-    if chosen_track:
-        topic_rows = _local_topics.get(student_id, {}).get(chosen_track["id"], [])
-        sorted_topics = sorted(topic_rows, key=lambda r: (r.get("order_index", 9999), r.get("title", "")))
-        active_topic = next((r for r in sorted_topics if r.get("status") != "mastered"), None)
-        if active_topic is None and sorted_topics:
-            active_topic = sorted_topics[0]
-        if active_topic:
-            topic_title = active_topic["title"]
-
-    focus = ""
-    if chosen_track and chosen_track.get("goal"):
-        focus = chosen_track["goal"]
-    elif topic_title:
-        focus = f"Continue with {topic_title}"
-    if not focus:
-        focus = "Continue learning"
-
-    study_subject = str(profile_context.get("study_subject") or "").strip()
-
-    return {
-        "id": student_id,
-        "name": student_name,
-        "track": chosen_track["title"] if chosen_track else "General Learning",
-        "focus": focus,
-        "current_topic": topic_title,
-        "study_subject": study_subject,
-        "tutor_preferences": tutor_preferences,
-        "profile_context": profile_context,
-    }
+    """Thin wrapper — delegates to student_profile module with local store dicts."""
+    return _build_local_profile_summary_impl(student_id, _local_profiles, _local_tracks, _local_topics)
 
 
-_init_local_profiles()
+_init_local_profiles_impl(_local_profiles, _local_tracks, _local_topics, _SEED_PROFILES)
 
 # ---------------------------------------------------------------------------
 # ADK Runner + Session Service
@@ -1244,7 +382,7 @@ ADK_BASE_RUN_CONFIG = RunConfig(
     ),
     realtime_input_config=types.RealtimeInputConfig(
         automatic_activity_detection=types.AutomaticActivityDetection(
-            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
             end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
             prefix_padding_ms=300,
             silence_duration_ms=700,
@@ -1295,444 +433,33 @@ logger.info(
     WS_CONNECT_RATE_LIMIT_WINDOW_S,
 )
 
+# ---------------------------------------------------------------------------
+# Expose shared state via app.state for use by http_routes module
+# ---------------------------------------------------------------------------
+app.state.firestore_client = firestore_client
+app.state.http_rate_limiter = _http_rate_limiter
+app.state.http_rate_limit_max = HTTP_RATE_LIMIT_MAX
+app.state.http_rate_limit_window_s = HTTP_RATE_LIMIT_WINDOW_S
+app.state.security_headers = SECURITY_HEADERS
+app.state.frontend_dir = FRONTEND_DIR
+app.state.local_profiles = _local_profiles
+app.state.local_tracks = _local_tracks
+app.state.local_topics = _local_topics
+app.state.local_sessions = _local_sessions
+app.state.active_student_sessions = _active_student_sessions
+app.state.active_student_sessions_lock = _active_student_sessions_lock
 
-def _should_rate_limit_http(path: str) -> bool:
-    if path == "/health":
-        return False
-    if path.startswith("/static/"):
-        return False
-    return True
-
-
-@app.middleware("http")
-async def http_security_middleware(request: Request, call_next):
-    path = request.url.path
-    if _should_rate_limit_http(path):
-        client_ip = extract_client_ip(
-            request.headers.get("x-forwarded-for"),
-            request.client.host if request.client else None,
-        )
-        allowed = await _http_rate_limiter.allow(
-            f"http:{client_ip}",
-            limit=HTTP_RATE_LIMIT_MAX,
-            window_seconds=HTTP_RATE_LIMIT_WINDOW_S,
-        )
-        if not allowed:
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests. Please retry shortly."},
-                headers={"Retry-After": str(HTTP_RATE_LIMIT_WINDOW_S)},
-            )
-
-    response = await call_next(request)
-    for name, value in SECURITY_HEADERS.items():
-        response.headers.setdefault(name, value)
-    return response
+# ---------------------------------------------------------------------------
+# Register HTTP middleware and REST routes (extracted to modules.http_routes)
+# ---------------------------------------------------------------------------
+app.middleware("http")(http_security_middleware)
+app.include_router(api_router)
 
 if FRONTEND_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
     logger.info("Serving frontend static files from %s", FRONTEND_DIR)
 else:
     logger.warning("Frontend directory not found at %s — static serving disabled", FRONTEND_DIR)
-
-
-@app.get("/", include_in_schema=False)
-async def serve_index() -> FileResponse:
-    """Serve the frontend single-page application."""
-    index_path = FRONTEND_DIR / "index.html"
-    if not index_path.is_file():
-        raise HTTPException(status_code=404, detail="index.html not found")
-    return FileResponse(str(index_path))
-
-
-@app.get("/health")
-async def health_check() -> dict:
-    """Liveness probe for Cloud Run."""
-    return {"status": "ok", "service": "seeme-tutor"}
-
-
-@app.get("/api/profiles")
-async def list_profiles() -> dict:
-    """Return profile cards from Firestore (or local store as fallback)."""
-    if firestore_client:
-        profiles: list[dict] = []
-        async for student_snapshot in firestore_client.collection("students").stream():
-            try:
-                profile = await _build_profile_summary(student_snapshot)
-                if profile.get("id"):
-                    profiles.append(profile)
-            except Exception:
-                logger.warning(
-                    "Failed to build profile summary for student '%s'",
-                    student_snapshot.id,
-                    exc_info=True,
-                )
-        profiles.sort(key=lambda p: (str(p.get("name", "")).lower(), str(p.get("id", ""))))
-        return {"profiles": profiles}
-
-    # Fallback: serve from local in-memory store (seed data)
-    profiles = []
-    for sid in _local_profiles:
-        summary = _build_local_profile_summary(sid)
-        if summary and summary.get("id"):
-            profiles.append(summary)
-    profiles.sort(key=lambda p: (str(p.get("name", "")).lower(), str(p.get("id", ""))))
-    return {"profiles": profiles}
-
-
-@app.post("/api/profiles/{student_id}/preferences")
-async def save_profile_preferences(student_id: str, request: Request) -> dict:
-    """Persist tutor preferences for one student profile."""
-    normalized_student_id = str(student_id or "").strip().lower()
-    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
-        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Invalid payload.")
-
-    raw_preferences = payload.get("tutor_preferences", payload)
-    if raw_preferences is None:
-        raw_preferences = {}
-    if not isinstance(raw_preferences, dict):
-        raise HTTPException(status_code=400, detail="tutor_preferences must be an object.")
-
-    if firestore_client:
-        student_ref = firestore_client.collection("students").document(normalized_student_id)
-        student_snapshot = await student_ref.get()
-        if not student_snapshot.exists:
-            raise HTTPException(status_code=404, detail="Profile not found.")
-        student_data = student_snapshot.to_dict() or {}
-
-        existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-        normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
-
-        await student_ref.set(
-            {"tutor_preferences": normalized_preferences, "updated_at": time.time()},
-            merge=True,
-        )
-    else:
-        student_data = _local_profiles.get(normalized_student_id)
-        if not student_data:
-            raise HTTPException(status_code=404, detail="Profile not found.")
-        existing_preferences = _normalize_tutor_preferences(student_data.get("tutor_preferences"))
-        normalized_preferences = _normalize_tutor_preferences(raw_preferences, existing_preferences)
-        student_data["tutor_preferences"] = normalized_preferences
-
-    return {
-        "student_id": normalized_student_id,
-        "tutor_preferences": normalized_preferences,
-    }
-
-
-@app.post("/api/profiles/{student_id}/context")
-async def save_profile_context(student_id: str, request: Request) -> dict:
-    """Persist learner grounding context for one student profile."""
-    normalized_student_id = str(student_id or "").strip().lower()
-    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
-        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Invalid payload.")
-
-    raw_context = payload.get("profile_context", payload)
-    if raw_context is None:
-        raw_context = {}
-    if not isinstance(raw_context, dict):
-        raise HTTPException(status_code=400, detail="profile_context must be an object.")
-
-    if firestore_client:
-        student_ref = firestore_client.collection("students").document(normalized_student_id)
-        student_snapshot = await student_ref.get()
-        if not student_snapshot.exists:
-            raise HTTPException(status_code=404, detail="Profile not found.")
-        student_data = student_snapshot.to_dict() or {}
-
-        existing_context = _normalize_profile_context(student_data.get("profile_context"))
-        normalized_context = _normalize_profile_context(raw_context, existing_context)
-
-        await student_ref.set(
-            {"profile_context": normalized_context, "updated_at": time.time()},
-            merge=True,
-        )
-    else:
-        student_data = _local_profiles.get(normalized_student_id)
-        if not student_data:
-            raise HTTPException(status_code=404, detail="Profile not found.")
-        existing_context = _normalize_profile_context(student_data.get("profile_context"))
-        normalized_context = _normalize_profile_context(raw_context, existing_context)
-        student_data["profile_context"] = normalized_context
-
-    return {
-        "student_id": normalized_student_id,
-        "profile_context": normalized_context,
-    }
-
-
-@app.get("/api/profiles/{student_id}/sessions")
-async def list_profile_sessions(student_id: str, request: Request) -> dict:
-    """List sessions for one student profile."""
-    normalized_student_id = str(student_id or "").strip().lower()
-    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
-        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
-
-    status_filter = str(request.query_params.get("status", "open") or "open").strip().lower()
-    if status_filter not in {"open", "closed", "all"}:
-        raise HTTPException(status_code=400, detail="status must be one of: open, closed, all")
-
-    try:
-        limit = int(request.query_params.get("limit", "20"))
-    except ValueError:
-        raise HTTPException(status_code=400, detail="limit must be an integer")
-    limit = max(1, min(50, limit))
-
-    if firestore_client:
-        rows: list[dict] = []
-        async for snap in firestore_client.collection("sessions").stream():
-            data = snap.to_dict() or {}
-            if str(data.get("student_id") or "").strip().lower() != normalized_student_id:
-                continue
-            state = str(data.get("status") or "open").strip().lower()
-            if status_filter != "all" and state != status_filter:
-                continue
-            rows.append(
-                {
-                    "session_id": snap.id,
-                    "status": state,
-                    "phase": str(data.get("phase") or "setup"),
-                    "topic_id": str(data.get("topic_id") or ""),
-                    "topic_title": str(data.get("topic_title") or ""),
-                    "track_id": str(data.get("track_id") or ""),
-                    "track_title": str(data.get("track_title") or ""),
-                    "started_at": float(data.get("started_at") or 0.0),
-                    "updated_at": float(data.get("updated_at") or data.get("started_at") or 0.0),
-                    "ended_reason": data.get("ended_reason"),
-                    "setup": data.get("setup") if isinstance(data.get("setup"), dict) else {},
-                }
-            )
-        rows.sort(key=lambda item: float(item.get("updated_at") or 0.0), reverse=True)
-        return {"sessions": rows[:limit]}
-
-    # Local fallback: filter in-memory sessions
-    rows = []
-    for sid, data in _local_sessions.items():
-        if str(data.get("student_id") or "").strip().lower() != normalized_student_id:
-            continue
-        state = str(data.get("status") or "open").strip().lower()
-        if status_filter != "all" and state != status_filter:
-            continue
-        rows.append({
-            "session_id": sid,
-            "status": state,
-            "phase": str(data.get("phase") or "setup"),
-            "topic_id": str(data.get("topic_id") or ""),
-            "topic_title": str(data.get("topic_title") or ""),
-            "track_id": str(data.get("track_id") or ""),
-            "track_title": str(data.get("track_title") or ""),
-            "started_at": float(data.get("started_at") or 0.0),
-            "updated_at": float(data.get("updated_at") or data.get("started_at") or 0.0),
-            "ended_reason": data.get("ended_reason"),
-            "setup": data.get("setup") if isinstance(data.get("setup"), dict) else {},
-        })
-    rows.sort(key=lambda item: float(item.get("updated_at") or 0.0), reverse=True)
-    return {"sessions": rows[:limit]}
-
-
-@app.post("/api/profiles/{student_id}/sessions")
-async def create_profile_session(student_id: str, request: Request) -> dict:
-    """Create a new tutoring session placeholder for a student profile."""
-    normalized_student_id = str(student_id or "").strip().lower()
-    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
-        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
-
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    if payload is None:
-        payload = {}
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Invalid payload.")
-
-    # Verify student exists
-    if firestore_client:
-        student_ref = firestore_client.collection("students").document(normalized_student_id)
-        student_snapshot = await student_ref.get()
-        if not student_snapshot.exists:
-            raise HTTPException(status_code=404, detail="Profile not found.")
-    elif normalized_student_id not in _local_profiles:
-        raise HTTPException(status_code=404, detail="Profile not found.")
-
-    # Load backlog context (Firestore) or build local fallback
-    if firestore_client:
-        base_context = await _load_backlog_context(normalized_student_id)
-        if not base_context:
-            raise HTTPException(status_code=400, detail="Could not load student context.")
-    else:
-        # Build lightweight context from local store
-        local_student = _local_profiles[normalized_student_id]
-        local_tracks = _local_tracks.get(normalized_student_id, [])
-        active_track_id = str(local_student.get("active_track_id") or "").strip()
-        chosen = next((t for t in local_tracks if t["id"] == active_track_id), local_tracks[0] if local_tracks else None)
-        local_topic_rows = _local_topics.get(normalized_student_id, {}).get(chosen["id"] if chosen else "", [])
-        active_topic = next((t for t in local_topic_rows if t.get("status") != "mastered"), local_topic_rows[0] if local_topic_rows else None)
-        base_context = {
-            "track_id": chosen["id"] if chosen else "",
-            "track_title": chosen.get("title", "") if chosen else "",
-            "topic_id": active_topic["id"] if active_topic else "current-topic",
-            "topic_title": active_topic.get("title", "Current Topic") if active_topic else "Current Topic",
-        }
-
-    now = time.time()
-    session_id = str(uuid.uuid4())
-    setup_payload = payload.get("setup") if isinstance(payload.get("setup"), dict) else {}
-    resource_refs = [
-        _sanitize_text(item, max_len=400)
-        for item in list(setup_payload.get("resource_refs") or [])
-        if _sanitize_text(item, max_len=400)
-    ][:10]
-    resource_materials, transcript_context = await ingest_youtube_transcripts(resource_refs)
-    normalized_resource_materials = _normalize_resource_materials(resource_materials)
-    youtube_materials = [
-        item for item in normalized_resource_materials if item.get("kind") == "youtube"
-    ]
-    youtube_requested = len(youtube_materials)
-    youtube_imported = sum(1 for item in youtube_materials if item.get("status") == "ready")
-    youtube_failed = sum(
-        1 for item in youtube_materials if item.get("status") in {"unavailable", "error"}
-    )
-    plan_bootstrap_required = True
-    plan_bootstrap_completed = False
-    if youtube_imported > 0:
-        plan_bootstrap_source = "youtube_transcript"
-    elif youtube_requested > 0:
-        plan_bootstrap_source = "transcript_unavailable"
-    else:
-        plan_bootstrap_source = "session_setup"
-    session_setup = {
-        "session_goal": _sanitize_text(setup_payload.get("session_goal")),
-        "student_context_text": _sanitize_text(setup_payload.get("student_context_text")),
-        "resource_refs": resource_refs,
-        "resource_materials": normalized_resource_materials,
-        "confirmed": bool(setup_payload.get("confirmed", False)),
-        "confirmed_at": None,
-    }
-
-    track_id = _sanitize_text(payload.get("track_id"), max_len=80) or str(base_context.get("track_id") or "")
-    track_title = _sanitize_text(payload.get("track_title"), max_len=120) or str(base_context.get("track_title") or track_id)
-    topic_id = _sanitize_text(payload.get("topic_id"), max_len=80) or str(base_context.get("topic_id") or "current-topic")
-    topic_title = _sanitize_text(payload.get("topic_title"), max_len=140) or str(base_context.get("topic_title") or "Current Topic")
-
-    doc = {
-        "session_id": session_id,
-        "student_id": normalized_student_id,
-        "status": "open",
-        "phase": "setup",
-        "started_at": now,
-        "updated_at": now,
-        "closed_at": None,
-        "ended_reason": None,
-        "duration_seconds": None,
-        "consent_given": False,
-        "track_id": track_id,
-        "track_title": track_title,
-        "topic_id": topic_id,
-        "topic_title": topic_title,
-        "resource_transcript_context": _sanitize_long_text(transcript_context, max_len=24000),
-        "setup": session_setup,
-        "capture": {
-            "source": "none",
-            "summary_text": "",
-            "artifacts_count": 0,
-            "confirmed": False,
-            "confirmed_at": None,
-        },
-        "planning": {
-            "bootstrap_required": plan_bootstrap_required,
-            "bootstrap_completed": plan_bootstrap_completed,
-            "milestone_min": _PLAN_MILESTONE_MIN_DEFAULT,
-            "milestone_count": 0,
-            "fallback_generated": False,
-            "fallback_reason": "",
-            "bootstrap_source": plan_bootstrap_source,
-        },
-        "mastery": {
-            "state": "not_started",
-            "last_proposed_at": None,
-            "last_evaluated_at": None,
-            "last_outcome": None,
-            "approved_at": None,
-        },
-    }
-
-    if firestore_client:
-        await firestore_client.collection("sessions").document(session_id).set(doc, merge=True)
-    else:
-        _local_sessions[session_id] = doc
-
-    return {
-        "session_id": session_id,
-        "status": "open",
-        "phase": "setup",
-        "topic_id": topic_id,
-        "topic_title": topic_title,
-        "track_id": track_id,
-        "track_title": track_title,
-        "setup": session_setup,
-        "resource_ingestion": {
-            "youtube_requested": youtube_requested,
-            "youtube_imported": youtube_imported,
-            "youtube_failed": youtube_failed,
-        },
-    }
-
-
-@app.delete("/api/profiles/{student_id}/sessions/{session_id}")
-async def delete_profile_session(student_id: str, session_id: str) -> dict:
-    """Delete one session for a student profile."""
-    normalized_student_id = str(student_id or "").strip().lower()
-    if not _STUDENT_ID_PATTERN.match(normalized_student_id):
-        raise HTTPException(status_code=400, detail="Invalid profile identifier.")
-
-    normalized_session_id = str(session_id or "").strip().lower()
-    if not _SESSION_ID_PATTERN.match(normalized_session_id):
-        raise HTTPException(status_code=400, detail="Invalid session identifier.")
-
-    async with _active_student_sessions_lock:
-        active = _active_student_sessions.get(normalized_student_id)
-        if active and str(active.get("session_id") or "").strip().lower() == normalized_session_id:
-            raise HTTPException(status_code=409, detail="Cannot delete an active live session.")
-
-    if firestore_client:
-        session_ref = firestore_client.collection("sessions").document(normalized_session_id)
-        snapshot = await session_ref.get()
-        if not snapshot.exists:
-            raise HTTPException(status_code=404, detail="Session not found.")
-        session_data = snapshot.to_dict() or {}
-        session_student_id = str(session_data.get("student_id") or "").strip().lower()
-        if session_student_id != normalized_student_id:
-            raise HTTPException(status_code=404, detail="Session not found for this profile.")
-        await session_ref.delete()
-    else:
-        session_data = _local_sessions.get(normalized_session_id)
-        if not session_data:
-            raise HTTPException(status_code=404, detail="Session not found.")
-        if str(session_data.get("student_id") or "").strip().lower() != normalized_student_id:
-            raise HTTPException(status_code=404, detail="Session not found for this profile.")
-        del _local_sessions[normalized_session_id]
-
-    return {"deleted": True, "session_id": normalized_session_id}
-
-
-class _StudentEndedSession(Exception):
-    """Raised by _forward_to_gemini when the student explicitly ends the session."""
 
 
 @app.websocket("/ws")
@@ -1827,10 +554,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
         await websocket.close(code=1008)
         return
-    if str(selected_session.get("status") or "open").strip().lower() == "closed":
+    if str(selected_session.get("status") or "open").strip().lower() == "mastered":
         await _send_json(
             websocket,
-            {"type": "error", "data": "This session is already closed. Please create a new one."},
+            {"type": "error", "data": "This topic is already mastered. Create a new session for a new topic."},
         )
         await websocket.close(code=1008)
         return
@@ -1849,6 +576,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     memory_recall = await _load_memory_recall(
         raw_student_id,
         str(backlog_context.get("topic_id") or ""),
+        firestore_client,
+        recall_budget_tokens=MEMORY_RECALL_BUDGET_TOKENS,
+        recall_max_cells=MEMORY_RECALL_MAX_CELLS,
+        checkpoint_max_age_s=MEMORY_CHECKPOINT_MAX_AGE_S,
     )
     memory_recall_available = bool(
         isinstance(memory_recall, dict)
@@ -1895,7 +626,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "topic_title": backlog_context.get("topic_title"),
                 "phase": backlog_context.get("session_phase") or selected_session.get("phase") or "setup",
                 "updated_at": time.time(),
-            })
+            }, merge=True)
         except Exception:
             logger.warning("Session %s: failed to update session activity", session_id, exc_info=True)
 
@@ -2031,7 +762,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "mic_kickoff_sent": False,
         "_greeting_delivered": False,  # True after first greeting turn completes
         "_student_has_spoken": False,   # True after first input_transcription
-        "_turn_ticket_count": 3,        # Allow tutor turns per student/proactive trigger
+        "_turn_ticket_count": 1,        # Allow one tutor turn per student/proactive trigger
         "_last_tutor_audio_at": 0.0,    # For echo-guard around input_transcription
         "awaiting_student_reply": False,
         "student_activity_count": 0,
@@ -2054,6 +785,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         "session_setup": backlog_context.get("session_setup", {}),
         "resource_transcript_context": backlog_context.get("resource_transcript_context", ""),
         "resume_message": backlog_context.get("resume_message"),
+        "session_id": session_id,
         "student_id": raw_student_id,
         "student_name": backlog_context.get("student_name"),
         "track_id": backlog_context.get("track_id"),
@@ -2134,6 +866,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # Create queue for browser→Gemini upstream
             live_queue = LiveRequestQueue()
 
+            # Persist system instruction prompt snapshot (sent via ADK run config).
+            capture_prompt_text(
+                SYSTEM_PROMPT,
+                session_id=session_id,
+                source="system_instruction",
+                role="system",
+                runtime_state=runtime_state,
+            )
+
             # Send [SESSION START] hidden turn with student context
             student_context = {
                 "student_name": session_state.get("student_name"),
@@ -2180,7 +921,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "memory_recall_count": int(memory_recall.get("selected_count", 0)),
             }
             import json as _json
-            live_queue.send_content(
+            send_content_with_prompt_capture(
+                live_queue,
                 types.Content(
                     role="user",
                     parts=[types.Part(text=(
@@ -2191,22 +933,30 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "Wait silently until the student speaks to you via their microphone. "
                         "When the student speaks, greet them naturally and begin the session.]"
                     ))],
-                )
+                ),
+                session_id=session_id,
+                source="session_start_context",
+                runtime_state=runtime_state,
             )
             memory_context = build_hidden_memory_context(memory_recall)
             if memory_context:
-                live_queue.send_content(
+                send_content_with_prompt_capture(
+                    live_queue,
                     types.Content(
                         role="user",
                         parts=[types.Part(text=memory_context)],
-                    )
+                    ),
+                    session_id=session_id,
+                    source="memory_recall_context",
+                    runtime_state=runtime_state,
                 )
                 runtime_state["memory_recall_count"] = int(runtime_state.get("memory_recall_count", 0)) + 1
             resource_transcript_context = str(
                 session_state.get("resource_transcript_context") or ""
             ).strip()
             if resource_transcript_context:
-                live_queue.send_content(
+                send_content_with_prompt_capture(
+                    live_queue,
                     types.Content(
                         role="user",
                         parts=[
@@ -2220,7 +970,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                                 )
                             )
                         ],
-                    )
+                    ),
+                    session_id=session_id,
+                    source="resource_transcript_context",
+                    runtime_state=runtime_state,
                 )
             if bool(session_state.get("plan_bootstrap_required")):
                 transcript_available_for_bootstrap = bool(
@@ -2243,7 +996,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         "Then ask the student which milestone to start and call set_session_phase('tutoring'). "
                         "Do not mention this control message."
                     )
-                live_queue.send_content(
+                send_content_with_prompt_capture(
+                    live_queue,
                     types.Content(
                         role="user",
                         parts=[
@@ -2251,7 +1005,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                                 text=control_text
                             )
                         ],
-                    )
+                    ),
+                    session_id=session_id,
+                    source="plan_bootstrap_control",
+                    runtime_state=runtime_state,
                 )
             logger.info(
                 "Session %s run config: compression=%s(%s) resumption=%s(%s)",
@@ -2263,7 +1020,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             )
 
             forward_task = asyncio.create_task(
-                _forward_to_gemini(websocket, live_queue, session_id, runtime_state, report),
+                _forward_to_gemini(
+                    websocket, live_queue, session_id, runtime_state,
+                    firestore_client=firestore_client,
+                    latency_state=_latency_state,
+                    debug_counters=_debug_counters,
+                    debug_logger=_debug_logger,
+                    report=report,
+                ),
                 name="forward_to_gemini",
             )
             receive_task = asyncio.create_task(
@@ -2275,7 +1039,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     runtime_state,
                     wb_queue,
                     topic_queue,
-                    report,
+                    firestore_client=firestore_client,
+                    latency_state=_latency_state,
+                    debug_counters=_debug_counters,
+                    debug_logger=_debug_logger,
+                    build_session_run_config=_build_session_run_config,
+                    adk_stream_max_retries=ADK_STREAM_MAX_RETRIES,
+                    adk_stream_retry_backoff_s=ADK_STREAM_RETRY_BACKOFF_S,
+                    memory_checkpoint_interval_s=MEMORY_CHECKPOINT_INTERVAL_S,
+                    live_compression_trigger_tokens=LIVE_COMPRESSION_TRIGGER_TOKENS,
+                    live_compression_target_tokens=LIVE_COMPRESSION_TARGET_TOKENS,
+                    response_ref_max_age_ms=RESPONSE_REF_MAX_AGE_MS,
+                    turn_to_turn_max_gap_ms=TURN_TO_TURN_MAX_GAP_MS,
+                    report=report,
                 ),
                 name="forward_to_client",
             )
@@ -2288,7 +1064,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 name="idle_orchestrator",
             )
             heartbeat_task = asyncio.create_task(
-                _session_heartbeat(session_id, runtime_state),
+                _session_heartbeat(session_id, runtime_state, _debug_counters, _debug_logger),
                 name="session_heartbeat",
             )
             wb_dispatcher_task = asyncio.create_task(
@@ -2355,6 +1131,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 runtime_state,
                 session_id,
                 reason="session_end",
+                firestore_client=firestore_client,
+                checkpoint_interval_s=MEMORY_CHECKPOINT_INTERVAL_S,
+                send_json=None,
                 websocket=None,
                 report=report,
                 force=True,
@@ -2385,23 +1164,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     "updated_at": now_ts,
                     "duration_seconds": duration,
                 }
-                if ended_reason == "student_ended":
-                    update_payload.update(
-                        {
-                            "status": "closed",
-                            "phase": "closed",
-                            "ended_reason": ended_reason,
-                            "closed_at": now_ts,
-                        }
-                    )
-                else:
-                    update_payload.update(
-                        {
-                            "status": "open",
-                            "ended_reason": None,
-                            "last_disconnect_at": now_ts,
-                        }
-                    )
+                # Ending the live call never closes the session — it stays
+                # "open" so the student can resume later.  Only mastery
+                # (or a future explicit abandon action) should change status.
+                update_payload.update(
+                    {
+                        "status": "open",
+                        "ended_reason": ended_reason,
+                        "last_disconnect_at": now_ts,
+                    }
+                )
                 await firestore_client.collection("sessions").document(session_id).set(
                     update_payload,
                     merge=True,
@@ -2466,7 +1238,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             report.finalize(ended_reason)
             if firestore_client:
                 try:
-                    await _persist_session_metrics_summary(session_id, report)
+                    await _persist_session_metrics_summary(session_id, report, firestore_client)
                 except Exception:
                     logger.warning("Session %s: failed to persist telemetry summary", session_id, exc_info=True)
             try:
@@ -2476,1802 +1248,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             remove_report(session_id)
 
 
-async def _session_heartbeat(session_id: str, runtime_state: dict) -> None:
-    """Log session state every 3 seconds for debugging silence issues."""
-    d = _debug_logger
-    prev_counters: dict = {}
-    while True:
-        await asyncio.sleep(3.0)
-        c = _debug_counters.get(session_id)
-        if c is None:
-            return
-        now = time.time()
-        since_gemini = now - c["last_gemini_event_at"] if c["last_gemini_event_at"] > 0 else -1
-        since_audio_in = now - c["last_audio_in_at"] if c["last_audio_in_at"] > 0 else -1
-        # Deltas since last heartbeat
-        d_ai = c["audio_in"] - prev_counters.get("audio_in", 0)
-        d_ao = c["audio_out"] - prev_counters.get("audio_out", 0)
-        d_vi = c["video_in"] - prev_counters.get("video_in", 0)
-        d_to = c["text_out"] - prev_counters.get("text_out", 0)
-        d_tc = c["turn_complete"] - prev_counters.get("turn_complete", 0)
-        d_ir = c["interrupted"] - prev_counters.get("interrupted", 0)
-        d_tr = c["tool_responses"] - prev_counters.get("tool_responses", 0)
-        prev_counters = dict(c)
+# _session_heartbeat, _session_timer, _mark_student_activity, _mark_proactive_response_seen,
+# _is_probable_speech_pcm16, _resume_from_away, _apply_checkpoint_decision, _merge_resume_message
+# moved to modules.session_helpers
 
-        d.debug(
-            "HEARTBEAT sid=%s | in:audio=%d video=%d | out:audio=%d text=%d tc=%d int=%d tool=%d | "
-            "speaking=%s conv=%s mic=%s away=%s idle=%d | "
-            "since_gemini=%.1fs since_audio_in=%.1fs",
-            session_id[:8],
-            d_ai, d_vi,
-            d_ao, d_to, d_tc, d_ir, d_tr,
-            runtime_state.get("assistant_speaking"),
-            runtime_state.get("conversation_started"),
-            runtime_state.get("mic_active"),
-            runtime_state.get("away_mode"),
-            runtime_state.get("idle_stage", 0),
-            since_gemini, since_audio_in,
-        )
-        # Flag potential silence: no Gemini events for >5s while audio is flowing in
-        if since_gemini > 5 and d_ai > 0:
-            d.warning(
-                "SILENCE sid=%s — no Gemini events for %.1fs but %d audio chunks sent | "
-                "speaking=%s away=%s idle=%d",
-                session_id[:8], since_gemini, d_ai,
-                runtime_state.get("assistant_speaking"),
-                runtime_state.get("away_mode"),
-                runtime_state.get("idle_stage", 0),
-            )
 
+# _load_memory_recall, _persist_memory_checkpoint, _persist_session_metrics_summary,
+# _log_command_event moved to modules.persistence
 
-async def _session_timer(websocket: WebSocket, timeout: float) -> None:
-    """Send session_limit after the timeout expires, ending the session gracefully."""
-    await asyncio.sleep(timeout)
-    logger.info("Session timeout reached (%ds) — notifying client", int(timeout))
-    try:
-        await websocket.send_text(json.dumps({"type": "session_limit"}))
-    except Exception:
-        logger.warning(
-            "Could not deliver session_limit to client (WebSocket already closed)",
-            exc_info=True,
-        )
-
-
-def _mark_student_activity(runtime_state: dict, *, unlock_turn: bool = False) -> None:
-    """Common state reset when the student does something intentional.
-
-    Called from every upstream control-message handler that represents real
-    student engagement (speech, button press, source switch, etc.).  Centralises
-    the six-line pattern that was copy-pasted across 8+ handlers.
-
-    Args:
-        unlock_turn: If True, also guarantee at least one turn ticket so the
-            tutor can respond (used for barge-in, speech pace, transcription).
-    """
-    runtime_state["last_user_activity_at"] = time.time()
-    runtime_state["idle_stage"] = 0
-    runtime_state["conversation_started"] = True
-    runtime_state["mic_kickoff_sent"] = True
-    runtime_state["proactive_waiting_for_student"] = False
-    runtime_state["awaiting_student_reply"] = False
-    runtime_state["student_activity_count"] = int(runtime_state.get("student_activity_count", 0)) + 1
-    reset_silence_tracking(runtime_state)
-    if unlock_turn:
-        runtime_state["_turn_ticket_count"] = max(
-            int(runtime_state.get("_turn_ticket_count", 0)), 3,
-        )
-
-
-def _mark_proactive_response_seen(runtime_state: dict, *, source: str) -> None:
-    """Lock proactive idle injections after a proactive-guided tutor response."""
-    if runtime_state.get("idle_poke_sent") or runtime_state.get("idle_nudge_sent"):
-        if not runtime_state.get("proactive_waiting_for_student"):
-            logger.info("Proactive cycle locked after tutor %s output; waiting for student activity", source)
-        runtime_state["proactive_waiting_for_student"] = True
-
-
-def _is_probable_speech_pcm16(raw_bytes: bytes) -> bool:
-    """Heuristic speech detection for 16kHz PCM16 mono chunks."""
-    if not raw_bytes or len(raw_bytes) < 160:
-        return False
-    try:
-        samples = array.array('h', raw_bytes)
-        if not samples:
-            return False
-            
-        peak = max(abs(s) for s in samples)
-        sum_squares = sum(s * s for s in samples)
-        rms = math.isqrt(sum_squares // len(samples))
-    except Exception:
-        return False
-    return rms >= 420 or peak >= 1700
-
-
-async def _resume_from_away(websocket: WebSocket, runtime_state: dict) -> None:
-    runtime_state["away_mode"] = False
-    _mark_student_activity(runtime_state)
-    await _send_json(websocket, {"type": "assistant_state", "data": {"state": "active", "reason": "resume"}})
-    if runtime_state.get("mic_active"):
-        resume_message = runtime_state.get("resume_message") or "Welcome back. Let's continue from your last checkpoint."
-        await _send_json(websocket, {"type": "assistant_prompt", "data": resume_message})
-
-
-async def _apply_checkpoint_decision(runtime_state: dict, session_id: str, decision: str) -> dict:
-    """Persist checkpoint decision for the active student topic."""
-    normalized = (decision or "").strip().lower()
-    if normalized not in {"now", "later", "resolved"}:
-        return {"result": "error", "detail": "decision must be now, later, or resolved"}
-
-    student_id = runtime_state.get("student_id")
-    track_id = runtime_state.get("track_id")
-    topic_id = runtime_state.get("topic_id")
-    if not student_id or not track_id or not topic_id:
-        return {"result": "error", "detail": "checkpoint context missing in runtime state"}
-
-    if not firestore_client:
-        return {"result": "saved", "decision": normalized, "persisted": False}
-
-    now = time.time()
-    checkpoint_id = f"{track_id}--{topic_id}"
-    checkpoint_status = "open"
-    topic_status = "struggling"
-    checkpoint_open = True
-    if normalized == "now":
-        checkpoint_status = "in_progress"
-        topic_status = "in_progress"
-    elif normalized == "later":
-        checkpoint_status = "deferred"
-        topic_status = "struggling"
-    elif normalized == "resolved":
-        checkpoint_status = "resolved"
-        topic_status = "mastered"
-        checkpoint_open = False
-
-    student_ref = firestore_client.collection("students").document(student_id)
-    checkpoint_ref = student_ref.collection("checkpoints").document(checkpoint_id)
-    topic_ref = (
-        student_ref.collection("tracks")
-        .document(track_id)
-        .collection("topics")
-        .document(topic_id)
-    )
-
-    await checkpoint_ref.set({
-        "status": checkpoint_status,
-        "decision": normalized,
-        "updated_at": now,
-        "decision_at": now,
-        "session_id": session_id,
-    }, merge=True)
-    await topic_ref.set({
-        "status": topic_status,
-        "checkpoint_open": checkpoint_open,
-        "last_seen_session_id": session_id,
-        "last_seen_at": now,
-        "updated_at": now,
-    }, merge=True)
-    await firestore_client.collection("sessions").document(session_id).collection("progress").add({
-        "student_id": student_id,
-        "track_id": track_id,
-        "topic_id": topic_id,
-        "status": f"checkpoint_{normalized}",
-        "timestamp": now,
-    })
-    return {
-        "result": "saved",
-        "decision": normalized,
-        "persisted": True,
-        "checkpoint_id": checkpoint_id,
-    }
-
-
-def _merge_resume_message(base_resume_message: str, recall_summary: str) -> str:
-    """Attach concise memory summary to the normal resume message."""
-    base = str(base_resume_message or "").strip() or "Let's continue where we left off."
-    summary = str(recall_summary or "").strip()
-    if not summary:
-        return base
-    if len(summary) > 220:
-        summary = summary[:217].rstrip() + "..."
-    return f"{base} Quick recap: {summary}"
-
-
-async def _load_memory_recall(student_id: str, topic_id: str) -> dict:
-    """Load ranked memory recall payload for session bootstrap."""
-    if not firestore_client:
-        return {}
-    sid = str(student_id or "").strip().lower()
-    if not sid:
-        return {}
-    try:
-        cells = await load_recent_memory_cells(
-            firestore_client,
-            student_id=sid,
-            limit=80,
-        )
-        recall_payload = build_recall_payload(
-            cells,
-            topic_id=topic_id,
-            budget_tokens=MEMORY_RECALL_BUDGET_TOKENS,
-            max_cells=MEMORY_RECALL_MAX_CELLS,
-        )
-        latest_checkpoint = await load_recent_checkpoint(
-            firestore_client,
-            student_id=sid,
-            max_age_seconds=MEMORY_CHECKPOINT_MAX_AGE_S,
-        )
-        if latest_checkpoint:
-            recall_payload["latest_checkpoint"] = latest_checkpoint
-            if not str(recall_payload.get("summary") or "").strip():
-                recall_payload["summary"] = str(latest_checkpoint.get("summary_text") or "").strip()
-        return recall_payload
-    except Exception:
-        logger.warning("Failed to load memory recall for student '%s'", sid, exc_info=True)
-        return {}
-
-
-async def _persist_memory_checkpoint(
-    runtime_state: dict,
-    session_id: str,
-    *,
-    reason: str,
-    websocket: WebSocket | None = None,
-    report: "SessionReport | None" = None,
-    force: bool = False,
-) -> dict | None:
-    """
-    Create + persist checkpoint and derived memory cells.
-
-    Returns payload with checkpoint_id and saved cell count when persisted.
-    """
-    if report:
-        report.record_memory_checkpoint_attempt(reason=str(reason or ""))
-
-    if not firestore_client:
-        if report:
-            report.record_memory_checkpoint_skipped(reason="firestore_unavailable")
-        return None
-    student_id = str(runtime_state.get("student_id") or "").strip().lower()
-    if not student_id:
-        if report:
-            report.record_memory_checkpoint_skipped(reason="missing_student_id")
-        return None
-
-    now = time.time()
-    interval_s = max(60, int(runtime_state.get("memory_checkpoint_interval_s", MEMORY_CHECKPOINT_INTERVAL_S)))
-    last_at = float(runtime_state.get("memory_last_checkpoint_at", 0.0))
-    if (not force) and last_at > 0 and (now - last_at) < interval_s:
-        if report:
-            report.record_memory_checkpoint_skipped(reason="interval_guardrail")
-        return None
-
-    checkpoint = build_checkpoint_summary(runtime_state, reason=reason)
-    if not checkpoint.get("summary_text"):
-        if report:
-            report.record_memory_checkpoint_skipped(reason="empty_summary")
-        return None
-
-    checkpoint_id = await save_checkpoint(
-        firestore_client,
-        student_id=student_id,
-        session_id=session_id,
-        checkpoint=checkpoint,
-    )
-    if not checkpoint_id:
-        if report:
-            report.record_memory_checkpoint_failure(
-                reason=str(reason or ""),
-                error="checkpoint_save_failed",
-            )
-        return None
-
-    try:
-        derived_cells = extract_cells_from_checkpoint(
-            checkpoint,
-            source_session_id=session_id,
-            tutor_preferences=runtime_state.get("tutor_preferences"),
-        )
-        saved_cells = await upsert_memory_cells(
-            firestore_client,
-            student_id=student_id,
-            cells=derived_cells,
-        )
-    except Exception as exc:
-        if report:
-            report.record_memory_checkpoint_failure(
-                reason=str(reason or ""),
-                error=f"cell_upsert_failed:{type(exc).__name__}",
-            )
-        return None
-
-    runtime_state["memory_last_checkpoint_at"] = now
-    runtime_state["memory_checkpoint_count"] = int(runtime_state.get("memory_checkpoint_count", 0)) + 1
-    runtime_state["memory_cells_saved"] = int(runtime_state.get("memory_cells_saved", 0)) + int(saved_cells)
-    runtime_state["memory_last_checkpoint_reason"] = str(reason or "")
-    payload = {
-        "checkpoint_id": checkpoint_id,
-        "reason": str(reason or ""),
-        "saved_cells": int(saved_cells),
-        "topic_id": str(checkpoint.get("topic_id") or ""),
-        "topic_title": str(checkpoint.get("topic_title") or ""),
-        "summary": str(checkpoint.get("summary_text") or ""),
-        "created_at": checkpoint.get("created_at"),
-    }
-    if websocket is not None:
-        await _send_json(websocket, {"type": "memory_checkpoint", "data": payload})
-    if report:
-        report.record_memory_checkpoint(saved_cells=saved_cells, reason=str(reason or ""))
-    return payload
-
-
-async def _persist_session_metrics_summary(
-    session_id: str,
-    report: "SessionReport | None",
-) -> None:
-    """Persist compact session telemetry for longitudinal analysis in Firestore."""
-    if not firestore_client or report is None:
-        return
-
-    report_data = report.data if isinstance(report.data, dict) else {}
-    scorecard = report_data.get("prd_scorecard", {}) if isinstance(report_data, dict) else {}
-    score_summary = scorecard.get("summary", {}) if isinstance(scorecard, dict) else {}
-    derived = scorecard.get("derived_metrics", {}) if isinstance(scorecard, dict) else {}
-    pocs = scorecard.get("pocs", {}) if isinstance(scorecard, dict) else {}
-    p99 = pocs.get("poc_99_hero_flow_rehearsal", {}) if isinstance(pocs, dict) else {}
-    run_config = report_data.get("run_config", {}) if isinstance(report_data, dict) else {}
-    resilience = report_data.get("resilience", {}) if isinstance(report_data, dict) else {}
-    memory = report_data.get("memory", {}) if isinstance(report_data, dict) else {}
-    compression = report_data.get("compression", {}) if isinstance(report_data, dict) else {}
-
-    telemetry_payload = {
-        "version": "v1",
-        "updated_at": time.time(),
-        "run_config": {
-            "compression_enabled": bool(run_config.get("compression_enabled")),
-            "compression_field": run_config.get("compression_field"),
-            "resumption_enabled": bool(run_config.get("resumption_enabled")),
-            "resumption_field": run_config.get("resumption_field"),
-            "resumption_requested": bool(run_config.get("resumption_requested")),
-        },
-        "proof_signals": {
-            "compression_events": int(compression.get("events", 0)),
-            "memory_recalls_applied": int(memory.get("recalls_applied", 0)),
-            "memory_checkpoints_saved": int(memory.get("checkpoints_saved", 0)),
-            "session_resume_successes": int(resilience.get("session_resume_successes", 0)),
-            "auto_pass_rate_percent": score_summary.get("auto_pass_rate_percent"),
-            "hero_flow_checklist_completed": p99.get("checklist_completed"),
-            "hero_flow_checklist_total": p99.get("checklist_total"),
-        },
-        "resilience": {
-            "stream_retry_attempts": int(resilience.get("stream_retry_attempts", 0)),
-            "stream_reconnect_successes": int(resilience.get("stream_reconnect_successes", 0)),
-            "stream_reconnect_failures": int(resilience.get("stream_reconnect_failures", 0)),
-            "session_resume_attempts": int(resilience.get("session_resume_attempts", 0)),
-            "session_resume_successes": int(resilience.get("session_resume_successes", 0)),
-            "session_resume_fallbacks": int(resilience.get("session_resume_fallbacks", 0)),
-            "retry_backoff_seconds": resilience.get("retry_backoff_seconds", []),
-        },
-        "memory": {
-            "recall_checks": int(memory.get("recall_checks", 0)),
-            "recalls_applied": int(memory.get("recalls_applied", 0)),
-            "recall_candidates_total": int(memory.get("recall_candidates_total", 0)),
-            "recall_selected_total": int(memory.get("recall_selected_total", 0)),
-            "last_recall_token_estimate": int(memory.get("last_recall_token_estimate", 0)),
-            "recall_avg_tokens": derived.get("memory_recall_avg_tokens"),
-            "checkpoint_attempts": int(memory.get("checkpoint_attempts", 0)),
-            "checkpoint_saved": int(memory.get("checkpoints_saved", 0)),
-            "checkpoint_skipped": int(memory.get("checkpoint_skipped", 0)),
-            "checkpoint_failed": int(memory.get("checkpoint_failed", 0)),
-            "checkpoint_reasons": memory.get("checkpoint_reasons", {}),
-            "checkpoint_skip_reasons": memory.get("checkpoint_skip_reasons", {}),
-            "checkpoint_failure_reasons": memory.get("checkpoint_failure_reasons", {}),
-            "cells_saved": int(memory.get("cells_saved", 0)),
-            "budget_violations": int(memory.get("budget_violations", 0)),
-        },
-        "compression": {
-            "events": int(compression.get("events", 0)),
-            "last_token_estimate": int(compression.get("last_token_estimate", 0)),
-            "trigger_tokens": int(compression.get("trigger_tokens", 0)),
-            "target_tokens": int(compression.get("target_tokens", 0)),
-        },
-        "scorecard": {
-            "checks_passed": score_summary.get("checks_passed"),
-            "checks_failed": score_summary.get("checks_failed"),
-            "checks_not_tested": score_summary.get("checks_not_tested"),
-            "auto_checks_total": score_summary.get("auto_checks_total"),
-            "auto_checks_passed": score_summary.get("auto_checks_passed"),
-            "auto_checks_failed": score_summary.get("auto_checks_failed"),
-            "auto_pass_rate_percent": score_summary.get("auto_pass_rate_percent"),
-            "poc_status_counts": score_summary.get("poc_status_counts", {}),
-        },
-        "derived_metrics": {
-            "compression_events": derived.get("compression_events"),
-            "memory_checkpoints_saved": derived.get("memory_checkpoints_saved"),
-            "memory_cells_saved": derived.get("memory_cells_saved"),
-            "memory_checkpoint_success_rate_percent": derived.get("memory_checkpoint_success_rate_percent"),
-            "memory_recall_avg_tokens": derived.get("memory_recall_avg_tokens"),
-            "session_resume_success_rate_percent": derived.get("session_resume_success_rate_percent"),
-            "stream_retry_success_rate_percent": derived.get("stream_retry_success_rate_percent"),
-            "stream_retry_backoff_avg_seconds": derived.get("stream_retry_backoff_avg_seconds"),
-        },
-    }
-    await firestore_client.collection("sessions").document(session_id).set(
-        {"telemetry": telemetry_payload},
-        merge=True,
-    )
-
-
-async def _log_command_event(session_id: str, runtime_state: dict, payload: dict) -> None:
-    """Persist voice command telemetry for debugging command behavior."""
-    if not isinstance(payload, dict):
-        payload = {}
-
-    command_event = {
-        "timestamp": time.time(),
-        "source": "voice",
-        "student_id": runtime_state.get("student_id"),
-        "track_id": runtime_state.get("track_id"),
-        "topic_id": runtime_state.get("topic_id"),
-        "command_id": str(payload.get("command_id", "unknown")),
-        "spoken_text": str(payload.get("spoken_text", "")),
-        "normalized_text": str(payload.get("normalized_text", "")),
-        "match_status": str(payload.get("match_status", "unknown")),
-        "action_status": str(payload.get("action_status", "unknown")),
-        "detail": str(payload.get("detail", "")),
-        "attempt": int(payload.get("attempt", 0) or 0),
-        "intent": str(payload.get("intent", "")),
-    }
-    intent = str(command_event.get("intent") or "").strip().lower()
-    if intent == "search_request":
-        runtime_state["search_intent_signal_until"] = (
-            time.time() + float(SEARCH_INTENT_SIGNAL_WINDOW_S)
-        )
-    logger.info(
-        "CMD session=%s command=%s match=%s action=%s detail=%s attempt=%s normalized='%s'",
-        session_id,
-        command_event["command_id"],
-        command_event["match_status"],
-        command_event["action_status"],
-        command_event["detail"],
-        command_event["attempt"],
-        command_event["normalized_text"],
-    )
-
-    if not firestore_client:
-        return
-
-    try:
-        await firestore_client.collection("sessions").document(session_id).collection("commands").add(command_event)
-    except Exception:
-        logger.warning("Session %s: failed to persist command event", session_id, exc_info=True)
-
-
-async def _forward_to_gemini(
-    websocket: WebSocket,
-    queue: LiveRequestQueue,
-    session_id: str,
-    runtime_state: dict,
-    report: "SessionReport | None" = None,
-) -> None:
-    """
-    Receive JSON messages from the browser and forward media to Gemini
-    via the ADK LiveRequestQueue.
-
-    Runs until the WebSocket is disconnected or an unrecoverable error occurs.
-    """
-    audio_chunks_sent = 0
-    video_frames_sent = 0
-    last_stats_time = time.time()
-    STATS_INTERVAL = 10  # log stats every 10 seconds
-
-    try:
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                message = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.warning("Received non-JSON message from browser, ignoring")
-                continue
-
-            msg_type = message.get("type")
-
-            if not msg_type:
-                logger.warning("Malformed browser message (missing type), ignoring")
-                continue
-
-            # Control messages (no data payload)
-            if msg_type == "end_session":
-                logger.info("Student requested end_session")
-                queue.close()
-                raise _StudentEndedSession()
-            if msg_type == "consent_ack":
-                logger.info("Session %s: consent acknowledged", session_id)
-                if firestore_client:
-                    try:
-                        await firestore_client.collection("sessions").document(session_id).update({
-                            "consent_given": True,
-                            "consent_at": time.time(),
-                        })
-                    except Exception:
-                        logger.warning("Session %s: failed to record consent", session_id, exc_info=True)
-                continue
-            if msg_type == "user_activity":
-                activity = message.get("data") if isinstance(message.get("data"), dict) else {}
-                activity_kind = str(activity.get("kind", "")).strip().lower()
-                # Frontend "speech" activity is a coarse RMS signal and can fire on noise.
-                # Do not treat it as real student intent/activity for turn unlocking.
-                if activity_kind == "speech":
-                    continue
-                _mark_student_activity(runtime_state)
-                if runtime_state.get("away_mode"):
-                    await _resume_from_away(websocket, runtime_state)
-                continue
-            if msg_type == "mic_start":
-                now = time.time()
-                runtime_state["mic_active"] = True
-                runtime_state["mic_opened_at"] = now
-                # mic_start deliberately resets conversation to allow the
-                # kickoff timer to fire — do NOT use _mark_student_activity here.
-                runtime_state["last_user_activity_at"] = now
-                runtime_state["idle_stage"] = 0
-                runtime_state["mic_kickoff_sent"] = False
-                runtime_state["conversation_started"] = False
-                runtime_state["proactive_waiting_for_student"] = False
-                reset_silence_tracking(runtime_state)
-                # try:
-                #     queue.send_activity_start()
-                # except Exception:
-                #     logger.debug("Session %s: failed to send activity_start", session_id, exc_info=True)
-                logger.info("Control message from browser: 'mic_start'")
-                continue
-            if msg_type == "away_mode":
-                active = bool(message.get("active", True))
-                runtime_state["away_mode"] = active
-                if not active:
-                    _mark_student_activity(runtime_state)
-                else:
-                    runtime_state["last_user_activity_at"] = time.time()
-                    runtime_state["idle_stage"] = 0
-                if active:
-                    await _send_json(websocket, {"type": "assistant_state", "data": {"state": "away", "reason": "student_requested"}})
-                    await _send_json(websocket, {
-                        "type": "assistant_prompt",
-                        "data": "Got it — take your time. Say 'I'm back' when you want to continue.",
-                    })
-                else:
-                    await _resume_from_away(websocket, runtime_state)
-                continue
-            if msg_type == "checkpoint_decision":
-                decision = str(message.get("decision", "")).strip().lower()
-                result = await _apply_checkpoint_decision(runtime_state, session_id, decision)
-                if result.get("result") != "saved":
-                    await _send_json(websocket, {
-                        "type": "assistant_prompt",
-                        "data": "I couldn't save that checkpoint decision yet. Please try again.",
-                    })
-                    continue
-                if decision == "later":
-                    await _send_json(websocket, {
-                        "type": "assistant_prompt",
-                        "data": "Saved for later. We'll keep this topic in your backlog.",
-                    })
-                elif decision == "now":
-                    await _send_json(websocket, {
-                        "type": "assistant_prompt",
-                        "data": "Great, let's solve it now together.",
-                    })
-                elif decision == "resolved":
-                    await _send_json(websocket, {
-                        "type": "assistant_prompt",
-                        "data": "Nice work. Marked as resolved in your backlog.",
-                    })
-                continue
-            if msg_type == "tutor_preferences_update":
-                raw_preferences = message.get("data", {})
-                if not isinstance(raw_preferences, dict):
-                    logger.warning("Session %s: invalid tutor_preferences_update payload", session_id)
-                    continue
-                current_preferences = _normalize_tutor_preferences(runtime_state.get("tutor_preferences"))
-                updated_preferences = _normalize_tutor_preferences(raw_preferences, current_preferences)
-                runtime_state["tutor_preferences"] = updated_preferences
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                control_prompt = _build_tutor_preferences_control_prompt(updated_preferences)
-                try:
-                    queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=control_prompt)])
-                    )
-                    runtime_state["last_hidden_prompt_at"] = time.time()
-                except Exception:
-                    logger.warning(
-                        "Session %s: failed to forward tutor preferences update",
-                        session_id,
-                        exc_info=True,
-                    )
-                await _send_json(websocket, {"type": "tutor_preferences_ack", "data": updated_preferences})
-                continue
-            if msg_type == "speech_pace":
-                pace = str(message.get("pace", "")).strip().lower()
-                instruction = PACE_CONTROL_INSTRUCTIONS.get(pace)
-                if not instruction:
-                    logger.warning("Session %s: unsupported speech pace command '%s'", session_id, pace)
-                    continue
-                runtime_state["speech_pace"] = pace
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                try:
-                    queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=instruction)])
-                    )
-                except Exception:
-                    logger.warning("Session %s: failed to forward speech pace command", session_id, exc_info=True)
-                continue
-            if msg_type == "barge_in":
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                runtime_state["_student_has_spoken"] = True
-                if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
-                    runtime_state["latency_first_request_at"] = time.time()
-                runtime_state["assistant_speaking"] = False
-                runtime_state["latency_last_barge_in_at"] = time.time()
-                await _send_json(websocket, {"type": "interrupted"})
-                continue
-            if msg_type == "command_event":
-                await _log_command_event(session_id, runtime_state, message.get("data", {}))
-                continue
-            if msg_type in ("mic_stop", "camera_off"):
-                if msg_type == "mic_stop":
-                    runtime_state["mic_active"] = False
-                    runtime_state["mic_opened_at"] = None
-                    runtime_state["mic_kickoff_sent"] = False
-                    runtime_state["idle_stage"] = 0
-                    # try:
-                    #     queue.send_activity_end()
-                    # except Exception:
-                    #     logger.debug("Session %s: failed to send activity_end", session_id, exc_info=True)
-                logger.info("Control message from browser: '%s'", msg_type)
-                continue
-            if msg_type == "source_switch":
-                now = time.time()
-                new_source = str(message.get("source", "")).strip().lower()
-                if new_source not in ("screen", "camera"):
-                    logger.warning("Session %s: invalid source_switch source '%s'", session_id, new_source)
-                    continue
-                old_source = runtime_state.get("active_source", "camera")
-                # Debounce rapid duplicate switches
-                last_switch = runtime_state.get("last_switch_at", 0.0)
-                if last_switch > 0 and (now - last_switch) < SOURCE_SWITCH_COOLDOWN_S and old_source == new_source:
-                    continue
-                runtime_state["active_source"] = new_source
-                runtime_state["source_switches"] = runtime_state.get("source_switches", 0) + 1
-                runtime_state["last_switch_at"] = now
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                logger.info(
-                    "SOURCE SWITCH #%d: %s -> %s",
-                    runtime_state["source_switches"], old_source, new_source,
-                )
-                if report:
-                    report.record_source_switch(old_source, new_source)
-                prompt = get_switch_prompt(new_source)
-                if prompt:
-                    try:
-                        queue.send_content(
-                            types.Content(role="user", parts=[types.Part(text=prompt)])
-                        )
-                        runtime_state["last_hidden_prompt_at"] = now
-                    except Exception:
-                        logger.warning("Session %s: failed to send source switch prompt", session_id, exc_info=True)
-                await _send_json(websocket, {
-                    "type": "source_switch_ack",
-                    "data": {"source": new_source, "count": runtime_state["source_switches"]},
-                })
-                continue
-            if msg_type == "stop_sharing":
-                now = time.time()
-                old_source = runtime_state.get("active_source", "camera")
-                runtime_state["active_source"] = "none"
-                runtime_state["stop_sharing_count"] = runtime_state.get("stop_sharing_count", 0) + 1
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                logger.info("STOP SHARING #%d: was=%s", runtime_state["stop_sharing_count"], old_source)
-                if report:
-                    report.record_stop_sharing(old_source)
-                try:
-                    queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=STOP_SHARING_PROMPT)])
-                    )
-                    runtime_state["last_hidden_prompt_at"] = now
-                except Exception:
-                    logger.warning("Session %s: failed to send stop sharing prompt", session_id, exc_info=True)
-                await _send_json(websocket, {
-                    "type": "stop_sharing_ack",
-                    "data": {"count": runtime_state["stop_sharing_count"]},
-                })
-                continue
-
-            encoded_data = message.get("data")
-            if not encoded_data:
-                logger.warning("Malformed browser message (missing data for type '%s'), ignoring", msg_type)
-                continue
-
-            try:
-                raw_bytes = base64.b64decode(encoded_data)
-            except binascii.Error:
-                logger.warning(
-                    "Invalid base64 data in browser message of type '%s' (len=%d) — ignoring frame",
-                    msg_type,
-                    len(encoded_data) if isinstance(encoded_data, str) else -1,
-                )
-                continue
-
-            if msg_type == "audio":
-                now = time.time()
-                # Audio heuristic: grant a ticket when speech-like audio is detected,
-                # but do NOT open the greeting gate here. Only input_transcription
-                # or barge_in should set _student_has_spoken, because the PCM
-                # heuristic fires on ambient noise and defeats the greeting gate.
-                if (
-                    runtime_state.get("_greeting_delivered")
-                    and not runtime_state.get("_student_has_spoken")
-                    and _is_probable_speech_pcm16(raw_bytes)
-                ):
-                    # Grant a ticket so the model CAN respond once transcription confirms speech,
-                    # but keep the greeting gate closed.
-                    runtime_state["_turn_ticket_count"] = max(int(runtime_state.get("_turn_ticket_count", 0)), 1)
-                    logger.debug("Speech-like audio detected — granting ticket but keeping greeting gate")
-                # Raw audio chunks are continuous (~15/sec) even during silence.
-                # However, when speech-like audio IS detected, we must reset the
-                # idle timer to prevent proactive pokes while the student is talking.
-                # This is critical because the echo guard may discard the eventual
-                # input_transcription (if tutor audio just finished), leaving no
-                # other mechanism to tell the idle orchestrator "student is active".
-                # Rate-limit to once per second to avoid excessive resets on noise.
-                if _is_probable_speech_pcm16(raw_bytes):
-                    last_speech_reset = float(runtime_state.get("_last_speech_audio_reset", 0.0))
-                    if (now - last_speech_reset) >= 1.0:
-                        runtime_state["last_user_activity_at"] = now
-                        runtime_state["idle_stage"] = 0
-                        reset_silence_tracking(runtime_state)
-                        runtime_state["_last_speech_audio_reset"] = now
-                lat = _latency_state.get(session_id)
-                if lat is not None:
-                    lat["last_audio_in"] = now
-                    lat["awaiting_first_response"] = True
-                runtime_state["latency_last_audio_in_at"] = now
-                dc = _debug_counters.get(session_id)
-                if dc is not None:
-                    dc["audio_in"] += 1
-                    dc["last_audio_in_at"] = now
-                queue.send_realtime(types.Blob(data=raw_bytes, mime_type="audio/pcm;rate=16000"))
-                audio_chunks_sent += 1
-                if report:
-                    report.record_audio_in()
-            elif msg_type in ("video", "screen_frame"):
-                runtime_state["last_video_frame_at"] = time.time()
-                if msg_type == "screen_frame":
-                    runtime_state["last_screen_frame_at"] = time.time()
-                dc = _debug_counters.get(session_id)
-                if dc is not None:
-                    dc["video_in"] += 1
-                queue.send_realtime(types.Blob(data=raw_bytes, mime_type="image/jpeg"))
-                video_frames_sent += 1
-                if report:
-                    report.record_video_in()
-            else:
-                logger.warning("Unknown message type from browser: '%s'", msg_type)
-
-            # Periodic stats logging
-            now = time.time()
-            if now - last_stats_time >= STATS_INTERVAL:
-                elapsed = now - last_stats_time
-                logger.info(
-                    "Session %s — input stats (last %.0fs): audio_chunks=%d (%.1f/s), video_frames=%d",
-                    session_id, elapsed, audio_chunks_sent, audio_chunks_sent / elapsed, video_frames_sent,
-                )
-                audio_chunks_sent = 0
-                video_frames_sent = 0
-                last_stats_time = now
-
-    except WebSocketDisconnect:
-        logger.info("Browser disconnected (forward_to_gemini)")
-        queue.close()
-    except _StudentEndedSession:
-        raise
-    except Exception as exc:
-        logger.exception("Unexpected error in forward_to_gemini: %s", exc)
-        queue.close()
-        if report:
-            report.record_error(f"forward_to_gemini: {exc}")
-        await _send_json(websocket, {
-            "type": "error",
-            "data": "The connection to the tutor was interrupted. Please refresh to start a new session.",
-        })
-
-
-async def _iter_runner_events_with_retry(
-    websocket: WebSocket,
-    adk_runner: Runner,
-    user_id: str,
-    session_id: str,
-    live_queue: LiveRequestQueue,
-    runtime_state: dict | None = None,
-    report: "SessionReport | None" = None,
-):
-    """Yield ADK stream events with resumption fallback and bounded retries."""
-    attempt = 0
-    while True:
-        sent_reconnected = False
-        active_run_config = None
-        if isinstance(runtime_state, dict):
-            active_run_config = runtime_state.get("session_run_config")
-        if active_run_config is None:
-            active_run_config, _ = _build_session_run_config()
-        try:
-            async for event in adk_runner.run_live(
-                user_id=user_id,
-                session_id=session_id,
-                live_request_queue=live_queue,
-                run_config=active_run_config,
-            ):
-                if (
-                    isinstance(runtime_state, dict)
-                    and runtime_state.get("session_resumption_requested")
-                    and not runtime_state.get("session_resumption_active")
-                ):
-                    runtime_state["session_resumption_active"] = True
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "assistant_state",
-                            "data": {"state": "active", "reason": "session_resumed"},
-                        },
-                    )
-                    if report:
-                        report.record_session_resume_success()
-                if attempt > 0 and not sent_reconnected:
-                    sent_reconnected = True
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "assistant_state",
-                            "data": {"state": "active", "reason": "reconnected", "attempt": attempt},
-                        },
-                    )
-                    if report:
-                        report.record_stream_reconnect_success(attempt)
-                yield event
-            return
-        except WebSocketDisconnect:
-            raise
-        except Exception as exc:
-            if (
-                isinstance(runtime_state, dict)
-                and runtime_state.get("session_resumption_requested")
-                and not runtime_state.get("session_resumption_fallback_used")
-            ):
-                runtime_state["session_resumption_fallback_used"] = True
-                runtime_state["session_resumption_requested"] = False
-                runtime_state["session_resumption_active"] = False
-                fallback_cfg, fallback_meta = _build_session_run_config(resumption_handle=None)
-                runtime_state["session_run_config"] = fallback_cfg
-                runtime_state["session_run_config_meta"] = fallback_meta
-                await _send_json(
-                    websocket,
-                    {
-                        "type": "assistant_state",
-                        "data": {"state": "reconnecting", "reason": "resume_failed_fallback_fresh"},
-                    },
-                )
-                if report:
-                    report.record_session_resume_fallback(str(exc))
-                logger.warning(
-                    "Session %s: resumption failed, falling back to fresh stream: %s",
-                    session_id,
-                    exc,
-                )
-                continue
-            if attempt >= ADK_STREAM_MAX_RETRIES:
-                if report:
-                    report.record_stream_reconnect_failure(attempt, str(exc))
-                raise
-            attempt += 1
-            if report:
-                report.record_stream_retry_attempt(attempt, str(exc))
-            logger.warning(
-                "Session %s: ADK stream error (attempt %d/%d), retrying: %s",
-                session_id,
-                attempt,
-                ADK_STREAM_MAX_RETRIES,
-                exc,
-            )
-            await _send_json(
-                websocket,
-                {
-                    "type": "assistant_state",
-                    "data": {"state": "reconnecting", "reason": "stream_error", "attempt": attempt},
-                },
-            )
-            backoff_seconds = compute_retry_backoff(attempt, ADK_STREAM_RETRY_BACKOFF_S)
-            if report:
-                report.record_stream_retry_backoff(attempt, backoff_seconds)
-            await asyncio.sleep(backoff_seconds)
-
-
-def _question_answer_signature(question: str, answer: str) -> str:
-    q = normalize_for_similarity(question)[:220]
-    a = normalize_for_similarity(answer)[:320]
-    return f"{q}||{a}"
-
-
-def _example_signature(example_text: str) -> str:
-    return normalize_for_similarity(example_text)[:380]
-
-
-async def _maybe_store_question_answer_note(
-    session_id: str,
-    runtime_state: dict,
-    turn_text: str,
-    wb_queue: asyncio.Queue | None,
-    report: "SessionReport | None" = None,
-) -> None:
-    pending = runtime_state.get("pending_study_question")
-    if not isinstance(pending, dict):
-        return
-
-    question = str(pending.get("text") or "").strip()
-    if not question:
-        runtime_state["pending_study_question"] = None
-        return
-
-    now = time.time()
-    asked_at = float(pending.get("asked_at", 0.0) or 0.0)
-    if asked_at <= 0 or (now - asked_at) > QUESTION_NOTE_MAX_AGE_S:
-        runtime_state["pending_study_question"] = None
-        return
-
-    answer = str(turn_text or "").strip()
-    if not answer:
-        return
-
-    signature = _question_answer_signature(question, answer)
-    signatures = runtime_state.setdefault("question_note_signatures", set())
-    if signature in signatures:
-        runtime_state["pending_study_question"] = None
-        return
-    signatures.add(signature)
-    if len(signatures) > 200:
-        signatures.clear()
-        signatures.add(signature)
-
-    sequence = int(runtime_state.get("question_note_counter", 0)) + 1
-    runtime_state["question_note_counter"] = sequence
-    title, content = build_question_answer_note(question, answer, sequence)
-    title = normalize_title(title)
-    content = normalize_content(content)
-    note_id = f"note-{int(now * 1000)}-qa-{sequence}"
-    note = {
-        "id": note_id,
-        "title": title,
-        "content": content,
-        "note_type": "summary",
-        "status": "pending",
-    }
-
-    if wb_queue is not None:
-        wb_queue.put_nowait(note)
-        if report:
-            report.record_whiteboard_note_created()
-            report.record_whiteboard_note_queued(str(note_id))
-
-    if firestore_client:
-        try:
-            await (
-                firestore_client.collection("sessions")
-                .document(session_id)
-                .collection("notes")
-                .document(note_id)
-                .set(
-                    {
-                        "title": title,
-                        "content": content,
-                        "note_type": "summary",
-                        "status": "pending",
-                        "student_id": runtime_state.get("student_id"),
-                        "track_id": runtime_state.get("track_id"),
-                        "topic_id": runtime_state.get("topic_id"),
-                        "source": "auto_qa_note",
-                        "created_at": now,
-                        "updated_at": now,
-                    }
-                )
-            )
-        except Exception:
-            logger.warning(
-                "Session %s: failed to persist auto question note",
-                session_id,
-                exc_info=True,
-            )
-
-    runtime_state["pending_study_question"] = None
-    logger.info("Session %s: auto My note saved from student question", session_id)
-
-
-async def _maybe_store_example_note(
-    session_id: str,
-    runtime_state: dict,
-    turn_text: str,
-    wb_queue: asyncio.Queue | None,
-    report: "SessionReport | None" = None,
-) -> None:
-    example_text = extract_example_from_turn(turn_text)
-    if not example_text:
-        return
-
-    signature = _example_signature(example_text)
-    signatures = runtime_state.setdefault("example_note_signatures", set())
-    if signature in signatures:
-        return
-    signatures.add(signature)
-    if len(signatures) > 200:
-        signatures.clear()
-        signatures.add(signature)
-
-    sequence = int(runtime_state.get("example_note_counter", 0)) + 1
-    runtime_state["example_note_counter"] = sequence
-    title, content = build_example_note(example_text, sequence)
-    title = normalize_title(title)
-    content = normalize_content(content)
-    now = time.time()
-    note_id = f"note-{int(now * 1000)}-ex-{sequence}"
-    note = {
-        "id": note_id,
-        "title": title,
-        "content": content,
-        "note_type": "summary",
-        "status": "pending",
-    }
-
-    if wb_queue is not None:
-        wb_queue.put_nowait(note)
-        if report:
-            report.record_whiteboard_note_created()
-            report.record_whiteboard_note_queued(str(note_id))
-
-    if firestore_client:
-        try:
-            await (
-                firestore_client.collection("sessions")
-                .document(session_id)
-                .collection("notes")
-                .document(note_id)
-                .set(
-                    {
-                        "title": title,
-                        "content": content,
-                        "note_type": "summary",
-                        "status": "pending",
-                        "student_id": runtime_state.get("student_id"),
-                        "track_id": runtime_state.get("track_id"),
-                        "topic_id": runtime_state.get("topic_id"),
-                        "source": "auto_example_note",
-                        "created_at": now,
-                        "updated_at": now,
-                    }
-                )
-            )
-        except Exception:
-            logger.warning(
-                "Session %s: failed to persist auto example note",
-                session_id,
-                exc_info=True,
-            )
-
-    logger.info("Session %s: auto My note saved from tutor example", session_id)
-
-
-async def _forward_to_client(
-    websocket: WebSocket,
-    adk_runner: Runner,
-    live_queue: LiveRequestQueue,
-    session_id: str = "",
-    runtime_state: dict | None = None,
-    wb_queue: asyncio.Queue | None = None,
-    topic_queue: asyncio.Queue | None = None,
-    report: "SessionReport | None" = None,
-) -> None:
-    """
-    Receive ADK Runner events from Gemini and forward them to the browser.
-
-    Runs until the Runner stream ends, the WebSocket disconnects,
-    or an unrecoverable error occurs.
-    """
-    audio_response_chunks = 0
-    turn_count = 0
-    turn_had_output = False
-    drop_turn_in_progress = False
-
-    try:
-        runtime_state = runtime_state or {}
-        user_id = runtime_state.get("student_id", "unknown")
-
-        async for event in _iter_runner_events_with_retry(
-            websocket=websocket,
-            adk_runner=adk_runner,
-            user_id=user_id,
-            session_id=session_id,
-            live_queue=live_queue,
-            runtime_state=runtime_state,
-            report=report,
-        ):
-            # Whiteboard notes are dispatched by the whiteboard_dispatcher task
-            # (modules/whiteboard.py) which handles speech-sync timing and dedupe.
-
-            # Drain any pending topic updates queued by switch_topic tool
-            if topic_queue is not None:
-                while not topic_queue.empty():
-                    try:
-                        update = topic_queue.get_nowait()
-                        runtime_state["topic_id"] = update["topic_id"]
-                        runtime_state["topic_title"] = update["topic_title"]
-                        await _send_json(websocket, {"type": "topic_update", "data": update})
-                        await _persist_memory_checkpoint(
-                            runtime_state,
-                            session_id,
-                            reason="topic_switch",
-                            websocket=websocket,
-                            report=report,
-                            force=True,
-                        )
-                    except asyncio.QueueEmpty:
-                        break
-
-            dc = _debug_counters.get(session_id)
-            if dc is not None:
-                dc["last_gemini_event_at"] = time.time()
-
-            # Capture and persist session resumption handles emitted by Live API.
-            new_resumption_handle = extract_session_resumption_handle(event)
-            if new_resumption_handle:
-                previous_handle = str(runtime_state.get("session_resumption_handle") or "")
-                if new_resumption_handle != previous_handle:
-                    runtime_state["session_resumption_handle"] = new_resumption_handle
-                    runtime_state["session_resumption_last_updated_at"] = time.time()
-                    await save_resumption_handle(
-                        firestore_client,
-                        student_id=str(runtime_state.get("student_id") or ""),
-                        session_id=session_id,
-                        handle=new_resumption_handle,
-                    )
-                    if report:
-                        report.record_session_resumption_handle_saved()
-
-            token_estimate = extract_total_token_estimate(event)
-            if token_estimate is not None and token_estimate > 0:
-                runtime_state["live_token_estimate"] = int(token_estimate)
-                trigger_tokens = int(runtime_state.get("live_compression_trigger_tokens", LIVE_COMPRESSION_TRIGGER_TOKENS))
-                last_notified = float(runtime_state.get("live_compression_last_notified_at", 0.0))
-                now_ts = time.time()
-                if token_estimate >= trigger_tokens and (now_ts - last_notified) >= 20.0:
-                    runtime_state["live_compression_last_notified_at"] = now_ts
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "context_compression",
-                            "data": {
-                                "token_estimate": int(token_estimate),
-                                "trigger_tokens": trigger_tokens,
-                                "target_tokens": int(runtime_state.get("live_compression_target_tokens", LIVE_COMPRESSION_TARGET_TOKENS)),
-                            },
-                        },
-                    )
-                    await _send_json(
-                        websocket,
-                        {
-                            "type": "assistant_state",
-                            "data": {
-                                "state": "compressing_context",
-                                "reason": "token_threshold",
-                                "token_estimate": int(token_estimate),
-                            },
-                        },
-                    )
-                    if report:
-                        report.record_context_compression(
-                            int(token_estimate),
-                            trigger_tokens,
-                            target_tokens=int(
-                                runtime_state.get("live_compression_target_tokens", LIVE_COMPRESSION_TARGET_TOKENS)
-                            ),
-                        )
-                    await _persist_memory_checkpoint(
-                        runtime_state,
-                        session_id,
-                        reason="compression_threshold",
-                        websocket=websocket,
-                        report=report,
-                        force=False,
-                    )
-
-            # If a turn was gated out due missing student/proactive trigger, suppress
-            # its output until the matching turn_complete boundary.
-            suppress_output = drop_turn_in_progress
-            if drop_turn_in_progress and event.turn_complete:
-                drop_turn_in_progress = False
-                runtime_state["assistant_speaking"] = False
-                audio_response_chunks = 0
-                turn_had_output = False
-                _debug_logger.debug("TURN_DROPPED_COMPLETE sid=%s (no ticket)", session_id[:8])
-
-            if not suppress_output and event.content and event.content.parts:
-                # Greeting gate: after first greeting turn, suppress output until student speaks.
-                # Prevents Gemini from producing duplicate greetings from [SESSION START].
-                if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken"):
-                    suppress_output = True
-
-                # General turn gate: allow only one tutor turn per student/proactive trigger.
-                elif int(runtime_state.get("_turn_ticket_count", 0)) <= 0:
-                    suppress_output = True
-                    runtime_state["assistant_speaking"] = False
-                    if not event.turn_complete:
-                        drop_turn_in_progress = True
-                        _debug_logger.debug("TURN_DROPPED_START sid=%s (no ticket)", session_id[:8])
-                    else:
-                        _debug_logger.debug("TURN_DROPPED_ONE_EVENT sid=%s (no ticket)", session_id[:8])
-                    logger.info("Suppressed extra tutor turn without new student activity")
-
-            # --- Audio and text from content parts ---
-            if event.content and event.content.parts and not suppress_output:
-                for part in event.content.parts:
-                    # Audio data
-                    inline_data = getattr(part, "inline_data", None)
-                    if inline_data is not None and inline_data.data:
-                        _mark_proactive_response_seen(runtime_state, source="audio")
-                        was_speaking = runtime_state.get("assistant_speaking")
-                        runtime_state["last_user_activity_at"] = time.time()
-                        runtime_state["idle_stage"] = 0
-                        runtime_state["assistant_speaking"] = True
-                        runtime_state["conversation_started"] = True
-                        runtime_state["mic_kickoff_sent"] = True
-                        if not was_speaking:
-                            reset_silence_tracking(runtime_state)
-                            _debug_logger.debug(
-                                "SPEAKING_START sid=%s (was silent, now audio)",
-                                session_id[:8],
-                            )
-                            now_audio_out = time.time()
-                            ref_time = float(runtime_state.get("latency_last_student_transcript_at", 0.0))
-                            if ref_time > 0 and ((now_audio_out - ref_time) * 1000) > RESPONSE_REF_MAX_AGE_MS:
-                                ref_time = 0.0
-                            if ref_time <= 0:
-                                ref_time = float(runtime_state.get("latency_last_audio_in_at", 0.0))
-                            if ref_time > 0:
-                                response_ms = (now_audio_out - ref_time) * 1000
-                                latency_event = record_latency_metric(
-                                    runtime_state,
-                                    "response_start",
-                                    response_ms,
-                                )
-                                if latency_event:
-                                    await _send_json(
-                                        websocket,
-                                        {"type": "latency_event", "data": latency_event},
-                                    )
-                                    if report:
-                                        report.record_latency_event(
-                                            latency_event.get("metric", ""),
-                                            latency_event.get("value_ms", 0),
-                                            bool(latency_event.get("is_alert", False)),
-                                        )
-                            if not runtime_state.get("latency_first_byte_recorded", False):
-                                runtime_state["latency_first_byte_recorded"] = True
-                                runtime_state["latency_first_audio_out_at"] = now_audio_out
-                                first_ref = float(runtime_state.get("latency_first_request_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = float(runtime_state.get("latency_last_audio_in_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = float(runtime_state.get("latency_session_start_at", 0.0))
-                                if first_ref <= 0:
-                                    first_ref = now_audio_out
-                                first_byte_ms = (now_audio_out - first_ref) * 1000
-                                first_byte_event = record_latency_metric(
-                                    runtime_state,
-                                    "first_byte",
-                                    first_byte_ms,
-                                )
-                                if first_byte_event:
-                                    await _send_json(
-                                        websocket,
-                                        {"type": "latency_event", "data": first_byte_event},
-                                    )
-                                    if report:
-                                        report.record_latency_event(
-                                            first_byte_event.get("metric", ""),
-                                            first_byte_event.get("value_ms", 0),
-                                            bool(first_byte_event.get("is_alert", False)),
-                                        )
-                        lat = _latency_state.get(session_id)
-                        if lat and lat["awaiting_first_response"] and lat["last_audio_in"] > 0:
-                            delta_ms = (time.time() - lat["last_audio_in"]) * 1000
-                            logger.info(
-                                "LATENCY session=%s response_start_ms=%.0f",
-                                session_id, delta_ms,
-                            )
-                            lat["awaiting_first_response"] = False
-                            if report:
-                                report.record_first_response_latency(delta_ms)
-                        if dc is not None:
-                            dc["audio_out"] += 1
-                            if dc["audio_out"] == 1:
-                                logger.info(
-                                    "AUDIO_DEBUG session=%s mime_type=%s data_len=%d first_bytes=%s",
-                                    session_id, getattr(inline_data, "mime_type", "NONE"),
-                                    len(inline_data.data), inline_data.data[:16].hex(),
-                                )
-                        runtime_state["_last_tutor_audio_at"] = time.time()
-                        # Close greeting gate on first audio reaching the
-                        # browser — echo-triggered interrupts can no longer
-                        # reset tickets and cause duplicate greetings.
-                        if not runtime_state.get("_greeting_delivered"):
-                            runtime_state["_greeting_delivered"] = True
-                            _debug_logger.debug(
-                                "GREETING_GATE_CLOSED sid=%s (first audio out)",
-                                session_id[:8],
-                            )
-                        audio_bytes: bytes = inline_data.data
-                        encoded = base64.b64encode(audio_bytes).decode("utf-8")
-                        await _send_json(websocket, {"type": "audio", "data": encoded})
-                        turn_had_output = True
-                        audio_response_chunks += 1
-                        if report:
-                            report.record_audio_out()
-                        continue
-
-                    # Text data
-                    text = getattr(part, "text", None)
-                    if text:
-                        _mark_proactive_response_seen(runtime_state, source="text")
-                        cleaned, had_leak = sanitize_tutor_output(text)
-                        if had_leak:
-                            logger.info("Sanitized leaked internal text from tutor output")
-                        if not cleaned:
-                            continue
-                        _append_tutor_turn_part(runtime_state, cleaned, source="text")
-                        logger.info("TUTOR TEXT: %s", cleaned)
-                        runtime_state["last_user_activity_at"] = time.time()
-                        runtime_state["idle_stage"] = 0
-                        runtime_state["assistant_speaking"] = True
-                        runtime_state["conversation_started"] = True
-                        runtime_state["mic_kickoff_sent"] = True
-                        reset_silence_tracking(runtime_state)
-                        if dc is not None:
-                            dc["text_out"] += 1
-                        _debug_logger.debug(
-                            "TEXT sid=%s data=%s",
-                            session_id[:8], str(cleaned)[:120],
-                        )
-                        await _send_json(websocket, {"type": "text", "data": cleaned})
-                        inline_citations = extract_inline_url_citations(
-                            cleaned,
-                            runtime_state.get("last_forced_search_query", ""),
-                        )
-                        if inline_citations:
-                            seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
-                            for cit in inline_citations[:1]:
-                                url = str(cit.get("url", "")).strip()
-                                if url and url in seen_urls:
-                                    continue
-                                if url:
-                                    seen_urls.add(url)
-                                runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
-                                runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
-                                query = cit.get("query", "")
-                                if query:
-                                    queries_list = runtime_state.get("grounding_search_queries", [])
-                                    queries_list.append(query)
-                                    runtime_state["grounding_search_queries"] = queries_list
-                                await _send_json(websocket, {"type": "grounding", "data": cit})
-                                if report:
-                                    report.record_grounding_citation(cit.get("source", ""), query)
-                                break
-                        turn_had_output = True
-
-            # --- Turn complete ---
-            if event.turn_complete:
-                if suppress_output:
-                    # If this turn was suppressed, skip normal turn_complete logic.
-                    # Drop logic has already handled state cleanup.
-                    # We just need to log the greeting gate drop if that was the reason.
-                    if runtime_state.get("_greeting_delivered") and not runtime_state.get("_student_has_spoken") and not drop_turn_in_progress and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
-                        runtime_state["assistant_speaking"] = False
-                        _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (greeting gate)", session_id[:8])
-                        logger.info("Suppressed duplicate greeting turn (turn #%d)", turn_count + 1)
-                        audio_response_chunks = 0
-                    continue
-
-                # Ignore no-output synthetic turn_complete bursts when no ticket is available.
-                if int(runtime_state.get("_turn_ticket_count", 0)) <= 0 and not turn_had_output:
-                    _debug_logger.debug("TURN_COMPLETE_SUPPRESSED sid=%s (no ticket/no output)", session_id[:8])
-                    continue
-
-                turn_count += 1
-                runtime_state["assistant_speaking"] = False
-                runtime_state["last_user_activity_at"] = time.time()
-                runtime_state["idle_stage"] = 0
-                reset_silence_tracking(runtime_state)
-                if dc is not None:
-                    dc["turn_complete"] += 1
-                _debug_logger.debug("TURN_COMPLETE sid=%s", session_id[:8])
-                await _send_json(websocket, {"type": "turn_complete"})
-                logger.info(
-                    "Turn #%d complete — sent %d audio chunks to browser",
-                    turn_count, audio_response_chunks,
-                )
-                if report:
-                    report.record_turn_complete(audio_response_chunks)
-                runtime_state["latency_last_turn_complete_at"] = time.time()
-                latency_report = build_latency_report(runtime_state, turns=turn_count)
-                await _send_json(websocket, {"type": "latency_report", "data": latency_report})
-                if report:
-                    report.record_latency_report(latency_report)
-                audio_response_chunks = 0
-                completed_with_output = turn_had_output
-                if turn_had_output and int(runtime_state.get("_turn_ticket_count", 0)) > 0:
-                    runtime_state["_turn_ticket_count"] = int(runtime_state.get("_turn_ticket_count", 0)) - 1
-                turn_had_output = False
-                turn_snapshot = _finalize_tutor_turn(runtime_state)
-                await _persist_memory_checkpoint(
-                    runtime_state,
-                    session_id,
-                    reason="interval_turn",
-                    websocket=websocket,
-                    report=report,
-                    force=False,
-                )
-
-                # Track whether the tutor is waiting on a student reply and detect
-                # near-duplicate prompt loops when no new student activity happened.
-                turn_text = str(turn_snapshot.get("turn_text") or "").strip()
-                if completed_with_output and turn_text:
-                    await _maybe_store_question_answer_note(
-                        session_id,
-                        runtime_state,
-                        turn_text,
-                        wb_queue,
-                        report,
-                    )
-                    await _maybe_store_example_note(
-                        session_id,
-                        runtime_state,
-                        turn_text,
-                        wb_queue,
-                        report,
-                    )
-                if completed_with_output and turn_text:
-                    runtime_state["awaiting_student_reply"] = expects_student_reply(turn_text)
-                    if report and runtime_state["awaiting_student_reply"]:
-                        report.record_awaiting_reply_prompt()
-                    activity_count = int(runtime_state.get("student_activity_count", 0))
-                    last_turn_text = str(runtime_state.get("last_tutor_prompt_text") or "")
-                    last_activity_count = int(runtime_state.get("last_tutor_prompt_activity_count", -1))
-                    if (
-                        last_turn_text
-                        and activity_count == last_activity_count
-                        and is_near_duplicate(last_turn_text, turn_text)
-                    ):
-                        runtime_state["suspected_repetition_count"] = int(
-                            runtime_state.get("suspected_repetition_count", 0)
-                        ) + 1
-                        if report:
-                            report.record_repetition_suspected()
-                        logger.warning(
-                            "Session %s: suspected repetitive tutor prompt loop (count=%d)",
-                            session_id,
-                            runtime_state["suspected_repetition_count"],
-                        )
-                        # Nudge the model away from repeating the same prompt pattern.
-                        now = time.time()
-                        if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
-                            live_queue.send_content(
-                                types.Content(
-                                    role="user",
-                                    parts=[types.Part(text=ANTI_REPEAT_CONTROL_PROMPT)],
-                                )
-                            )
-                            runtime_state["last_hidden_prompt_at"] = now
-
-                    if is_question_like_turn(turn_text):
-                        runtime_state["question_like_streak"] = int(
-                            runtime_state.get("question_like_streak", 0)
-                        ) + 1
-                    else:
-                        runtime_state["question_like_streak"] = 0
-
-                    if runtime_state.get("question_like_streak", 0) >= 2:
-                        now = time.time()
-                        if (now - float(runtime_state.get("last_hidden_prompt_at", 0.0))) >= 2.0:
-                            live_queue.send_content(
-                                types.Content(
-                                    role="user",
-                                    parts=[types.Part(text=ANTI_QUESTION_LOOP_CONTROL_PROMPT)],
-                                )
-                            )
-                            runtime_state["last_hidden_prompt_at"] = now
-                    runtime_state["last_tutor_prompt_text"] = turn_text
-                    runtime_state["last_tutor_prompt_activity_count"] = activity_count
-                else:
-                    runtime_state["awaiting_student_reply"] = False
-
-                # Fallback: also set greeting gate at turn_complete if not
-                # already closed by the first-audio-out path (e.g. text-only turns).
-                if not runtime_state.get("_greeting_delivered") and completed_with_output:
-                    runtime_state["_greeting_delivered"] = True
-
-            # --- Interrupted ---
-            if event.interrupted:
-                # Stale interrupt filter: if assistant already stopped speaking
-                # and no audio chunks were sent this turn, skip forwarding to client.
-                if not runtime_state.get("assistant_speaking") and audio_response_chunks == 0:
-                    _debug_logger.debug(
-                        "INTERRUPTED_STALE sid=%s (already silent, 0 chunks)", session_id[:8],
-                    )
-                    if report:
-                        report.record_stale_interruption()
-                    continue
-                runtime_state["assistant_speaking"] = False
-                # During the greeting phase, interrupts are typically echo
-                # from the tutor's own audio — not real student speech.
-                # Only unlock turn tickets when the student has actually
-                # spoken (confirmed by barge_in or input_transcription).
-                if runtime_state.get("_student_has_spoken"):
-                    _mark_student_activity(runtime_state, unlock_turn=True)
-                else:
-                    # Minimal idle reset — no ticket unlock.
-                    runtime_state["last_user_activity_at"] = time.time()
-                    runtime_state["idle_stage"] = 0
-                    reset_silence_tracking(runtime_state)
-                if dc is not None:
-                    dc["interrupted"] += 1
-                _debug_logger.debug("INTERRUPTED sid=%s student_spoken=%s", session_id[:8], runtime_state.get("_student_has_spoken"))
-                if report:
-                    report.record_interruption()
-                lat = _latency_state.get(session_id)
-                if lat and lat["last_audio_in"] > 0:
-                    delta_ms = (time.time() - lat["last_audio_in"]) * 1000
-                    logger.info(
-                        "LATENCY session=%s interruption_stop_ms=%.0f",
-                        session_id, delta_ms,
-                    )
-                    lat["awaiting_first_response"] = False
-                barge_in_at = float(runtime_state.get("latency_last_barge_in_at", 0.0))
-                if barge_in_at > 0:
-                    interruption_stop_ms = (time.time() - barge_in_at) * 1000
-                    runtime_state["latency_last_barge_in_at"] = 0.0
-                    latency_event = record_latency_metric(
-                        runtime_state,
-                        "interruption_stop",
-                        interruption_stop_ms,
-                    )
-                    if latency_event:
-                        await _send_json(
-                            websocket,
-                            {"type": "latency_event", "data": latency_event},
-                        )
-                        if report:
-                            report.record_latency_event(
-                                latency_event.get("metric", ""),
-                                latency_event.get("value_ms", 0),
-                                bool(latency_event.get("is_alert", False)),
-                            )
-                await _send_json(websocket, {"type": "interrupted"})
-                logger.info(
-                    "INTERRUPTED by student (had sent %d audio chunks before interruption)",
-                    audio_response_chunks,
-                )
-                audio_response_chunks = 0
-
-            # --- Grounding metadata ---
-            grounding_citations = extract_grounding(event)
-            if grounding_citations:
-                seen_urls = runtime_state.setdefault("grounding_seen_urls", set())
-                for cit in grounding_citations[:1]:  # Only top citation
-                    url = str(cit.get("url", "")).strip()
-                    if url and url in seen_urls:
-                        continue
-                    if url:
-                        seen_urls.add(url)
-                    runtime_state["grounding_events"] = runtime_state.get("grounding_events", 0) + 1
-                    runtime_state["grounding_citations_sent"] = runtime_state.get("grounding_citations_sent", 0) + 1
-                    query = cit.get("query", "")
-                    if query:
-                        queries_list = runtime_state.get("grounding_search_queries", [])
-                        queries_list.append(query)
-                        runtime_state["grounding_search_queries"] = queries_list
-                    logger.info(
-                        "GROUNDING #%d: %s (%s)",
-                        runtime_state["grounding_citations_sent"],
-                        cit["snippet"][:80],
-                        cit["source"],
-                    )
-                    await _send_json(websocket, {"type": "grounding", "data": cit})
-                    if report:
-                        report.record_grounding_citation(cit["source"], cit.get("query", ""))
-
-            # --- Transcription ---
-            if event.input_transcription and event.input_transcription.text and event.input_transcription.finished:
-                student_text = event.input_transcription.text
-                logger.info("STUDENT TRANSCRIPT: %s", student_text)
-                
-                # We always want to mark activity to grant a ticket if the student spoke, 
-                # because Gemini might respond to it.
-                _mark_student_activity(runtime_state, unlock_turn=True)
-                runtime_state["_student_has_spoken"] = True
-                
-                # Echo guard: while tutor output is active, transcription often captures
-                # assistant audio from speakers. In that case, ignore the transcript content.
-                now = time.time()
-                is_echo_window = (
-                    runtime_state.get("assistant_speaking")
-                    or (now - float(runtime_state.get("_last_tutor_audio_at", 0.0))) < 0.8
-                )
-                if is_echo_window:
-                    _debug_logger.debug("INPUT_TRANSCRIPT_IGNORED sid=%s (echo-window)", session_id[:8])
-                    continue
-                runtime_state["latency_last_student_transcript_at"] = now
-                if float(runtime_state.get("latency_first_request_at", 0.0)) <= 0:
-                    runtime_state["latency_first_request_at"] = now
-                last_turn_complete_at = float(runtime_state.get("latency_last_turn_complete_at", 0.0))
-                if last_turn_complete_at > 0:
-                    turn_gap_ms = (now - last_turn_complete_at) * 1000
-                    if turn_gap_ms <= TURN_TO_TURN_MAX_GAP_MS:
-                        turn_to_turn_event = record_latency_metric(
-                            runtime_state,
-                            "turn_to_turn",
-                            turn_gap_ms,
-                        )
-                        if turn_to_turn_event:
-                            await _send_json(
-                                websocket,
-                                {"type": "latency_event", "data": turn_to_turn_event},
-                            )
-                            if report:
-                                report.record_latency_event(
-                                    turn_to_turn_event.get("metric", ""),
-                                    turn_to_turn_event.get("value_ms", 0),
-                                    bool(turn_to_turn_event.get("is_alert", False)),
-                                )
-
-                # Force search-grounding behavior for explicit educational search requests.
-                if detect_explicit_search_request(student_text, runtime_state) and is_likely_educational_search(student_text, runtime_state):
-                    search_query = extract_search_query(student_text)
-                    last_query = str(runtime_state.get("last_forced_search_query") or "")
-                    last_forced_at = float(runtime_state.get("last_forced_search_at", 0.0))
-                    should_force = search_query and (
-                        search_query.lower() != last_query.lower() or (now - last_forced_at) > 20.0
-                    )
-                    if should_force:
-                        forced_prompt = build_force_search_control_prompt(search_query)
-                        live_queue.send_content(
-                            types.Content(role="user", parts=[types.Part(text=forced_prompt)])
-                        )
-                        runtime_state["last_forced_search_query"] = search_query
-                        runtime_state["last_forced_search_at"] = now
-                        runtime_state["last_hidden_prompt_at"] = now
-
-                # Guardrail: check student input for off-topic / cheat / inappropriate
-                student_guardrail_events = check_student_input(student_text)
-                for ge in student_guardrail_events:
-                    record_guardrail_event(runtime_state, ge, source="student_speech")
-                    await _send_json(websocket, {
-                        "type": "guardrail_event",
-                        "data": {
-                            "type": ge["guardrail"],
-                            "source": "student_speech",
-                            "detail": ge["detail"],
-                        },
-                    })
-                    if report:
-                        report.record_guardrail_event(ge["guardrail"], ge["severity"], "student_speech")
-                # Inject reinforcement if guardrail triggered
-                reinforce_prompt = select_reinforcement(student_guardrail_events, runtime_state)
-                if reinforce_prompt:
-                    reason = student_guardrail_events[0]["guardrail"] if student_guardrail_events else "unknown"
-                    live_queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)])
-                    )
-                    record_reinforcement(runtime_state, reason)
-                    if report:
-                        report.record_guardrail_reinforcement()
-
-                # Capture the latest on-topic study question for "My notes".
-                if student_guardrail_events:
-                    runtime_state["pending_study_question"] = None
-                else:
-                    topic_title = str(runtime_state.get("topic_title") or "")
-                    if is_study_related_question(student_text, topic_title):
-                        runtime_state["pending_study_question"] = {
-                            "text": student_text,
-                            "asked_at": now,
-                            "topic_title": topic_title,
-                        }
-                        logger.info(
-                            "Session %s: queued study question for auto-note",
-                            session_id,
-                        )
-                    elif is_student_question(student_text):
-                        runtime_state["pending_study_question"] = None
-
-                append_transcript_piece(
-                    runtime_state,
-                    role="student",
-                    text=student_text,
-                    at=now,
-                )
-                if report:
-                    report.record_student_transcript(student_text)
-
-            if event.output_transcription and event.output_transcription.text and event.output_transcription.finished:
-                tutor_text_raw = event.output_transcription.text
-                tutor_text, had_internal = sanitize_tutor_output(tutor_text_raw)
-                if had_internal:
-                    logger.info("Sanitized leaked internal text from tutor transcript")
-                if not tutor_text:
-                    continue
-
-                logger.info("TUTOR TRANSCRIPT: %s", tutor_text)
-                _append_tutor_turn_part(runtime_state, tutor_text, source="transcript")
-
-                # Guardrail: check tutor output for answer leaks
-                tutor_guardrail_events = check_tutor_output(tutor_text, runtime_state)
-                for ge in tutor_guardrail_events:
-                    record_guardrail_event(runtime_state, ge, source="tutor_speech")
-                    await _send_json(websocket, {
-                        "type": "guardrail_event",
-                        "data": {
-                            "type": ge["guardrail"],
-                            "source": "tutor_speech",
-                            "detail": ge["detail"],
-                        },
-                    })
-                    if report:
-                        report.record_guardrail_event(ge["guardrail"], ge["severity"], "tutor_speech")
-                # Inject Socratic reinforcement if answer leak detected
-                reinforce_prompt = select_reinforcement(tutor_guardrail_events, runtime_state)
-                if reinforce_prompt:
-                    live_queue.send_content(
-                        types.Content(role="user", parts=[types.Part(text=reinforce_prompt)])
-                    )
-                    record_reinforcement(runtime_state, "answer_leak")
-                    if report:
-                        report.record_guardrail_reinforcement()
-
-                if report:
-                    report.record_tutor_transcript(tutor_text)
-                append_transcript_piece(
-                    runtime_state,
-                    role="tutor",
-                    text=tutor_text,
-                )
-
-    except WebSocketDisconnect:
-        logger.info("Browser disconnected (forward_to_client)")
-    except Exception as exc:
-        logger.exception("Unexpected error in forward_to_client: %s", exc)
-        if report:
-            report.record_error(f"forward_to_client: {exc}")
-        await _send_json(websocket, {
-            "type": "error",
-            "data": "The tutor connection was interrupted. Please refresh to start a new session.",
-        })
-
-
-async def _send_json(websocket: WebSocket, payload: dict) -> None:
-    """Send a JSON payload to the browser, ignoring errors on a closed socket."""
-    try:
-        await websocket.send_text(json.dumps(payload))
-    except (RuntimeError, WebSocketDisconnect):
-        logger.debug(
-            "Could not send '%s' to browser (socket closed)",
-            payload.get("type"),
-        )
-    except Exception:
-        logger.warning(
-            "Unexpected error sending '%s' to browser",
-            payload.get("type"),
-            exc_info=True,
-        )
+# _forward_to_gemini, _iter_runner_events_with_retry, _forward_to_client,
+# _send_json, _StudentEndedSession moved to modules.ws_bridge

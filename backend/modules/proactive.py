@@ -19,7 +19,11 @@ import time
 
 from google.genai import types
 
+from modules.prompt_capture import send_content_with_prompt_capture
+
 logger = logging.getLogger(__name__)
+# Also log key events to the session_debug file (backend/debug.log)
+_debug_logger = logging.getLogger("session_debug")
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -30,7 +34,8 @@ CHECK_INTERVAL_S = 0.3          # How often the idle loop checks
 CAMERA_ACTIVE_TIMEOUT_S = 3.0   # Camera considered off if no frame in this window
 POKE_RESPONSE_GRACE_S = 1.5     # Wait after poke before escalating to nudge
 HIDDEN_PROMPT_MIN_GAP_S = 4.0   # Minimum gap between hidden prompts
-AWAITING_REPLY_GRACE_S = 18.0   # Do not proactively nudge while waiting for a reply
+AWAITING_REPLY_GRACE_S = 8.0    # Grace period before proactive kicks in (was 18 — too long, killed pokes entirely)
+PROACTIVE_WAIT_TIMEOUT_S = 15.0 # After this long with camera active + silence, allow another poke cycle
 
 # ---------------------------------------------------------------------------
 # Hidden prompts injected by the idle orchestrator
@@ -141,10 +146,20 @@ def reset_silence_tracking(runtime_state: dict) -> None:
 
 
 def should_pause_proactive_for_reply(runtime_state: dict, idle_for_s: float) -> bool:
-    """Return True if tutor should wait before proactive interventions."""
+    """Return True if tutor should wait before proactive interventions.
+
+    Uses proactive silence counter (silence_started_at) rather than idle_for,
+    because idle_for resets on PCM noise heuristic and TURN_COMPLETE — making
+    the grace period effectively infinite when ambient noise is present.
+    """
     if not runtime_state.get("awaiting_student_reply"):
         return False
-    return float(idle_for_s) < float(AWAITING_REPLY_GRACE_S)
+    import time
+    sil_start = runtime_state.get("silence_started_at", 0.0)
+    if sil_start <= 0:
+        return True  # silence counter not started yet — stay paused
+    silence_s = time.time() - sil_start
+    return silence_s < float(AWAITING_REPLY_GRACE_S)
 
 
 async def proactive_idle_orchestrator(
@@ -166,12 +181,67 @@ async def proactive_idle_orchestrator(
             # Don't nudge while tutor or student is active
             if runtime_state.get("assistant_speaking"):
                 continue
-            if not runtime_state.get("mic_active"):
-                continue
             if runtime_state.get("away_mode"):
                 continue
+
+            # Camera-active check: video frames flowing = student is engaged
+            last_video = runtime_state.get("last_video_frame_at", 0.0)
+            camera_active = last_video > 0 and (now - last_video) < CAMERA_ACTIVE_TIMEOUT_S
+
             if runtime_state.get("proactive_waiting_for_student"):
+                # Timeout: if camera is active and student silent for long enough,
+                # allow a new poke/nudge cycle instead of waiting forever.
+                last_poke_or_nudge = max(
+                    runtime_state.get("last_poke_at", 0.0),
+                    runtime_state.get("last_nudge_at", 0.0),
+                )
+                if (
+                    camera_active
+                    and last_poke_or_nudge > 0
+                    and (now - last_poke_or_nudge) >= PROACTIVE_WAIT_TIMEOUT_S
+                ):
+                    logger.info(
+                        "PROACTIVE_WAIT_TIMEOUT — %.1fs since last poke/nudge, camera active, resetting cycle",
+                        now - last_poke_or_nudge,
+                    )
+                    _debug_logger.debug(
+                        "PROACTIVE_WAIT_TIMEOUT sid=%s %.1fs since last poke/nudge",
+                        str(runtime_state.get("session_id",""))[:8], now - last_poke_or_nudge,
+                    )
+                    runtime_state["proactive_waiting_for_student"] = False
+                    runtime_state["awaiting_student_reply"] = False
+                    reset_silence_tracking(runtime_state)
+                    # Silence timer restarts next iteration
+                else:
+                    continue
+
+            # Require mic OR camera — don't block proactive just because mic is off
+            if not runtime_state.get("mic_active") and not camera_active:
                 continue
+
+            # Diagnostic: log proactive check state every ~3s
+            _last_proactive_diag = runtime_state.get("_last_proactive_diag", 0.0)
+            if now - _last_proactive_diag >= 3.0:
+                runtime_state["_last_proactive_diag"] = now
+                _sil_start = runtime_state.get("silence_started_at", 0.0)
+                _sil_s = (now - _sil_start) if _sil_start > 0 else 0.0
+                _cam = (now - runtime_state.get("last_video_frame_at", 0.0)) < CAMERA_ACTIVE_TIMEOUT_S
+                _await = runtime_state.get("awaiting_student_reply", False)
+                _idle = now - runtime_state.get("last_user_activity_at", now)
+                _msg = (
+                    "PROACTIVE_CHECK sid=%s silence=%.1fs cam=%s await_reply=%s idle=%.1fs "
+                    "poke_sent=%s nudge_sent=%s waiting=%s conv=%s"
+                )
+                _args = (
+                    str(runtime_state.get("session_id", ""))[:8],
+                    _sil_s, _cam, _await, _idle,
+                    runtime_state.get("idle_poke_sent"),
+                    runtime_state.get("idle_nudge_sent"),
+                    runtime_state.get("proactive_waiting_for_student"),
+                    runtime_state.get("conversation_started"),
+                )
+                logger.info(_msg, *_args)
+                _debug_logger.debug(_msg, *_args)
 
             # Conversation kickoff — same as before, but only when camera is off
             if (
@@ -197,15 +267,11 @@ async def proactive_idle_orchestrator(
                     })
                     continue
 
-            if not runtime_state.get("conversation_started"):
+            # Allow proactive when camera is active even if conversation hasn't
+            # formally started (e.g. student opens camera, shows homework, stays
+            # silent — proactive should fire after POKE_THRESHOLD_S).
+            if not runtime_state.get("conversation_started") and not camera_active:
                 continue
-
-            # Check camera activity
-            last_video = runtime_state.get("last_video_frame_at", 0.0)
-            camera_active = (
-                last_video > 0
-                and (now - last_video) < CAMERA_ACTIVE_TIMEOUT_S
-            )
 
             last_activity = runtime_state.get("last_user_activity_at", now)
             idle_for = now - last_activity
@@ -287,16 +353,24 @@ async def proactive_idle_orchestrator(
                 runtime_state["idle_poke_sent"] = True
                 runtime_state["proactive_poke_count"] = runtime_state.get("proactive_poke_count", 0) + 1
                 runtime_state["last_poke_at"] = now
+                # Proactive tutor initiation IS a conversation start
+                runtime_state["conversation_started"] = True
+                runtime_state["mic_kickoff_sent"] = True  # prevent duplicate kickoff
                 poke_count = runtime_state["proactive_poke_count"]
 
                 logger.info("IDLE POKE #%d — silence=%.1fs", poke_count, silence_s)
+                _debug_logger.debug("IDLE_POKE sid=%s #%d silence=%.1fs", str(runtime_state.get("session_id",""))[:8], poke_count, silence_s)
 
                 try:
-                    live_queue.send_content(
+                    send_content_with_prompt_capture(
+                        live_queue,
                         types.Content(
                             role="user",
                             parts=[types.Part(text=IDLE_POKE_PROMPT)],
-                        )
+                        ),
+                        session_id=str(runtime_state.get("session_id") or ""),
+                        source="proactive_idle_poke",
+                        runtime_state=runtime_state,
                     )
                 except Exception as exc:
                     runtime_state["idle_poke_sent"] = False
@@ -307,6 +381,9 @@ async def proactive_idle_orchestrator(
                     int(runtime_state.get("_turn_ticket_count", 0)),
                     1,
                 )
+                # Open greeting gate — proactive poke is an intentional tutor action,
+                # not echo. Without this, the greeting gate suppresses ALL poke output.
+                runtime_state["_student_has_spoken"] = True
                 runtime_state["last_hidden_prompt_at"] = now
 
                 rpt = runtime_state.get("_report")
@@ -335,13 +412,18 @@ async def proactive_idle_orchestrator(
                 nudge_text = IDLE_NUDGE_PROMPT.format(silence_s=int(silence_s))
 
                 logger.info("IDLE NUDGE #%d — silence=%.1fs", nudge_count, silence_s)
+                _debug_logger.debug("IDLE_NUDGE sid=%s #%d silence=%.1fs", str(runtime_state.get("session_id",""))[:8], nudge_count, silence_s)
 
                 try:
-                    live_queue.send_content(
+                    send_content_with_prompt_capture(
+                        live_queue,
                         types.Content(
                             role="user",
                             parts=[types.Part(text=nudge_text)],
-                        )
+                        ),
+                        session_id=str(runtime_state.get("session_id") or ""),
+                        source="proactive_idle_nudge",
+                        runtime_state=runtime_state,
                     )
                 except Exception as exc:
                     runtime_state["idle_nudge_sent"] = False
@@ -352,6 +434,8 @@ async def proactive_idle_orchestrator(
                     int(runtime_state.get("_turn_ticket_count", 0)),
                     1,
                 )
+                # Open greeting gate — same as poke
+                runtime_state["_student_has_spoken"] = True
                 runtime_state["last_hidden_prompt_at"] = now
 
                 rpt = runtime_state.get("_report")

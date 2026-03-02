@@ -38,3 +38,12 @@ This avoids the 10-15 second upload penalty of the Gemini File API and easily re
 -----
 
 When session ends, collect the user progress, struggle, what the user did correctly (strenghts) and send it to user's email.
+
+----
+
+DEMO:
+
+This is the style and lenght of the demo I want to have for Milo Tutor.ai
+<https://www.youtube.com/watch?v=4mnP1lRdUm8>
+
+-----

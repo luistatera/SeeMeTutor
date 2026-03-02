@@ -1009,6 +1009,62 @@
       color: var(--blue);
     }
 
+    /* audio health indicator */
+    .audio-health-wrapper {
+      position: absolute;
+      top: -46px;
+      /* Position above the button */
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      z-index: 20;
+      background-color: var(--bg-card);
+      /* Darker background */
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      /* Better contrast */
+    }
+
+    .mic-btn-wrapper.listening .audio-health-wrapper,
+    .mic-btn-wrapper.speaking .audio-health-wrapper {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .audio-health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .audio-health-dot.green {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .audio-health-dot.yellow {
+      background: var(--yellow);
+      box-shadow: 0 0 8px var(--yellow);
+    }
+
+    .audio-health-dot.red {
+      background: var(--red);
+      box-shadow: 0 0 8px var(--red);
+    }
+
     /* =====================================================================
        TOAST NOTIFICATION
     ===================================================================== */
@@ -1949,6 +2005,10 @@
           </div>
         </button>
         <span class="mic-label" id="mic-label">Tap to start</span>
+        <div class="audio-health-wrapper" id="audio-health-wrapper">
+          <div class="audio-health-dot" id="audio-health-dot"></div>
+          <span id="audio-health-text">Calibrating...</span>
+        </div>
       </div>
 
       <!-- Pause / Resume -->
@@ -2028,8 +2088,10 @@
     const BARGE_IN_CONFIRM_MS = 220;    // confirm barge-in with sustained speech
     const SERVER_STREAM_GAP_MS = 800;   // gap before client-side barge-in is valid
     const NOISE_CALIBRATION_MS = 1200;  // initial noise floor calibration period
-    const VOICE_DB_MARGIN = 10;         // dB above noise floor for voice detection
-    const MIN_VOICE_DB = -45;           // absolute minimum for voice signal
+    const VOICE_DB_MARGIN = 6;          // dB above noise floor for voice detection (was 10 — too strict)
+    const ECHO_EXTRA_DB_MARGIN = 4;    // extra dB required during active tutor streaming (was 8 — rejected real speech)
+    const STREAM_BARGE_IN_CONFIRM_MS = 250; // confirmation during streaming (was 350 — tutor turns are only 1-3s)
+    const MIN_VOICE_DB = -50;           // absolute minimum for voice signal (was -45 — too strict for quiet speakers)
     const CHECKPOINT_HINT_DURATION_MS = 12000;
     const MAX_COMMAND_WORDS = 7;
     const DIAG_LOG_MAX_ITEMS = 12;
@@ -2174,8 +2236,11 @@
     const tutorWaveOverlay = $('tutor-wave-overlay');
     const cameraBtn = $('camera-btn');
     const micBtn = $('mic-btn');
+    const micIcon = micBtn.querySelector('.mic-icon');
     const micBtnWrapper = $('mic-btn-wrapper');
     const micLabel = $('mic-label');
+    const audioHealthDot = $('audio-health-dot');
+    const audioHealthText = $('audio-health-text');
     const endBtn = $('end-btn');
     const awayBtn = $('away-btn');
     const toast = $('toast');
@@ -3487,7 +3552,13 @@
 
     function onVADSpeechStart() {
       if (vadGraceTimer) { clearTimeout(vadGraceTimer); vadGraceTimer = null; }
-      clearPendingBargeIn();
+
+      // Only clear barge-in timer when tutor is silent.
+      // During tutor speech, VAD jitter (start/end/start from overlapping
+      // audio sources) must NOT reset the barge-in countdown.
+      if (!state.isSpeaking && activeSources.size === 0) {
+        clearPendingBargeIn();
+      }
 
       if (!state.micActive) return;
 
@@ -3499,14 +3570,33 @@
         return;
       }
 
+      // If a barge-in timer is already running, let it complete
+      if (bargeInConfirmTimer) return;
+
       // Tutor IS speaking — decide if client-side barge-in is appropriate
       const msSinceServerAudio = lastTutorAudioAt > 0 ? performance.now() - lastTutorAudioAt : 99999;
       const serverStreaming = msSinceServerAudio < SERVER_STREAM_GAP_MS;
       const drainingAfterTurnComplete = turnCompletePending;
 
       if (serverStreaming && !drainingAfterTurnComplete) {
-        // During active server streaming, echo fools VAD — let Gemini handle it
-        console.info('[VAD] Speech during active stream (' + Math.round(msSinceServerAudio) + 'ms ago), deferring to Gemini');
+        // During active streaming, allow barge-in with stricter echo rejection
+        console.info('[VAD] Speech during active stream (' + Math.round(msSinceServerAudio) + 'ms ago), checking with echo margin');
+        bargeInConfirmTimer = setTimeout(() => {
+          bargeInConfirmTimer = null;
+          if (!state.micActive) { console.info('[VAD] Barge-in abort: mic inactive'); return; }
+          if (!state.isSpeaking && activeSources.size === 0) { console.info('[VAD] Barge-in abort: tutor already stopped'); return; }
+          // Don't require vadSpeechActive here — VAD jitter during tutor speech
+          // can flip it off momentarily. The fact that VAD triggered onSpeechStart
+          // and we survived the confirmation delay is enough evidence.
+          const floor = hasNoiseFloor ? noiseFloorDb : -60;
+          const echoThreshold = Math.max(MIN_VOICE_DB, floor + VOICE_DB_MARGIN + ECHO_EXTRA_DB_MARGIN);
+          if (micLevelDb < echoThreshold) {
+            console.info('[VAD] Barge-in rejected during stream (echo filter, mic=' + Math.round(micLevelDb) + 'dB, threshold=' + Math.round(echoThreshold) + 'dB, floor=' + Math.round(floor) + 'dB)');
+            return;
+          }
+          console.info('[VAD] Barge-in PASSED echo filter (mic=' + Math.round(micLevelDb) + 'dB, threshold=' + Math.round(echoThreshold) + 'dB)');
+          triggerConfirmedBargeIn();
+        }, STREAM_BARGE_IN_CONFIRM_MS);
         return;
       }
 
@@ -3514,7 +3604,8 @@
       console.info('[VAD] Barge-in candidate, confirming for ' + BARGE_IN_CONFIRM_MS + 'ms');
       bargeInConfirmTimer = setTimeout(() => {
         bargeInConfirmTimer = null;
-        if (!state.micActive || !state.isSpeaking || !vadSpeechActive) return;
+        if (!state.micActive) { console.info('[VAD] Barge-in abort: mic inactive'); return; }
+        if (!state.isSpeaking && activeSources.size === 0) { console.info('[VAD] Barge-in abort: tutor already stopped'); return; }
         if (!hasStrongVoiceSignal()) {
           console.info('[VAD] Barge-in rejected (voice too weak, mic=' + Math.round(micLevelDb) + 'dB)');
           return;
@@ -3524,7 +3615,10 @@
     }
 
     function onVADSpeechEnd() {
-      clearPendingBargeIn();
+      // Don't cancel barge-in during tutor speech — VAD jitter must not reset it
+      if (!state.isSpeaking && activeSources.size === 0) {
+        clearPendingBargeIn();
+      }
       if (vadGraceTimer) clearTimeout(vadGraceTimer);
       vadGraceTimer = setTimeout(() => {
         vadSpeechActive = false;
@@ -3564,6 +3658,8 @@
       wsSend({ type: 'barge_in' });
     }
 
+    let _lastHealthUiUpdateAt = 0;
+
     function updateMicLevel(float32Array) {
       let sum = 0;
       for (let i = 0; i < float32Array.length; i++) {
@@ -3587,6 +3683,43 @@
       if (noiseCalibrating && performance.now() >= noiseCalibrateUntil) {
         noiseCalibrating = false;
         console.info('[VAD] Noise floor locked at ' + Math.round(noiseFloorDb) + 'dB');
+      }
+
+      // Update UI periodically (~100ms to avoid layout thrashing)
+      const now = performance.now();
+      if (now - _lastHealthUiUpdateAt > 100) {
+        _lastHealthUiUpdateAt = now;
+        updateAudioHealthUI();
+      }
+    }
+
+    function updateAudioHealthUI() {
+      if (!state.micActive) return;
+      if (noiseCalibrating) {
+        audioHealthDot.className = 'audio-health-dot';
+        audioHealthText.textContent = 'Calibrating...';
+        return;
+      }
+
+      if (vadSpeechActive) {
+        if (hasStrongVoiceSignal()) {
+          audioHealthDot.className = 'audio-health-dot green';
+          audioHealthText.textContent = 'Strong voice';
+        } else {
+          audioHealthDot.className = 'audio-health-dot red';
+          audioHealthText.textContent = 'Speak louder';
+        }
+      } else {
+        if (noiseFloorDb < -45) {
+          audioHealthDot.className = 'audio-health-dot green';
+          audioHealthText.textContent = 'Good environment';
+        } else if (noiseFloorDb < -30) {
+          audioHealthDot.className = 'audio-health-dot yellow';
+          audioHealthText.textContent = 'Medium noise';
+        } else {
+          audioHealthDot.className = 'audio-health-dot red';
+          audioHealthText.textContent = 'Too noisy';
+        }
       }
     }
 
@@ -3640,41 +3773,63 @@
 
       // Build audio pipeline
       audioCtxCapture = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: MIC_SAMPLE_RATE });
+      // Ensure AudioContext is running (Chrome autoplay policy)
+      if (audioCtxCapture.state === 'suspended') {
+        console.warn('[AUDIO] AudioContext suspended after creation, resuming...');
+        await audioCtxCapture.resume();
+      }
+      console.info('[AUDIO] AudioContext state=' + audioCtxCapture.state + ', sampleRate=' + audioCtxCapture.sampleRate);
       micSourceNode = audioCtxCapture.createMediaStreamSource(micStream);
       scriptProcessor = audioCtxCapture.createScriptProcessor(SCRIPT_BUFFER_SIZE, 1, 1);
 
       const silenceBuffer = new Int16Array(SCRIPT_BUFFER_SIZE);
 
+      let _audioSendCount = 0;
+      let _audioSendLoggedAt = 0;
+
       scriptProcessor.onaudioprocess = (e) => {
-        if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+        try {
+          if (!state.micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-        const float32 = e.inputBuffer.getChannelData(0);
-        updateMicLevel(float32);
+          const float32 = e.inputBuffer.getChannelData(0);
+          updateMicLevel(float32);
 
-        const rms = calculateRms(float32);
-        maybeSendSpeechActivity(rms);
+          const rms = calculateRms(float32);
+          maybeSendSpeechActivity(rms);
 
-        // VAD audio gate: send real audio when VAD confirms speech, silence otherwise.
-        // Gemini's LOW sensitivity won't self-interrupt from echo.
-        let shouldSendReal;
-        if (vadReady) {
-          shouldSendReal = vadSpeechActive;
-        } else {
-          // No VAD: basic echo guard using server streaming state
-          const recentServerAudio = lastTutorAudioAt > 0
-            && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
-          shouldSendReal = !recentServerAudio;
+          // VAD audio gate: send real audio when VAD confirms speech, silence otherwise.
+          // Gemini's LOW sensitivity won't self-interrupt from echo.
+          let shouldSendReal;
+          if (vadReady) {
+            shouldSendReal = vadSpeechActive;
+          } else {
+            // No VAD: basic echo guard using server streaming state
+            const recentServerAudio = lastTutorAudioAt > 0
+              && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
+            shouldSendReal = !recentServerAudio;
+          }
+
+          let b64;
+          if (shouldSendReal) {
+            const int16 = float32ToInt16(float32);
+            b64 = arrayBufferToBase64(int16.buffer);
+          } else {
+            b64 = arrayBufferToBase64(silenceBuffer.buffer);
+          }
+
+          wsSend({ type: 'audio', data: b64 });
+
+          // Periodic diagnostic: confirm audio is flowing
+          _audioSendCount++;
+          const now = performance.now();
+          if (now - _audioSendLoggedAt > 5000) {
+            console.info('[AUDIO] Sent ' + _audioSendCount + ' chunks, vad=' + (shouldSendReal ? 'speech' : 'silence') + ', micDb=' + Math.round(micLevelDb));
+            _audioSendCount = 0;
+            _audioSendLoggedAt = now;
+          }
+        } catch (err) {
+          console.error('[AUDIO] onaudioprocess error:', err);
         }
-
-        let b64;
-        if (shouldSendReal) {
-          const int16 = float32ToInt16(float32);
-          b64 = arrayBufferToBase64(int16.buffer);
-        } else {
-          b64 = arrayBufferToBase64(silenceBuffer.buffer);
-        }
-
-        wsSend({ type: 'audio', data: b64 });
       };
 
       micSourceNode.connect(scriptProcessor);
