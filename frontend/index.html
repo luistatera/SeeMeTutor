@@ -2085,12 +2085,12 @@
     const SPEECH_ACTIVITY_DEBOUNCE_MS = 1200;
     // VAD-based interruption constants
     const VAD_GRACE_MS = 500;           // keep sending audio after VAD speech-end
-    const BARGE_IN_CONFIRM_MS = 220;    // confirm barge-in with sustained speech
+    const BARGE_IN_CONFIRM_MS = 150;    // confirm barge-in with sustained speech (was 220 — too slow for 1-3s tutor turns)
     const SERVER_STREAM_GAP_MS = 800;   // gap before client-side barge-in is valid
     const NOISE_CALIBRATION_MS = 1200;  // initial noise floor calibration period
     const VOICE_DB_MARGIN = 6;          // dB above noise floor for voice detection (was 10 — too strict)
     const ECHO_EXTRA_DB_MARGIN = 4;    // extra dB required during active tutor streaming (was 8 — rejected real speech)
-    const STREAM_BARGE_IN_CONFIRM_MS = 250; // confirmation during streaming (was 350 — tutor turns are only 1-3s)
+    const STREAM_BARGE_IN_CONFIRM_MS = 180; // confirmation during streaming (was 250 — need <200ms for 1-3s turns)
     const MIN_VOICE_DB = -50;           // absolute minimum for voice signal (was -45 — too strict for quiet speakers)
     const CHECKPOINT_HINT_DURATION_MS = 12000;
     const MAX_COMMAND_WORDS = 7;
@@ -3532,7 +3532,7 @@
         vadInstance = await vad.MicVAD.new({
           positiveSpeechThreshold: 0.72,
           negativeSpeechThreshold: 0.45,
-          minSpeechMs: 260,
+          minSpeechMs: 200,
           redemptionMs: 700,
           preSpeechPadMs: 0,
           model: 'v5',
@@ -3543,7 +3543,7 @@
           onVADMisfire: onVADMisfire,
         });
         vadReady = true;
-        console.info('[VAD] Ready (threshold=0.72, minSpeech=260ms, confirm=220ms)');
+        console.info('[VAD] Ready (threshold=0.72, minSpeech=200ms, confirm=150ms)');
       } catch (err) {
         console.warn('[VAD] Init failed:', err.message);
         vadReady = false;
@@ -3797,25 +3797,13 @@
           const rms = calculateRms(float32);
           maybeSendSpeechActivity(rms);
 
-          // VAD audio gate: send real audio when VAD confirms speech, silence otherwise.
-          // Gemini's LOW sensitivity won't self-interrupt from echo.
-          let shouldSendReal;
-          if (vadReady) {
-            shouldSendReal = vadSpeechActive;
-          } else {
-            // No VAD: basic echo guard using server streaming state
-            const recentServerAudio = lastTutorAudioAt > 0
-              && (performance.now() - lastTutorAudioAt) < SERVER_STREAM_GAP_MS;
-            shouldSendReal = !recentServerAudio;
-          }
-
-          let b64;
-          if (shouldSendReal) {
-            const int16 = float32ToInt16(float32);
-            b64 = arrayBufferToBase64(int16.buffer);
-          } else {
-            b64 = arrayBufferToBase64(silenceBuffer.buffer);
-          }
+          // Always send real mic audio to Gemini so its server-side VAD can
+          // detect student speech and fire interruptions.  Browser
+          // echoCancellation removes the tutor's echo from the mic stream.
+          // The client-side Silero VAD still handles instant barge-in
+          // (playback cutoff) independently — it does NOT gate Gemini input.
+          const int16 = float32ToInt16(float32);
+          const b64 = arrayBufferToBase64(int16.buffer);
 
           wsSend({ type: 'audio', data: b64 });
 
@@ -3823,7 +3811,7 @@
           _audioSendCount++;
           const now = performance.now();
           if (now - _audioSendLoggedAt > 5000) {
-            console.info('[AUDIO] Sent ' + _audioSendCount + ' chunks, vad=' + (shouldSendReal ? 'speech' : 'silence') + ', micDb=' + Math.round(micLevelDb));
+            console.info('[AUDIO] Sent ' + _audioSendCount + ' chunks, vad=' + (vadSpeechActive ? 'speech' : 'quiet') + ', micDb=' + Math.round(micLevelDb));
             _audioSendCount = 0;
             _audioSendLoggedAt = now;
           }

@@ -291,7 +291,8 @@ async def _forward_to_gemini(
                 continue
             if msg_type == "barge_in":
                 now = time.time()
-                if runtime_state.get("assistant_speaking"):
+                was_speaking = bool(runtime_state.get("assistant_speaking"))
+                if was_speaking:
                     _mark_student_activity(runtime_state, unlock_turn=True)
                     runtime_state["_student_has_spoken"] = True
                     runtime_state["assistant_speaking"] = False
@@ -306,6 +307,9 @@ async def _forward_to_gemini(
                         "BARGE_IN_IGNORED sid=%s (assistant not speaking)",
                         session_id[:8],
                     )
+                # Record barge-in in test report
+                if report:
+                    report.record_barge_in(while_speaking=was_speaking)
                 continue
             if msg_type == "command_event":
                 from modules.persistence import _log_command_event

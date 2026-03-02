@@ -183,6 +183,9 @@ class SessionReport:
             "interruptions": {
                 "count": 0,
                 "stale_filtered": 0,
+                "barge_in_received": 0,
+                "barge_in_while_speaking": 0,
+                "barge_in_ignored": 0,
             },
             "turns": {
                 "count": 0,
@@ -547,6 +550,20 @@ class SessionReport:
     def record_stale_interruption(self):
         self.data["interruptions"]["stale_filtered"] += 1
 
+    def record_barge_in(self, while_speaking: bool):
+        """Track a client-side barge-in message from the frontend.
+
+        Args:
+            while_speaking: True if tutor was actively speaking when the
+                barge-in arrived (= successful cutoff), False if tutor was
+                already silent (echo / stale VAD spike).
+        """
+        self.data["interruptions"]["barge_in_received"] += 1
+        if while_speaking:
+            self.data["interruptions"]["barge_in_while_speaking"] += 1
+        else:
+            self.data["interruptions"]["barge_in_ignored"] += 1
+
     # --- Turns ---
 
     def record_turn_complete(self, audio_chunks_this_turn: int):
@@ -806,6 +823,30 @@ class SessionReport:
                     min_value=1,
                 ),
                 "interruptions.count",
+            ),
+            self._check(
+                "P01.barge_in_received",
+                "Client-side barge-in messages from frontend",
+                ">=1 (when testing interruption scenario)",
+                self.data["interruptions"]["barge_in_received"],
+                _check_status_pass_fail_not_tested(
+                    self.data["interruptions"]["barge_in_received"] if self.data["interruptions"]["barge_in_received"] > 0 else None,
+                    min_value=1,
+                ),
+                "interruptions.barge_in_received",
+                "Total barge-in messages sent by frontend VAD.",
+            ),
+            self._check(
+                "P01.barge_in_while_speaking",
+                "Barge-ins that cut off active tutor speech",
+                ">=1 (when testing interruption scenario)",
+                self.data["interruptions"]["barge_in_while_speaking"],
+                _check_status_pass_fail_not_tested(
+                    self.data["interruptions"]["barge_in_while_speaking"] if self.data["interruptions"]["barge_in_while_speaking"] > 0 else None,
+                    min_value=1,
+                ),
+                "interruptions.barge_in_while_speaking",
+                "Barge-ins that arrived while tutor was actively speaking (successful cutoffs).",
             ),
         ]
         pocs["poc_01_interruption"] = {
@@ -1390,10 +1431,10 @@ class SessionReport:
             self._check(
                 "P99.interruption_checkpoint",
                 "Checklist: interruption handled",
-                ">=1 interruption",
-                self.data["interruptions"]["count"],
-                "pass" if self.data["interruptions"]["count"] > 0 else "fail",
-                "interruptions.count",
+                ">=1 interruption or barge-in",
+                self.data["interruptions"]["count"] + self.data["interruptions"]["barge_in_while_speaking"],
+                "pass" if (self.data["interruptions"]["count"] > 0 or self.data["interruptions"]["barge_in_while_speaking"] > 0) else "fail",
+                "interruptions.count + interruptions.barge_in_while_speaking",
             ),
             self._check(
                 "P99.grounding_checkpoint",
